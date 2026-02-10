@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model SiteConfig {
+  id                 Int            @id
+  brandLetter        String
+  brandName          String
+  searchPlaceholder  String
+  searchButtonLabel  String
+  categoryNavLabel   String
+  wishlistLabel      String
+  quantityLabel      String
+  decrementLabel     String
+  incrementLabel     String
+  sectionTitle       String
+  sectionIcon        String
+  headerActions      HeaderAction[]
+  categories         Category[]
+  sections           Section[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+}
+
+model HeaderAction {
+  id           Int        @id @default(autoincrement())
+  siteConfigId Int
+  label        String
+  icon         String
+  badgeCount   Int?
+  sortOrder    Int
+  siteConfig   SiteConfig @relation(fields: [siteConfigId], references: [id], onDelete: Cascade)
+
+  @@index([siteConfigId, sortOrder])
+}
+
+model Category {
+  id            Int        @id @default(autoincrement())
+  siteConfigId  Int
+  label         String
+  isHighlighted Boolean    @default(false)
+  sortOrder     Int
+  siteConfig    SiteConfig @relation(fields: [siteConfigId], references: [id], onDelete: Cascade)
+
+  @@index([siteConfigId, sortOrder])
+}
+
+model Section {
+  id           Int        @id @default(autoincrement())
+  siteConfigId Int
+  slug         String     @unique
+  title        String
+  icon         String
+  sortOrder    Int
+  siteConfig   SiteConfig @relation(fields: [siteConfigId], references: [id], onDelete: Cascade)
+  products     Product[]
+
+  @@index([siteConfigId, sortOrder])
+}
+
+model Product {
+  id                  Int          @id @default(autoincrement())
+  sectionId           Int
+  name                String
+  imageUrl            String?
+  imageAlt            String
+  imageBroken         Boolean      @default(false)
+  filledStars         Int          @default(4)
+  ratingCount         Int
+  price               Int
+  oldPrice            Int?
+  addToCartLabel      String
+  cartStateLabel      String?
+  quantityControl     Boolean      @default(false)
+  quantity            Int          @default(1)
+  showWishlist        Boolean      @default(true)
+  sortOrder           Int
+  section             Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  badges              ProductBadge[]
+
+  @@index([sectionId, sortOrder])
+}
+
+model ProductBadge {
+  id        Int     @id @default(autoincrement())
+  productId Int
+  label     String
+  tone      String
+  sortOrder Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+}

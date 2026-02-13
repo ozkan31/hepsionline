@@ -5,15 +5,17 @@ import type { MetadataRoute } from "next";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || resolveLocalBaseUrl();
-
-  const products = await prisma.product.findMany({
-    select: {
-      id: true,
-      name: true,
-    },
-    orderBy: [{ id: "desc" }],
-    take: 5000,
-  });
+  const hasDatabaseUrl = Boolean(process.env.DATABASE_URL?.trim());
+  const products = hasDatabaseUrl
+    ? await prisma.product.findMany({
+        select: {
+          id: true,
+          name: true,
+        },
+        orderBy: [{ id: "desc" }],
+        take: 5000,
+      })
+    : [];
 
   const staticRoutes: MetadataRoute.Sitemap = [
     {

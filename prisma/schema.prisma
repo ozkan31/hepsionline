@@ -3,28 +3,28 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
 model SiteConfig {
-  id                 Int            @id
-  brandLetter        String
-  brandName          String
-  searchPlaceholder  String
-  searchButtonLabel  String
-  categoryNavLabel   String
-  wishlistLabel      String
-  quantityLabel      String
-  decrementLabel     String
-  incrementLabel     String
-  sectionTitle       String
-  sectionIcon        String
-  headerActions      HeaderAction[]
-  categories         Category[]
-  sections           Section[]
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  id                Int            @id
+  brandLetter       String
+  brandName         String
+  searchPlaceholder String
+  searchButtonLabel String
+  categoryNavLabel  String
+  wishlistLabel     String
+  quantityLabel     String
+  decrementLabel    String
+  incrementLabel    String
+  sectionTitle      String
+  sectionIcon       String
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  categories        Category[]
+  headerActions     HeaderAction[]
+  sections          Section[]
 }
 
 model HeaderAction {
@@ -42,12 +42,17 @@ model HeaderAction {
 model Category {
   id            Int        @id @default(autoincrement())
   siteConfigId  Int
+  parentId      Int?
   label         String
+  slug          String     @default("")
   isHighlighted Boolean    @default(false)
   sortOrder     Int
   siteConfig    SiteConfig @relation(fields: [siteConfigId], references: [id], onDelete: Cascade)
+  parent        Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children      Category[] @relation("CategoryTree")
 
   @@index([siteConfigId, sortOrder])
+  @@index([siteConfigId, parentId, sortOrder])
 }
 
 model Section {
@@ -57,31 +62,37 @@ model Section {
   title        String
   icon         String
   sortOrder    Int
-  siteConfig   SiteConfig @relation(fields: [siteConfigId], references: [id], onDelete: Cascade)
   products     Product[]
+  siteConfig   SiteConfig @relation(fields: [siteConfigId], references: [id], onDelete: Cascade)
 
   @@index([siteConfigId, sortOrder])
 }
 
 model Product {
-  id                  Int          @id @default(autoincrement())
-  sectionId           Int
-  name                String
-  imageUrl            String?
-  imageAlt            String
-  imageBroken         Boolean      @default(false)
-  filledStars         Int          @default(4)
-  ratingCount         Int
-  price               Int
-  oldPrice            Int?
-  addToCartLabel      String
-  cartStateLabel      String?
-  quantityControl     Boolean      @default(false)
-  quantity            Int          @default(1)
-  showWishlist        Boolean      @default(true)
-  sortOrder           Int
-  section             Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  badges              ProductBadge[]
+  id              Int            @id @default(autoincrement())
+  sectionId       Int
+  name            String
+  imageUrl        String?
+  imageAlt        String
+  imageBroken     Boolean        @default(false)
+  filledStars     Int            @default(4)
+  ratingCount     Int
+  price           Int
+  oldPrice        Int?
+  addToCartLabel  String
+  cartStateLabel  String?
+  quantityControl Boolean        @default(false)
+  quantity        Int            @default(1)
+  showWishlist    Boolean        @default(true)
+  sortOrder       Int
+  section         Section        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  badges          ProductBadge[]
+  orderItems      OrderItem[]
+  cartItems       CartItem[]
+  favoriteItems   FavoriteItem[]
+  stockAlerts     StockAlert[]
+  bundlePrimaryOffers BundleOffer[]     @relation("BundlePrimaryProduct")
+  bundleOfferItems BundleOfferItem[]
 
   @@index([sectionId, sortOrder])
 }
@@ -95,4 +106,477 @@ model ProductBadge {
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId, sortOrder])
+}
+
+model Order {
+  id              Int         @id @default(autoincrement())
+  orderNo         String?     @unique
+  customerName    String
+  customerEmail   String?
+  customerPhone   String
+  customerAddress String
+  customerNote    String?
+  status          OrderStatus @default(PENDING)
+  paymentStatus   PaymentStatus @default(PENDING)
+  shippingCarrier String?
+  shippingTrackingNo String?
+  shippingLabelNo String?
+  shippedAt DateTime?
+  shippingSyncedAt DateTime?
+  paytrMerchantOid String?    @unique
+  paytrTotalAmount Int?
+  paytrPaymentType String?
+  paytrFailedReasonCode String?
+  paytrFailedReasonMsg String?
+  paymentCompletedAt DateTime?
+  cartToken String?
+  totalAmount     Int
+  currency        String      @default("TRY")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  items           OrderItem[]
+  couponUsages    CouponUsage[]
+  loyaltyTransactions LoyaltyTransaction[]
+
+  @@index([status, createdAt])
+  @@index([paymentStatus, createdAt])
+  @@index([shippingCarrier, shippingTrackingNo])
+  @@index([createdAt])
+}
+
+model Coupon {
+  id                Int           @id @default(autoincrement())
+  code              String        @unique
+  type              CouponType
+  value             Int
+  minOrderAmount    Int?
+  maxDiscountAmount Int?
+  description       String?
+  isActive          Boolean       @default(true)
+  startsAt          DateTime?
+  expiresAt         DateTime?
+  usageLimit        Int?
+  perUserLimit      Int?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  usages            CouponUsage[]
+
+  @@index([isActive, expiresAt])
+}
+
+model CouponUsage {
+  id             Int      @id @default(autoincrement())
+  couponId       Int
+  orderId        Int?
+  userEmail      String?
+  discountAmount Int
+  usedAt         DateTime @default(now())
+  coupon         Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  order          Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([couponId, usedAt])
+  @@index([orderId])
+  @@index([userEmail, usedAt])
+}
+
+model OrderItem {
+  id          Int      @id @default(autoincrement())
+  orderId     Int
+  productId   Int?
+  productName String
+  quantity    Int
+  unitPrice   Int
+  totalPrice  Int
+  createdAt   DateTime @default(now())
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  SHIPPED
+  ON_THE_WAY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum CouponType {
+  FIXED
+  PERCENT
+}
+
+enum LoyaltyTransactionType {
+  EARN_PURCHASE
+  REDEEM_COUPON
+  MANUAL_ADJUST
+  EXPIRE
+}
+
+model LoyaltyAccount {
+  id            Int                  @id @default(autoincrement())
+  userId        Int                  @unique
+  pointsBalance Int                  @default(0)
+  totalEarned   Int                  @default(0)
+  totalRedeemed Int                  @default(0)
+  tier          String               @default("BRONZE")
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions  LoyaltyTransaction[]
+
+  @@index([tier])
+  @@index([pointsBalance])
+}
+
+model LoyaltyTransaction {
+  id           Int                    @id @default(autoincrement())
+  accountId    Int
+  orderId      Int?
+  type         LoyaltyTransactionType
+  pointsChange Int
+  note         String?
+  meta         Json?
+  createdAt    DateTime               @default(now())
+  account      LoyaltyAccount         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  order        Order?                 @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, createdAt])
+  @@index([orderId])
+  @@unique([orderId, type])
+}
+
+model Cart {
+  id        Int        @id @default(autoincrement())
+  token     String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  items     CartItem[]
+
+  @@index([createdAt])
+  @@index([updatedAt])
+}
+
+model CartItem {
+  id        Int      @id @default(autoincrement())
+  cartId    Int
+  productId Int
+  quantity  Int      @default(1)
+  unitPrice Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+  @@index([cartId])
+  @@index([cartId, id])
+  @@index([productId])
+}
+
+model FavoriteList {
+  id        Int            @id @default(autoincrement())
+  token     String         @unique
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  items     FavoriteItem[]
+
+  @@index([createdAt])
+}
+
+model FavoriteItem {
+  id             Int          @id @default(autoincrement())
+  favoriteListId Int
+  productId      Int
+  createdAt      DateTime     @default(now())
+  favoriteList   FavoriteList @relation(fields: [favoriteListId], references: [id], onDelete: Cascade)
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([favoriteListId, productId])
+  @@index([favoriteListId])
+  @@index([productId])
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  fullName     String
+  email        String   @unique
+  passwordHash String
+  phone        String
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  district     String
+  postalCode   String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  loyaltyAccount LoyaltyAccount?
+
+  @@index([createdAt])
+}
+
+model XmlImportedProduct {
+  id                    Int                         @id @default(autoincrement())
+  sourceProductId       String                      @unique
+  sourceCode            String?
+  sourceXmlCode         String?
+  sourceSeo             String?
+  sourceUrl             String?
+  isActive              Boolean                     @default(true)
+  name                  String
+  summary               String?                     @db.LongText
+  descriptionHtml       String?                     @db.LongText
+  featuresHtml          String?                     @db.LongText
+  brandCode             String?
+  brandName             String?
+  mainCategoryCode      String?
+  mainCategoryName      String?
+  parentCategoryCode    String?
+  parentCategoryName    String?
+  categoryCode          String?
+  categoryName          String?
+  categoryPath          String?
+  currency              String?
+  vatRate               Decimal?                    @db.Decimal(10, 4)
+  stock                 Int?
+  shippingDesi          Decimal?                    @db.Decimal(14, 4)
+  basePrice             Decimal?                    @db.Decimal(14, 4)
+  basePriceTry          Decimal?                    @db.Decimal(14, 4)
+  bankTransferPriceTry  Decimal?                    @db.Decimal(14, 4)
+  dealerPrice           Decimal?                    @db.Decimal(14, 4)
+  sitePrice             Decimal?                    @db.Decimal(14, 4)
+  endUserPrice          Decimal?                    @db.Decimal(14, 4)
+  marketPrice           Decimal?                    @db.Decimal(14, 4)
+  priceWithMarkupTry    Decimal?                    @db.Decimal(14, 4)
+  markupRate            Decimal                     @default(0.45) @db.Decimal(6, 4)
+  freeShipping          Boolean                     @default(false)
+  discounted            Boolean                     @default(false)
+  primaryImageUrl       String?
+  imageUrls             Json?
+  sourceData            Json?
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  variants              XmlImportedProductVariant[]
+
+  @@index([brandName])
+  @@index([categoryName])
+  @@index([isActive])
+}
+
+model XmlImportedProductVariant {
+  id           Int                @id @default(autoincrement())
+  productId    Int
+  sortOrder    Int                @default(0)
+  option1Name  String?
+  option1Value String?
+  option2Name  String?
+  option2Value String?
+  option3Name  String?
+  option3Value String?
+  priceDiff    Decimal?           @db.Decimal(14, 4)
+  stock        Int?
+  gtin         String?
+  stockCode    String?
+  sourceData   Json?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  product      XmlImportedProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+  @@index([stockCode])
+}
+
+model AdminSetting {
+  id             Int      @id @default(1)
+  siteName       String?
+  palette        Json?
+  pagePalettes   Json?
+  abTests        Json?
+  maintenance    Json?
+  featureToggles Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model AdminHomeContainer {
+  id            String   @id @default(cuid())
+  title         String
+  sort          Int      @default(0)
+  isActive      Boolean  @default(true)
+  productIdsCsv String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([sort])
+  @@index([isActive])
+}
+
+model AdminImportJob {
+  id         String   @id @default(cuid())
+  type       String
+  status     String   @default("PENDING")
+  uploadedKey String?
+  sourceUrl  String?
+  mapping    Json?
+  logs       Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model AdminAuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  actorId   String?
+  entity    String?
+  entityId  String?
+  beforeJson Json?
+  afterJson Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action, entity, entityId, createdAt])
+}
+
+model AdminReview {
+  id         String   @id @default(cuid())
+  productId  Int?
+  userEmail  String?
+  title      String?
+  rating     Int      @default(5)
+  isApproved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([productId, createdAt])
+  @@index([isApproved, createdAt])
+}
+
+model AbandonedCartRecovery {
+  id             Int      @id @default(autoincrement())
+  cartToken      String   @unique
+  userEmail      String?
+  lastActivityAt DateTime
+  reminderSentAt DateTime?
+  recoveredAt    DateTime?
+  couponCode     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([lastActivityAt])
+  @@index([reminderSentAt, recoveredAt])
+  @@index([userEmail])
+}
+
+model StockAlert {
+  id         Int      @id @default(autoincrement())
+  productId  Int
+  userEmail  String
+  notifiedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, userEmail])
+  @@index([notifiedAt, createdAt])
+  @@index([userEmail, createdAt])
+}
+
+model SearchQueryLog {
+  id             Int      @id @default(autoincrement())
+  query          String
+  normalizedQuery String
+  correctedQuery String?
+  resultCount    Int      @default(0)
+  hadResult      Boolean  @default(false)
+  source         String   @default("live")
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([normalizedQuery, createdAt])
+  @@index([hadResult, createdAt])
+}
+
+model BundleOffer {
+  id               Int              @id @default(autoincrement())
+  primaryProductId Int
+  title            String?
+  discountPercent  Int              @default(10)
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  primaryProduct   Product          @relation("BundlePrimaryProduct", fields: [primaryProductId], references: [id], onDelete: Cascade)
+  items            BundleOfferItem[]
+
+  @@index([isActive, updatedAt])
+  @@index([primaryProductId, isActive])
+}
+
+model BundleOfferItem {
+  id        Int      @id @default(autoincrement())
+  offerId   Int
+  productId Int
+  quantity  Int      @default(1)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  offer     BundleOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  product   Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([offerId, productId])
+  @@index([offerId, sortOrder])
+  @@index([productId])
+}
+
+model AdminQuestion {
+  id         String                @id @default(cuid())
+  productId  Int?
+  userEmail  String?
+  question   String
+  isApproved Boolean               @default(false)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+  answers    AdminQuestionAnswer[]
+
+  @@index([productId, createdAt])
+  @@index([isApproved, createdAt])
+}
+
+model AdminQuestionAnswer {
+  id         String        @id @default(cuid())
+  questionId String
+  answer     String
+  createdAt  DateTime      @default(now())
+  question   AdminQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId, createdAt])
+}
+
+model AdminReturnRequest {
+  id         String   @id @default(cuid())
+  orderId    Int?
+  orderItemId Int?
+  userEmail  String?
+  type       String
+  status     String   @default("REQUESTED")
+  reason     String?
+  note       String?
+  adminNote  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([orderId])
 }

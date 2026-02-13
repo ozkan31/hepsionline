@@ -1,0 +1,656 @@
+.page {
+  min-height: calc(100vh - 120px);
+  background: #f3f6f8;
+  padding: 22px 0 36px;
+}
+
+.container {
+  max-width: 1170px;
+  margin: 0 auto;
+  padding: 0 12px;
+  display: grid;
+  gap: 14px;
+}
+
+.topRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.backLink {
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid #dbe3ea;
+  background: #ffffff;
+  color: #0f172a;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.backLink:hover {
+  background: #f8fafc;
+}
+
+.noticeError,
+.noticeSuccess {
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  border: 1px solid;
+}
+
+.noticeError {
+  border-color: #fecdca;
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.noticeSuccess {
+  border-color: #abefc6;
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 18px;
+  align-items: start;
+}
+
+.deliveryCard,
+.summaryCard,
+.emptyState {
+  background: #ffffff;
+  border: 1px solid #dee3ea;
+  border-radius: 16px;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.04);
+}
+
+.deliveryCard,
+.summaryCard {
+  padding: 18px;
+}
+
+.deliveryHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.deliveryHead h2,
+.summaryCard h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.addressAddButton {
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #1ba7a6;
+  background: #e7f6f6;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.addressAddButton:hover {
+  background: #d8f3f2;
+}
+
+.addressOptions {
+  display: grid;
+  gap: 10px;
+}
+
+.addressCard {
+  border: 1px dashed #cbd5e1;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 18px 24px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  cursor: pointer;
+}
+
+.addressCardActive {
+  border-color: #1ba7a6;
+  background: #f0fbfb;
+}
+
+.addressRadio {
+  margin: 4px 0 0;
+  width: 14px;
+  height: 14px;
+  accent-color: #1ba7a6;
+}
+
+.addressIcon {
+  color: #1ba7a6;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+}
+
+.addressInlineRow {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.addressChip {
+  border-radius: 999px;
+  border: 1px solid #dbe3ea;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1;
+  padding: 7px 10px;
+}
+
+.addressEmpty {
+  border: 1px dashed #cbd5e1;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 14px;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.summaryList {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.bestCouponCard {
+  margin-top: 12px;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  background: #f0fdf4;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.bestCouponHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.bestCouponHead strong {
+  font-size: 13px;
+  color: #14532d;
+}
+
+.bestCouponHead span {
+  border-radius: 999px;
+  border: 1px solid #86efac;
+  background: #ffffff;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 8px;
+}
+
+.bestCouponSub {
+  color: #166534;
+  font-size: 12px;
+}
+
+.bestCouponButton {
+  width: 100%;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: #16a34a;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bestCouponButton:hover {
+  background: #15803d;
+}
+
+.smartUpsellCard {
+  margin-top: 12px;
+  border: 1px solid #dbe3ea;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.smartUpsellHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.smartUpsellHead strong {
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.smartUpsellHead span {
+  border-radius: 999px;
+  background: #ccfbf1;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+}
+
+.smartUpsellList {
+  display: grid;
+  gap: 6px;
+}
+
+.smartUpsellItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  text-decoration: none;
+  color: #0f172a;
+  padding: 7px 8px;
+  font-size: 12px;
+}
+
+.smartUpsellItem:hover {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+}
+
+.smartUpsellTotals {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #334155;
+}
+
+.smartUpsellButton {
+  width: 100%;
+  height: 38px;
+  border: 0;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.smartUpsellButton:hover {
+  background: #1e293b;
+}
+
+.summaryItem {
+  border: 1px solid #eceff4;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.summaryImageWrap {
+  width: 82px;
+  height: 82px;
+  border-radius: 10px;
+  border: 1px solid #e4e8ef;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.summaryImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.placeholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.summaryInfo {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.summaryInfo strong {
+  color: #0f1e3c;
+  font-size: 13px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.summaryInfo span {
+  color: #667085;
+  font-size: 12px;
+}
+
+.itemTotal {
+  color: #0f1e3c;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.totalRow {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eceff4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #334155;
+  font-size: 13px;
+}
+
+.totalRow strong {
+  color: #0f1e3c;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.payForm {
+  margin-top: 14px;
+}
+
+.submitButton,
+.primaryLink {
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.submitButton {
+  width: 100%;
+  height: 44px;
+  border: 0;
+  cursor: pointer;
+  background: #1ba7a6;
+  color: #ffffff;
+  text-transform: lowercase;
+}
+
+.submitButton:hover {
+  background: #179594;
+}
+
+.submitButton:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.formHint {
+  margin: 10px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.warningText {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #b42318;
+}
+
+.emptyState {
+  padding: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.emptyState p {
+  margin: 0;
+  color: #334155;
+  font-size: 14px;
+}
+
+.primaryLink {
+  min-width: 170px;
+  height: 40px;
+  padding: 0 14px;
+  border: 0;
+  background: #1ba7a6;
+  color: #ffffff;
+}
+
+.primaryLink:hover {
+  background: #179594;
+}
+
+.addressModalLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+}
+
+.addressModalBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(4px);
+}
+
+.addressModalCard {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  width: min(680px, calc(100vw - 20px));
+  max-height: 88vh;
+  overflow-y: auto;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.32);
+}
+
+.addressModalHead {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.addressModalHead h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.addressModalClose {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid #dbe3ea;
+  background: #ffffff;
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.addressModalClose:hover {
+  background: #f8fafc;
+}
+
+.addressModalBody {
+  padding: 16px 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.modalField {
+  display: grid;
+  gap: 6px;
+}
+
+.modalField span {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.modalField input {
+  width: 100%;
+  height: 42px;
+  border: 1px solid #d1d9e2;
+  border-radius: 12px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.modalField input:focus {
+  outline: none;
+  border-color: #1ba7a6;
+  box-shadow: 0 0 0 3px rgba(27, 167, 166, 0.12);
+}
+
+.addressModalActions {
+  border-top: 1px solid #e2e8f0;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modalCancel,
+.modalSave {
+  height: 40px;
+  border-radius: 12px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.modalCancel {
+  border: 1px solid #dbe3ea;
+  background: #ffffff;
+  color: #334155;
+}
+
+.modalSave {
+  border: 0;
+  background: #1ba7a6;
+  color: #ffffff;
+}
+
+.modalSave:hover {
+  background: #179594;
+}
+
+@media (max-width: 1040px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .summaryCard {
+    order: 2;
+  }
+
+  .deliveryCard {
+    order: 1;
+  }
+}
+
+@media (max-width: 760px) {
+  .title {
+    font-size: 24px;
+  }
+
+  .deliveryHead {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .addressCard {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .addressIcon {
+    display: none;
+  }
+
+  .summaryItem {
+    grid-template-columns: 70px 1fr;
+  }
+
+  .summaryImageWrap {
+    width: 70px;
+    height: 70px;
+  }
+
+  .itemTotal {
+    grid-column: 1 / -1;
+  }
+}

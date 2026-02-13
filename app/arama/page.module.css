@@ -1,0 +1,131 @@
+.helper {
+  margin: 0 0 14px;
+  color: #667085;
+  font-size: 13px;
+}
+
+.helper strong {
+  color: #1f2b48;
+}
+
+.filterForm {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 12px;
+  color: #475467;
+  font-weight: 600;
+}
+
+.control {
+  height: 38px;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: #1f2937;
+  background: #fff;
+}
+
+.control:focus {
+  outline: none;
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.14);
+}
+
+.checkboxField {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: #344054;
+  white-space: nowrap;
+}
+
+.checkboxField input {
+  width: 14px;
+  height: 14px;
+  accent-color: #14b8a6;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.applyButton,
+.clearButton {
+  height: 38px;
+  border-radius: 10px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.applyButton {
+  border: 1px solid #0f766e;
+  background: #14b8a6;
+  color: #fff;
+  cursor: pointer;
+}
+
+.applyButton:hover {
+  background: #0ea5a0;
+}
+
+.clearButton {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #344054;
+  text-decoration: none;
+}
+
+.clearButton:hover {
+  border-color: #9ca3af;
+}
+
+@media (max-width: 1180px) {
+  .filterForm {
+    grid-template-columns: repeat(3, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 880px) {
+  .filterForm {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .filterForm {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    justify-content: flex-start;
+  }
+}

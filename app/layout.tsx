@@ -1,16 +1,28 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import "./globals.css";
 
 const poppins = Poppins({
   variable: "--font-poppins",
   weight: ["400", "500", "600", "700"],
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext"],
 });
 
 export const metadata: Metadata = {
-  title: "ShopMax",
-  description: "E-ticaret ana sayfası",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() || "http://localhost:3000",
+  ),
+  title: {
+    default: "hepsionline",
+    template: "%s | hepsionline",
+  },
+  description: "Hepsionline e-ticaret deneyimi",
+  openGraph: {
+    title: "hepsionline",
+    description: "Hepsionline e-ticaret deneyimi",
+    siteName: "hepsionline",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
@@ -24,3 +36,4 @@ export default function RootLayout({
     </html>
   );
 }
+

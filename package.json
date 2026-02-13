@@ -8,19 +8,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "pages:build": "next build && npx @cloudflare/next-on-pages",
     "start": "next start",
-    "postinstall": "prisma generate",
-    "lint": "eslint",
-    "typecheck": "tsc --noEmit",
-    "test:integration": "npm run build && node --test tests/integration/admin-api.test.mjs",
-    "e2e:install": "playwright install chromium",
-    "test:e2e:smoke": "npm run build && playwright test -c playwright.smoke.config.ts",
-    "db:push": "prisma db push",
-    "db:seed": "prisma db seed",
-    "xml:import": "node scripts/import-xml-products.mjs",
-    "catalog:sync-xml": "node scripts/sync-xml-imported-to-catalog.mjs",
-    "orders:release-stale": "node scripts/release-stale-pending-orders.mjs",
-    "stock-alerts:dispatch": "node scripts/dispatch-stock-alerts.mjs"
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
@@ -34,16 +24,18 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.16.5",
+    "@playwright/test": "^1.51.1",
     "@tailwindcss/postcss": "^4",
     "@types/bcrypt": "^6.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@playwright/test": "^1.51.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.65.0"
   },
   "prisma": {
     "seed": "node prisma/seed.mjs"

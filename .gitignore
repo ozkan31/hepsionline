@@ -25,6 +25,9 @@
 # misc
 .DS_Store
 *.pem
+.wrangler/
+.open-next/
+cloudflare-env.d.ts
 
 # debug
 npm-debug.log*

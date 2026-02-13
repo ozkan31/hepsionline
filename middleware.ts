@@ -84,7 +84,7 @@ function unauthorizedApi() {
   return NextResponse.json({ error: "Unauthorized admin session" }, { status: 401 });
 }
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isAdminApi = pathname.startsWith("/api/admin");
   const isAdminPage = pathname.startsWith("/akalin1453");
@@ -117,3 +117,4 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: ["/api/admin/:path*", "/akalin1453/:path*"],
 };
+

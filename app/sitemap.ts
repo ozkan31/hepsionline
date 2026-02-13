@@ -1,9 +1,10 @@
 import { buildProductSlug } from "@/lib/product-slug";
 import { prisma } from "@/lib/prisma";
+import { resolveLocalBaseUrl } from "@/lib/runtime-port";
 import type { MetadataRoute } from "next";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "http://localhost:3000";
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || resolveLocalBaseUrl();
 
   const products = await prisma.product.findMany({
     select: {

@@ -9,6 +9,7 @@ import { getFavoriteDetailsFromCookie, getFavoriteItemCountFromCookie } from "@/
 import { buildProductSlug, parseProductIdFromSlug } from "@/lib/product-slug";
 import { createPerfScope } from "@/lib/perf";
 import { prisma } from "@/lib/prisma";
+import { resolveLocalBaseUrl } from "@/lib/runtime-port";
 import { getSiteHeaderData } from "@/lib/site-header-data";
 import { getCurrentUserFromSession } from "@/lib/user-auth";
 import type { Metadata } from "next";
@@ -275,7 +276,7 @@ export async function generateMetadata({ params }: ParamsLike): Promise<Metadata
     return { title: "Ürün bulunamadı" };
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "http://localhost:3000";
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || resolveLocalBaseUrl();
   const canonicalSlug = buildProductSlug(data.product.name, data.product.id);
   const canonicalUrl = `${baseUrl}/urun/${canonicalSlug}`;
   const imageUrl =
@@ -402,7 +403,7 @@ export default async function ProductDetailPage({ params, searchParams }: Params
       : stock <= 10
       ? `Son ${stock} adet`
       : "Stokta";
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "http://localhost:3000";
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || resolveLocalBaseUrl();
   const productUrl = `${baseUrl}/urun/${canonicalSlug}`;
   const productJsonLd = {
     "@context": "https://schema.org",

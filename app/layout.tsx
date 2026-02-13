@@ -1,5 +1,6 @@
 ﻿import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
+import { resolveLocalBaseUrl } from "@/lib/runtime-port";
 import "./globals.css";
 
 const poppins = Poppins({
@@ -10,7 +11,7 @@ const poppins = Poppins({
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() || "http://localhost:3000",
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() || resolveLocalBaseUrl(),
   ),
   title: {
     default: "hepsionline",

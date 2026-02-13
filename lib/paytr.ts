@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { resolveLocalBaseUrl } from "@/lib/runtime-port";
 
 type PaytrConfig = {
   merchantId: string;
@@ -130,7 +131,7 @@ export function resolveAppBaseUrl(headersList: Headers) {
   }
 
   if (!host) {
-    return "http://localhost:3000";
+    return resolveLocalBaseUrl();
   }
 
   const proto = headersList.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");

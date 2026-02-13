@@ -1,5 +1,6 @@
 import { jsonError } from "@/lib/api-response";
 import { prisma } from "@/lib/prisma";
+import { resolveLocalBaseUrl } from "@/lib/runtime-port";
 
 export const dynamic = "force-dynamic";
 
@@ -121,7 +122,7 @@ export async function GET() {
         : null,
     ].filter((x): x is string => Boolean(x));
 
-    const baseUrl = siteUrl || "http://localhost:3000";
+    const baseUrl = siteUrl || resolveLocalBaseUrl();
 
     return Response.json({
       score,

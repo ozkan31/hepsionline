@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "pages:build": "npm run build",
     "start": "node server.js",
     "start:next": "next start",
     "postinstall": "prisma generate",

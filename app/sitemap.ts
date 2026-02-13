@@ -1,21 +1,27 @@
 import { buildProductSlug } from "@/lib/product-slug";
-import { prisma } from "@/lib/prisma";
 import { resolveLocalBaseUrl } from "@/lib/runtime-port";
 import type { MetadataRoute } from "next";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || resolveLocalBaseUrl();
   const hasDatabaseUrl = Boolean(process.env.DATABASE_URL?.trim());
-  const products = hasDatabaseUrl
-    ? await prisma.product.findMany({
+  let products: Array<{ id: number; name: string }> = [];
+
+  if (hasDatabaseUrl) {
+    try {
+      const { prisma } = await import("@/lib/prisma");
+      products = await prisma.product.findMany({
         select: {
           id: true,
           name: true,
         },
         orderBy: [{ id: "desc" }],
         take: 5000,
-      })
-    : [];
+      });
+    } catch (error) {
+      console.warn("sitemap product query skipped:", error);
+    }
+  }
 
   const staticRoutes: MetadataRoute.Sitemap = [
     {

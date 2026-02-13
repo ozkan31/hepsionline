@@ -35,17 +35,29 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
-## Deploy on Cloudflare Workers
+## Deploy on Hostinger (Node.js)
 
-This project includes OpenNext Cloudflare adapter integration.
-
-```bash
-npm run pages:build
-npm run cf:deploy
-```
-
-Local preview on Workers runtime:
+Use Hostinger Node.js app deployment with these commands:
 
 ```bash
-npm run cf:preview
+npm clean-install --progress=false
+npm run build
+npm run start
 ```
+
+Required environment variables (Hostinger panel):
+
+- `DATABASE_URL`
+- `NEXT_PUBLIC_SITE_URL`
+- `ADMIN_SESSION_SECRET`
+- `JWT_SECRET`
+- `PAYTR_MERCHANT_ID`
+- `PAYTR_MERCHANT_KEY`
+- `PAYTR_MERCHANT_SALT`
+- `PAYTR_OK_URL`
+- `PAYTR_FAIL_URL`
+
+Notes:
+
+- This project is a standard Next.js app and runs in production with `next build` + `next start`.
+- `next start` uses `process.env.PORT` automatically in hosting environments.

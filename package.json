@@ -9,8 +9,9 @@
     "dev": "next dev",
     "build": "next build",
     "pages:build": "npm run build",
-    "start": "node server.js",
-    "start:next": "next start",
+    "start": "next start -H 0.0.0.0",
+    "start:next": "next start -H 0.0.0.0",
+    "start:custom": "node server.js",
     "postinstall": "prisma generate",
     "lint": "eslint",
     "typecheck": "tsc --noEmit"

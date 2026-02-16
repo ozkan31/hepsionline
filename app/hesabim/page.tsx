@@ -72,28 +72,26 @@ function SectionCard({
 
 function ProductCard({ p }: { p: Product }) {
   return (
-    <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-      <div className="relative">
-        <div
-          className="h-40 w-full bg-slate-100"
-          style={{ backgroundImage: `url(${p.imageUrl})`, backgroundSize: "cover", backgroundPosition: "center" }}
-        />
-        <button
-          type="button"
-          className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/90 shadow-sm ring-1 ring-black/5 hover:bg-white"
-          aria-label="Favorilere ekle"
-        >
-          <Heart className="h-5 w-5 text-slate-600" />
-        </button>
+    <article className="product-card">
+      <div className="product-image-wrap">
+        <Link href={`/urun/${buildProductSlug(p.title, p.id)}`} aria-label={`${p.title} detayı`}>
+          <div
+            className="h-full w-full bg-slate-100"
+            style={{ backgroundImage: `url(${p.imageUrl})`, backgroundSize: "cover", backgroundPosition: "center" }}
+          />
+        </Link>
       </div>
 
-      <div className="p-4">
-        <div className="line-clamp-2 text-sm font-semibold text-slate-800">{p.title}</div>
-        {p.subtitle ? <div className="mt-1 text-xs text-slate-500">{p.subtitle}</div> : <div className="mt-1 text-xs text-slate-500">&nbsp;</div>}
-
-        <div className="mt-2 text-base font-semibold text-slate-900">{formatTRY(p.price)}</div>
-
-        <div className="mt-3">
+      <div className="product-content">
+        <h2 className="product-name">
+          <Link href={`/urun/${buildProductSlug(p.title, p.id)}`} className="product-link">
+            {p.title}
+          </Link>
+        </h2>
+        <div className="price-row">
+          <strong className="current-price">{formatTRY(p.price)}</strong>
+        </div>
+        <div className="cart-row">
           <Link
             href={`/urun/${buildProductSlug(p.title, p.id)}`}
             className="inline-flex w-full items-center justify-center rounded-xl bg-[#1BA7A6] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 active:brightness-90"
@@ -102,7 +100,7 @@ function ProductCard({ p }: { p: Product }) {
           </Link>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -236,79 +234,87 @@ export default async function HesabimPage() {
         <AccountSidebar fullName={user.fullName} active="hesabim" orderCount={orderCount} favoriteCount={favoriteCount} couponCount={couponCount} />
 
         <section className="space-y-5">
-          <div className="rounded-2xl bg-transparent">
+          <div className="hidden rounded-2xl bg-transparent md:block">
             <h1 className="text-3xl font-semibold text-slate-900">Hesabım</h1>
             <p className="mt-1 text-slate-500">Hoşgeldiniz, {user.fullName}!</p>
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <SectionCard
-              title="Adreslerim"
-              subtitle={`${addressCount} kayıtlı adresiniz var.`}
-              ctaText="Adreslerimi Gör"
-              ctaHref="/hesabim/adresler"
-              leftIcon={<MapPin className="h-5 w-5" />}
-              rightVisual={
-                <div className="absolute inset-0">
-                  <div className="absolute -right-10 top-6 h-24 w-24 rounded-full bg-[#E7F6F6]" />
-                  <div className="absolute right-4 top-10 h-10 w-10 rounded-xl bg-[#1BA7A6]/15" />
-                  <div className="absolute right-7 top-12 h-6 w-6 rounded-lg bg-[#1BA7A6]/25" />
-                </div>
-              }
-            />
+            <div className="hidden md:block">
+              <SectionCard
+                title="Adreslerim"
+                subtitle={`${addressCount} kayıtlı adresiniz var.`}
+                ctaText="Adreslerimi Gör"
+                ctaHref="/hesabim/adresler"
+                leftIcon={<MapPin className="h-5 w-5" />}
+                rightVisual={
+                  <div className="absolute inset-0">
+                    <div className="absolute -right-10 top-6 h-24 w-24 rounded-full bg-[#E7F6F6]" />
+                    <div className="absolute right-4 top-10 h-10 w-10 rounded-xl bg-[#1BA7A6]/15" />
+                    <div className="absolute right-7 top-12 h-6 w-6 rounded-lg bg-[#1BA7A6]/25" />
+                  </div>
+                }
+              />
+            </div>
 
-            <SectionCard
-              title="Siparişlerim"
-              subtitle={`${orderCount} siparişiniz var`}
-              ctaText="Siparişlerimi Gör"
-              ctaHref="/hesabim/siparislerim"
-              rightVisual={
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    backgroundImage:
-                      "url(https://images.unsplash.com/photo-1528701800489-20be3c2ea2d6?auto=format&fit=crop&w=900&q=70)",
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                  }}
-                />
-              }
-            />
+            <div className="hidden md:block">
+              <SectionCard
+                title="Siparişlerim"
+                subtitle={`${orderCount} siparişiniz var`}
+                ctaText="Siparişlerimi Gör"
+                ctaHref="/hesabim/siparislerim"
+                rightVisual={
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      backgroundImage:
+                        "url(https://images.unsplash.com/photo-1528701800489-20be3c2ea2d6?auto=format&fit=crop&w=900&q=70)",
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                    }}
+                  />
+                }
+              />
+            </div>
 
-            <SectionCard
-              title="Favorilerim"
-              subtitle={`${favoriteCount} favori ürününüz var`}
-              ctaText="Favorilerimi Gör"
-              ctaHref="/favoriler"
-              rightVisual={
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    backgroundImage:
-                      "url(https://images.unsplash.com/photo-1528701800489-20be3c2ea2d6?auto=format&fit=crop&w=900&q=70)",
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                  }}
-                />
-              }
-            />
+            <div className="hidden md:block">
+              <SectionCard
+                title="Favorilerim"
+                subtitle={`${favoriteCount} favori ürününüz var`}
+                ctaText="Favorilerimi Gör"
+                ctaHref="/favoriler"
+                rightVisual={
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      backgroundImage:
+                        "url(https://images.unsplash.com/photo-1528701800489-20be3c2ea2d6?auto=format&fit=crop&w=900&q=70)",
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                    }}
+                  />
+                }
+              />
+            </div>
 
-            <SectionCard
-              title="Kuponlarım"
-              subtitle={`${couponCount} kullanılabilir kuponunuz var`}
-              ctaText="Kuponlarımı Gör"
-              ctaHref="/hesabim/kuponlar"
-              rightVisual={
-                <div className="absolute inset-0 flex items-center justify-center bg-[#E7F6F6]">
-                  <div className="flex h-[74px] w-[140px] items-center justify-center rounded-xl border-2 border-dashed border-[#1BA7A6]/50 bg-white text-center">
-                    <div>
-                      <div className="text-2xl font-extrabold text-[#1BA7A6]">₺50</div>
-                      <div className="text-sm font-semibold text-slate-600">hediye</div>
+            <div className="hidden md:block">
+              <SectionCard
+                title="Kuponlarım"
+                subtitle={`${couponCount} kullanılabilir kuponunuz var`}
+                ctaText="Kuponlarımı Gör"
+                ctaHref="/hesabim/kuponlar"
+                rightVisual={
+                  <div className="absolute inset-0 flex items-center justify-center bg-[#E7F6F6]">
+                    <div className="flex h-[74px] w-[140px] items-center justify-center rounded-xl border-2 border-dashed border-[#1BA7A6]/50 bg-white text-center">
+                      <div>
+                        <div className="text-2xl font-extrabold text-[#1BA7A6]">₺50</div>
+                        <div className="text-sm font-semibold text-slate-600">hediye</div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              }
-            />
+                }
+              />
+            </div>
           </div>
 
           <div className="flex items-center justify-between">
@@ -318,7 +324,7 @@ export default async function HesabimPage() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
             {viewedProducts.map((p) => (
               <ProductCard key={p.id} p={p} />
             ))}

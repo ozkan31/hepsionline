@@ -31,10 +31,11 @@ const DEFAULT_SETTINGS = {
   feature_toggles: {
     ab_test: false,
     maintenance_mode: false,
+    home_feed_footer_gate: false,
   },
 };
 
-function isBooleanRecord(value: unknown) {
+function isBooleanRecord(value: unknown): value is Record<string, boolean> {
   if (!isRecord(value)) return false;
   return Object.values(value).every((v) => typeof v === "boolean");
 }
@@ -153,13 +154,18 @@ function toResponse(settings: {
   maintenance: Prisma.JsonValue;
   featureToggles: Prisma.JsonValue;
 }) {
+  const incomingFeatureToggles = isBooleanRecord(settings.featureToggles) ? settings.featureToggles : {};
+
   return {
     site_name: settings.siteName ?? DEFAULT_SETTINGS.site_name,
     palette: settings.palette ?? DEFAULT_SETTINGS.palette,
     page_palettes: settings.pagePalettes ?? DEFAULT_SETTINGS.page_palettes,
     ab_tests: settings.abTests ?? DEFAULT_SETTINGS.ab_tests,
     maintenance: settings.maintenance ?? DEFAULT_SETTINGS.maintenance,
-    feature_toggles: settings.featureToggles ?? DEFAULT_SETTINGS.feature_toggles,
+    feature_toggles: {
+      ...DEFAULT_SETTINGS.feature_toggles,
+      ...incomingFeatureToggles,
+    },
   };
 }
 

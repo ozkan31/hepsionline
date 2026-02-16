@@ -1,4 +1,5 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
+import { MobileBottomBar } from "@/components/mobile-bottom-bar";
 import { Poppins } from "next/font/google";
 import { resolveLocalBaseUrl } from "@/lib/runtime-port";
 import "./globals.css";
@@ -33,8 +34,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="tr">
-      <body className={`${poppins.variable} antialiased`}>{children}</body>
+      <body className={`${poppins.variable} antialiased`}>
+        {children}
+        <MobileBottomBar />
+      </body>
     </html>
   );
 }
-

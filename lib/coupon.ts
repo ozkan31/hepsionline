@@ -38,6 +38,10 @@ function calculateDiscount(coupon: Coupon, subtotal: number) {
     return 0;
   }
 
+  if (coupon.type === "PERCENT" && (coupon.value <= 0 || coupon.value > 100)) {
+    return 0;
+  }
+
   let discount = 0;
   if (coupon.type === "FIXED") {
     discount = coupon.value;
@@ -50,6 +54,12 @@ function calculateDiscount(coupon: Coupon, subtotal: number) {
   }
 
   return Math.max(0, Math.min(discount, subtotal));
+}
+
+function paidUsageWhere() {
+  return {
+    OR: [{ orderId: null }, { order: { paymentStatus: "PAID" as const } }],
+  };
 }
 
 async function validateCouponWithDb(
@@ -90,7 +100,7 @@ async function validateCouponWithDb(
 
   if (coupon.usageLimit && coupon.usageLimit > 0) {
     const usageCount = await db.couponUsage.count({
-      where: { couponId: coupon.id },
+      where: { couponId: coupon.id, ...paidUsageWhere() },
     });
 
     if (usageCount >= coupon.usageLimit) {
@@ -103,6 +113,7 @@ async function validateCouponWithDb(
       where: {
         couponId: coupon.id,
         userEmail: userEmail.toLowerCase(),
+        ...paidUsageWhere(),
       },
     });
 
@@ -160,26 +171,28 @@ export async function clearAppliedCouponCodeCookie() {
 
 export async function getAvailableCouponCountForUser(userEmail: string) {
   const now = new Date();
+  const normalizedEmail = userEmail.toLowerCase();
 
-  const [coupons, usages] = await Promise.all([
+  const [coupons, usageCounts, userUsages] = await Promise.all([
     prisma.coupon.findMany({
       where: {
         isActive: true,
         OR: [{ startsAt: null }, { startsAt: { lte: now } }],
         AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] }],
       },
-      include: {
-        _count: {
-          select: {
-            usages: true,
-          },
-        },
-      },
       take: 200,
+    }),
+    prisma.couponUsage.groupBy({
+      by: ["couponId"],
+      where: paidUsageWhere(),
+      _count: {
+        couponId: true,
+      },
     }),
     prisma.couponUsage.findMany({
       where: {
-        userEmail: userEmail.toLowerCase(),
+        userEmail: normalizedEmail,
+        ...paidUsageWhere(),
       },
       select: {
         couponId: true,
@@ -188,17 +201,26 @@ export async function getAvailableCouponCountForUser(userEmail: string) {
   ]);
 
   const usageByCouponId = new Map<number, number>();
-  for (const usage of usages) {
-    usageByCouponId.set(usage.couponId, (usageByCouponId.get(usage.couponId) ?? 0) + 1);
+  for (const row of usageCounts) {
+    usageByCouponId.set(row.couponId, row._count.couponId);
+  }
+
+  const userUsageByCouponId = new Map<number, number>();
+  for (const usage of userUsages) {
+    userUsageByCouponId.set(
+      usage.couponId,
+      (userUsageByCouponId.get(usage.couponId) ?? 0) + 1,
+    );
   }
 
   let count = 0;
   for (const coupon of coupons) {
-    if (coupon.usageLimit && coupon.usageLimit > 0 && coupon._count.usages >= coupon.usageLimit) {
+    const totalUsageCount = usageByCouponId.get(coupon.id) ?? 0;
+    if (coupon.usageLimit && coupon.usageLimit > 0 && totalUsageCount >= coupon.usageLimit) {
       continue;
     }
 
-    const userUsageCount = usageByCouponId.get(coupon.id) ?? 0;
+    const userUsageCount = userUsageByCouponId.get(coupon.id) ?? 0;
     if (coupon.perUserLimit && coupon.perUserLimit > 0 && userUsageCount >= coupon.perUserLimit) {
       continue;
     }
@@ -231,25 +253,26 @@ export async function getBestCouponSuggestionForUser(
   const normalizedEmail = userEmail.trim().toLowerCase();
   const now = new Date();
 
-  const [coupons, usages] = await Promise.all([
+  const [coupons, usageCounts, usages] = await Promise.all([
     prisma.coupon.findMany({
       where: {
         isActive: true,
         OR: [{ startsAt: null }, { startsAt: { lte: now } }],
         AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] }],
       },
-      include: {
-        _count: {
-          select: {
-            usages: true,
-          },
-        },
-      },
       take: 200,
+    }),
+    prisma.couponUsage.groupBy({
+      by: ["couponId"],
+      where: paidUsageWhere(),
+      _count: {
+        couponId: true,
+      },
     }),
     prisma.couponUsage.findMany({
       where: {
         userEmail: normalizedEmail,
+        ...paidUsageWhere(),
       },
       select: {
         couponId: true,
@@ -258,10 +281,18 @@ export async function getBestCouponSuggestionForUser(
   ]);
 
   const usageByCouponId = new Map<number, number>();
-  for (const usage of usages) {
+  for (const row of usageCounts) {
     usageByCouponId.set(
+      row.couponId,
+      row._count.couponId,
+    );
+  }
+
+  const userUsageByCouponId = new Map<number, number>();
+  for (const usage of usages) {
+    userUsageByCouponId.set(
       usage.couponId,
-      (usageByCouponId.get(usage.couponId) ?? 0) + 1,
+      (userUsageByCouponId.get(usage.couponId) ?? 0) + 1,
     );
   }
 
@@ -275,12 +306,12 @@ export async function getBestCouponSuggestionForUser(
     if (
       coupon.usageLimit &&
       coupon.usageLimit > 0 &&
-      coupon._count.usages >= coupon.usageLimit
+      (usageByCouponId.get(coupon.id) ?? 0) >= coupon.usageLimit
     ) {
       continue;
     }
 
-    const userUsageCount = usageByCouponId.get(coupon.id) ?? 0;
+    const userUsageCount = userUsageByCouponId.get(coupon.id) ?? 0;
     if (
       coupon.perUserLimit &&
       coupon.perUserLimit > 0 &&

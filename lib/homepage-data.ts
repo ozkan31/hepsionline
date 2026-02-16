@@ -1,23 +1,6 @@
-import { prisma } from "@/lib/prisma";
-import { unstable_cache } from "next/cache";
+﻿import { prisma } from "@/lib/prisma";
 
-const CONTAINER_TITLE_POOL = [
-  "Çok Satanlar",
-  "Trend Ürünler",
-  "Fırsat Ürünleri",
-  "Bugüne Özel",
-  "Sizin İçin Seçtiklerimiz",
-  "Yeni Keşifler",
-  "Kaçırılmayacak Ürünler",
-  "Öne Çıkanlar",
-] as const;
-
-const PRODUCTS_PER_CONTAINER = 12;
-const SECTIONS_PER_PAGE = 4;
-const PRODUCT_CACHE_SECONDS = 90;
-const SITE_CACHE_SECONDS = 300;
-const SHUFFLED_IDS_CACHE_SECONDS = 300;
-const FEED_SEED_SOURCE = process.env.HOMEPAGE_RANDOM_SEED ?? "hepsionline-feed-v1";
+const PRODUCTS_PER_PAGE = 48;
 
 export type HomepageProduct = {
   id: number;
@@ -75,179 +58,133 @@ function parsePage(rawPage: number) {
   return Math.floor(rawPage);
 }
 
-function buildSectionTitle(sectionIndex: number) {
-  const base = CONTAINER_TITLE_POOL[sectionIndex % CONTAINER_TITLE_POOL.length] ?? "Öne Çıkanlar";
-  const cycle = Math.floor(sectionIndex / CONTAINER_TITLE_POOL.length) + 1;
-  return cycle > 1 ? `${base} ${sectionIndex + 1}` : base;
-}
+function hashSeed(input: string) {
+  let hash = 2166136261;
 
-function hashStringToSeed(input: string) {
-  let hash = 0;
-
-  for (let index = 0; index < input.length; index += 1) {
-    hash = (hash << 5) - hash + input.charCodeAt(index);
-    hash |= 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
   }
 
-  return Math.abs(hash) || 1;
+  return hash >>> 0;
 }
 
-function createSeededRandom(seed: number) {
-  let value = seed >>> 0;
+function createSeededRng(seed: string) {
+  let state = hashSeed(seed) || 1;
 
   return () => {
-    value += 0x6d2b79f5;
-    let mixed = Math.imul(value ^ (value >>> 15), 1 | value);
-    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed);
-    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
   };
 }
 
-function shuffleWithSeed<T>(items: readonly T[], seedSource: string) {
-  const random = createSeededRandom(hashStringToSeed(seedSource));
-  const shuffled = [...items];
+function shuffleIdsDeterministic(ids: number[], seed: string) {
+  const result = [...ids];
+  const random = createSeededRng(seed);
 
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const randomIndex = Math.floor(random() * (index + 1));
-    [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
   }
 
-  return shuffled;
+  return result;
 }
 
-function buildSectionsFromProducts(products: HomepageProduct[], sectionOffset = 0): HomepageSection[] {
-  if (products.length === 0) {
-    return [];
-  }
-
-  const containerCount = Math.ceil(products.length / PRODUCTS_PER_CONTAINER);
-
-  return Array.from({ length: containerCount }, (_, localSectionIndex) => {
-    const sectionIndex = sectionOffset + localSectionIndex;
-    const startIndex = localSectionIndex * PRODUCTS_PER_CONTAINER;
-    const endIndex = startIndex + PRODUCTS_PER_CONTAINER;
-
-    const sectionProducts = products.slice(startIndex, endIndex).map((product, productIndex) => {
-      return {
-        ...product,
-        sortOrder: productIndex + 1,
-      };
-    });
-
-    return {
-      id: 900000 + sectionIndex,
-      slug: `rastgele-konteyner-${sectionIndex + 1}`,
-      title: buildSectionTitle(sectionIndex),
-      icon: "fire",
-      sortOrder: sectionIndex + 1,
-      siteConfigId: 1,
-      products: sectionProducts,
-    };
-  });
-}
-
-const getCachedSiteData = unstable_cache(
-  async () => {
-    return prisma.siteConfig.findUnique({
-      where: { id: 1 },
-      select: {
-        id: true,
-        brandLetter: true,
-        brandName: true,
-        searchPlaceholder: true,
-        searchButtonLabel: true,
-        categoryNavLabel: true,
-        wishlistLabel: true,
-        quantityLabel: true,
-        decrementLabel: true,
-        incrementLabel: true,
-        sectionTitle: true,
-        sectionIcon: true,
-        headerActions: {
-          orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-          select: {
-            id: true,
-            label: true,
-            icon: true,
-            badgeCount: true,
-          },
+async function getSiteData() {
+  return prisma.siteConfig.findUnique({
+    where: { id: 1 },
+    select: {
+      id: true,
+      brandLetter: true,
+      brandName: true,
+      searchPlaceholder: true,
+      searchButtonLabel: true,
+      categoryNavLabel: true,
+      wishlistLabel: true,
+      quantityLabel: true,
+      decrementLabel: true,
+      incrementLabel: true,
+      sectionTitle: true,
+      sectionIcon: true,
+      headerActions: {
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          label: true,
+          icon: true,
+          badgeCount: true,
         },
-        categories: {
-          where: {
-            parentId: null,
-          },
-          orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-          select: {
-            id: true,
-            label: true,
-            slug: true,
-            isHighlighted: true,
-            children: {
-              orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-              select: {
-                id: true,
-                label: true,
-                slug: true,
-                isHighlighted: true,
-                children: {
-                  orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-                  select: {
-                    id: true,
-                    label: true,
-                    slug: true,
-                    isHighlighted: true,
-                  },
+      },
+      categories: {
+        where: {
+          parentId: null,
+        },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          label: true,
+          slug: true,
+          isHighlighted: true,
+          children: {
+            orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+            select: {
+              id: true,
+              label: true,
+              slug: true,
+              isHighlighted: true,
+              children: {
+                orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+                select: {
+                  id: true,
+                  label: true,
+                  slug: true,
+                  isHighlighted: true,
                 },
               },
             },
           },
         },
       },
-    });
-  },
-  ["homepage-site-config-v3"],
-  { revalidate: SITE_CACHE_SECONDS, tags: ["site-config"] },
-);
+    },
+  });
+}
 
-const getCachedShuffledProductIds = unstable_cache(
-  async () => {
-    const productIds = await prisma.product.findMany({
-      orderBy: [{ id: "asc" }],
-      select: { id: true },
-    });
+async function getHomeFeedFooterGateEnabled() {
+  const settings = await prisma.adminSetting.findUnique({
+    where: { id: 1 },
+    select: { featureToggles: true },
+  });
 
-    return shuffleWithSeed(
-      productIds.map((product) => product.id),
-      FEED_SEED_SOURCE,
-    );
-  },
-  ["homepage-shuffled-product-ids-v1", FEED_SEED_SOURCE],
-  { revalidate: SHUFFLED_IDS_CACHE_SECONDS, tags: ["products", "homepage"] },
-);
+  const toggles =
+    settings?.featureToggles && typeof settings.featureToggles === "object"
+      ? (settings.featureToggles as Record<string, unknown>)
+      : null;
 
-export const getHomepageSectionsPage = unstable_cache(
-  async (page: number) => {
-    const parsedPage = parsePage(page);
-    const shuffledIds = await getCachedShuffledProductIds();
+  return toggles?.home_feed_footer_gate === true;
+}
 
-    const totalProducts = shuffledIds.length;
-    const totalSections = Math.ceil(totalProducts / PRODUCTS_PER_CONTAINER);
-    const totalPages = Math.max(1, Math.ceil(totalSections / SECTIONS_PER_PAGE));
-    const currentPage = Math.min(parsedPage, totalPages);
-    const productOffset = (currentPage - 1) * SECTIONS_PER_PAGE * PRODUCTS_PER_CONTAINER;
-    const pageProductLimit = SECTIONS_PER_PAGE * PRODUCTS_PER_CONTAINER;
-    const sectionOffset = (currentPage - 1) * SECTIONS_PER_PAGE;
-    const selectedProductIds = shuffledIds.slice(productOffset, productOffset + pageProductLimit);
+export async function getHomepageSectionsPage(page: number, feedSeed: string) {
+  const parsedPage = parsePage(page);
 
-    let sections: HomepageSection[] = [];
+  const allProductIds = await prisma.product.findMany({
+    orderBy: [{ id: "desc" }],
+    select: { id: true },
+  });
 
-    if (selectedProductIds.length > 0) {
-      const pageProducts = await prisma.product.findMany({
-        where: {
-          id: {
-            in: selectedProductIds,
-          },
-        },
+  const orderedIds = shuffleIdsDeterministic(
+    allProductIds.map((row) => row.id),
+    feedSeed,
+  );
+
+  const totalProducts = orderedIds.length;
+  const totalPages = Math.max(1, Math.ceil(totalProducts / PRODUCTS_PER_PAGE));
+  const currentPage = Math.min(parsedPage, totalPages);
+  const startIndex = (currentPage - 1) * PRODUCTS_PER_PAGE;
+  const pageProductIds = orderedIds.slice(startIndex, startIndex + PRODUCTS_PER_PAGE);
+
+  const rawProducts = pageProductIds.length
+    ? await prisma.product.findMany({
+        where: { id: { in: pageProductIds } },
         select: {
           id: true,
           name: true,
@@ -275,38 +212,56 @@ export const getHomepageSectionsPage = unstable_cache(
             },
           },
         },
-      });
+      })
+    : [];
 
-      const productsById = new Map(pageProducts.map((product) => [product.id, product]));
-      const orderedProducts = selectedProductIds
-        .map((productId) => productsById.get(productId))
-        .filter((product): product is HomepageProduct => Boolean(product));
+  const productById = new Map(rawProducts.map((product) => [product.id, product]));
+  const products = pageProductIds
+    .map((id) => productById.get(id))
+    .filter((product): product is NonNullable<typeof product> => Boolean(product));
 
-      sections = buildSectionsFromProducts(orderedProducts, sectionOffset);
-    }
+  const sections: HomepageSection[] = products.length
+    ? [
+        {
+          id: 900000 + currentPage,
+          slug: `sizin-icin-oneriler-${currentPage}`,
+          title: "Sizin için öneriler",
+          icon: "fire",
+          sortOrder: 1,
+          siteConfigId: 1,
+          products,
+        },
+      ]
+    : [];
 
-    return {
-      sections,
-      pagination: {
-        currentPage,
-        totalPages,
-        hasPrevPage: currentPage > 1,
-        hasNextPage: currentPage < totalPages,
-        prevPage: currentPage > 1 ? currentPage - 1 : null,
-        nextPage: currentPage < totalPages ? currentPage + 1 : null,
-        totalProducts,
-        totalSections,
-        sectionsPerPage: SECTIONS_PER_PAGE,
-        productsPerSection: PRODUCTS_PER_CONTAINER,
-      } satisfies HomepagePagination,
-    };
-  },
-  ["homepage-sections-page-v2"],
-  { revalidate: PRODUCT_CACHE_SECONDS, tags: ["products", "homepage"] },
-);
+  return {
+    sections,
+    pagination: {
+      currentPage,
+      totalPages,
+      hasPrevPage: currentPage > 1,
+      hasNextPage: currentPage < totalPages,
+      prevPage: currentPage > 1 ? currentPage - 1 : null,
+      nextPage: currentPage < totalPages ? currentPage + 1 : null,
+      totalProducts,
+      totalSections: totalPages,
+      sectionsPerPage: 1,
+      productsPerSection: PRODUCTS_PER_PAGE,
+    } satisfies HomepagePagination,
+  };
+}
 
-export async function getHomepageData(page = 1) {
-  const [site, productPayload] = await Promise.all([getCachedSiteData(), getHomepageSectionsPage(page)]);
+export async function getHomepageData(page = 1, feedSeedOverride?: string) {
+  const normalizedSeed = typeof feedSeedOverride === "string" ? feedSeedOverride.trim() : "";
+  const feedSeed =
+    normalizedSeed.length > 0 && normalizedSeed.length <= 120
+      ? normalizedSeed
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const [site, productPayload, homeFeedFooterGateEnabled] = await Promise.all([
+    getSiteData(),
+    getHomepageSectionsPage(page, feedSeed),
+    getHomeFeedFooterGateEnabled(),
+  ]);
 
   if (!site) {
     return null;
@@ -314,6 +269,8 @@ export async function getHomepageData(page = 1) {
 
   return {
     ...site,
+    feedSeed,
+    homeFeedFooterGateEnabled,
     ...productPayload,
   };
 }

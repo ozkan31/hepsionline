@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
+import { calculateTieredSellingPrice } from "./xml-pricing.mjs";
 
 const prisma = new PrismaClient();
 
-const XML_FILE_PATH = path.resolve(process.cwd(), "xml.xml");
-const MARKUP_RATE = 0.45;
+const XML_FILE_CANDIDATES = ["\u00fcr\u00fcn.xml", "urun.xml", "xml.xml"];
 const PRODUCT_BATCH_SIZE = 80;
 const VARIANT_BATCH_SIZE = 1000;
 
@@ -284,15 +284,25 @@ function splitProductChunks(xmlText) {
   return chunks;
 }
 
+function resolveXmlFilePath() {
+  for (const fileName of XML_FILE_CANDIDATES) {
+    const candidate = path.resolve(process.cwd(), fileName);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 function buildProductRow(fields) {
   const name = normalizeText(fields.urun_ad) || "İsimsiz Ürün";
-  const basePriceTry = firstNonNull(
+  const costPriceTry = firstNonNull(
     parseDecimal(fields.urun_fiyat_TL),
     parseDecimal(fields.urun_havale_fiyat_TL),
     parseDecimal(fields.urun_fiyat_site),
     parseDecimal(fields.urun_fiyat),
   );
-  const priceWithMarkupTry = basePriceTry === null ? null : basePriceTry * (1 + MARKUP_RATE);
+  const priceModel = costPriceTry === null ? null : calculateTieredSellingPrice(costPriceTry);
 
   const imageUrls = [];
   for (let imageIndex = 1; imageIndex <= 8; imageIndex += 1) {
@@ -340,8 +350,8 @@ function buildProductRow(fields) {
     sitePrice: toDbDecimal(parseDecimal(fields.urun_fiyat_site)),
     endUserPrice: toDbDecimal(parseDecimal(fields.urun_fiyat_son_kullanici)),
     marketPrice: toDbDecimal(parseDecimal(fields.urun_fiyat_piyasa)),
-    priceWithMarkupTry: toDbDecimal(priceWithMarkupTry),
-    markupRate: toDbDecimal(MARKUP_RATE),
+    priceWithMarkupTry: toDbDecimal(priceModel?.finalPrice ?? null),
+    markupRate: toDbDecimal(priceModel?.rate ?? 0),
     freeShipping: normalizeText(fields.urun_ucretsizKargo) === "1",
     discounted: normalizeText(fields.urun_indirimde) === "1",
     primaryImageUrl: imageUrls[0] ?? null,
@@ -367,12 +377,13 @@ async function insertInBatches(model, rows, batchSize) {
 }
 
 async function main() {
-  if (!fs.existsSync(XML_FILE_PATH)) {
-    throw new Error(`XML dosyası bulunamadı: ${XML_FILE_PATH}`);
+  const xmlFilePath = resolveXmlFilePath();
+  if (!xmlFilePath) {
+    throw new Error(`XML file not found. Checked: ${XML_FILE_CANDIDATES.join(", ")}`);
   }
 
-  console.log(`Reading XML: ${XML_FILE_PATH}`);
-  const xmlText = fs.readFileSync(XML_FILE_PATH, "utf8");
+  console.log(`Reading XML: ${xmlFilePath}`);
+  const xmlText = fs.readFileSync(xmlFilePath, "utf8");
   const productChunks = splitProductChunks(xmlText);
   console.log(`Found product chunks: ${productChunks.length}`);
 

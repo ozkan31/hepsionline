@@ -20,12 +20,22 @@ function parsePage(searchParams: URLSearchParams) {
   return parsed;
 }
 
+function parseSeed(searchParams: URLSearchParams) {
+  const rawValue = searchParams.get("seed");
+  if (!rawValue || rawValue.trim().length === 0) {
+    return "default-seed";
+  }
+
+  return rawValue.trim();
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const page = parsePage(searchParams);
+  const feedSeed = parseSeed(searchParams);
 
   const [payload, cartState, favoriteState] = await Promise.all([
-    getHomepageSectionsPage(page),
+    getHomepageSectionsPage(page, feedSeed),
     getCartHomepageStateFromCookie(),
     getFavoriteHomepageStateFromCookie(),
   ]);

@@ -71,6 +71,7 @@ model Section {
 model Product {
   id              Int            @id @default(autoincrement())
   sectionId       Int
+  sourceProductId String?
   name            String
   imageUrl        String?
   imageAlt        String
@@ -95,6 +96,7 @@ model Product {
   bundleOfferItems BundleOfferItem[]
 
   @@index([sectionId, sortOrder])
+  @@index([sourceProductId])
 }
 
 model ProductBadge {

@@ -251,18 +251,6 @@ export default async function PaymentPage({ params }: { params: Params }) {
       {siteHeader ? <SiteHeader site={siteHeader} cartItemCount={cartItemCount} favoriteItemCount={favoriteItemCount} /> : null}
       <main className={styles.page}>
         <div className={styles.container}>
-          <section className={styles.infoCard}>
-            <div>
-              <h1>GÃ¼venli Ã–deme</h1>
-              <p>
-                SipariÅŸ #{order.orderNo ?? order.id} iÃ§in Ã¶deme adÄ±mÄ±ndasÄ±nÄ±z. Toplam tutar: <strong>{formatPrice(order.totalAmount)}</strong>
-              </p>
-            </div>
-            <Link href="/checkout" className={styles.secondaryLink}>
-              Geri dÃ¶n
-            </Link>
-          </section>
-
           <section className={styles.iframeCard}>
             <iframe
               src={`https://www.paytr.com/odeme/guvenli/${tokenResult.token}`}
@@ -272,9 +260,6 @@ export default async function PaymentPage({ params }: { params: Params }) {
               frameBorder="0"
               scrolling="no"
             />
-            <p className={styles.note}>
-              Ã–deme sonucunda bu sayfadan otomatik olarak sonuÃ§ ekranÄ±na yÃ¶nlendirileceksiniz.
-            </p>
           </section>
         </div>
       </main>

@@ -124,10 +124,14 @@ export default async function SiparislerimPage({ searchParams }: { searchParams:
 
   const orderWhereByDurum = mapDurumToWhere(params.durum);
   const returnNotice = returnStatusMessage(params.status);
+  const customerOrdersWhere = {
+    OR: [{ customerEmail: user.email }, { customerPhone: user.phone }],
+    paymentStatus: "PAID" as const,
+  };
 
   const orders = await prisma.order.findMany({
     where: {
-      OR: [{ customerEmail: user.email }, { customerPhone: user.phone }],
+      ...customerOrdersWhere,
       ...(orderWhereByDurum ? { status: orderWhereByDurum } : {}),
     },
     include: {
@@ -141,7 +145,7 @@ export default async function SiparislerimPage({ searchParams }: { searchParams:
   });
 
   const orderCount = await prisma.order.count({
-    where: { OR: [{ customerEmail: user.email }, { customerPhone: user.phone }] },
+    where: customerOrdersWhere,
   });
 
   return (

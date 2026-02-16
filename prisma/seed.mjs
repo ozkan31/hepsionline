@@ -500,16 +500,118 @@ async function main() {
       },
       categories: {
         create: [
-          { label: "Kategoriler", sortOrder: 1 },
-          { label: "Erkek", sortOrder: 2 },
-          { label: "Avizeler", sortOrder: 3 },
-          { label: "Aydınlatma", sortOrder: 4 },
-          { label: "Elektronik", sortOrder: 5 },
-          { label: "Moda", sortOrder: 6 },
-          { label: "Ev & Yaşam", sortOrder: 7 },
-          { label: "Spor & Outdoor", sortOrder: 8 },
-          { label: "Kozmetik", sortOrder: 9 },
-          { label: "Kitap & Hobi", sortOrder: 10 },
+          {
+            label: "Kategoriler",
+            sortOrder: 1,
+            children: {
+              create: [
+                { label: "Tüm Ürünler", sortOrder: 1 },
+                { label: "Yeni Gelenler", sortOrder: 2 },
+                { label: "Çok Satanlar", sortOrder: 3 },
+              ],
+            },
+          },
+          {
+            label: "Erkek",
+            sortOrder: 2,
+            children: {
+              create: [
+                { label: "Tişört", sortOrder: 1 },
+                { label: "Gömlek", sortOrder: 2 },
+                { label: "Pantolon", sortOrder: 3 },
+                { label: "Ayakkabı", sortOrder: 4 },
+              ],
+            },
+          },
+          {
+            label: "Avizeler",
+            sortOrder: 3,
+            children: {
+              create: [
+                { label: "Modern Avize", sortOrder: 1 },
+                { label: "Klasik Avize", sortOrder: 2 },
+                { label: "Led Avize", sortOrder: 3 },
+              ],
+            },
+          },
+          {
+            label: "Aydınlatma",
+            sortOrder: 4,
+            children: {
+              create: [
+                { label: "Lambader", sortOrder: 1 },
+                { label: "Masa Lambası", sortOrder: 2 },
+                { label: "Duvar Apliği", sortOrder: 3 },
+              ],
+            },
+          },
+          {
+            label: "Elektronik",
+            sortOrder: 5,
+            children: {
+              create: [
+                { label: "Telefon", sortOrder: 1 },
+                { label: "Bilgisayar", sortOrder: 2 },
+                { label: "Kulaklık", sortOrder: 3 },
+                { label: "Akıllı Saat", sortOrder: 4 },
+              ],
+            },
+          },
+          {
+            label: "Moda",
+            sortOrder: 6,
+            children: {
+              create: [
+                { label: "Kadın Giyim", sortOrder: 1 },
+                { label: "Erkek Giyim", sortOrder: 2 },
+                { label: "Çocuk Giyim", sortOrder: 3 },
+              ],
+            },
+          },
+          {
+            label: "Ev & Yaşam",
+            sortOrder: 7,
+            children: {
+              create: [
+                { label: "Mutfak", sortOrder: 1 },
+                { label: "Banyo", sortOrder: 2 },
+                { label: "Dekorasyon", sortOrder: 3 },
+              ],
+            },
+          },
+          {
+            label: "Spor & Outdoor",
+            sortOrder: 8,
+            children: {
+              create: [
+                { label: "Koşu", sortOrder: 1 },
+                { label: "Fitness", sortOrder: 2 },
+                { label: "Kamp", sortOrder: 3 },
+              ],
+            },
+          },
+          {
+            label: "Kozmetik",
+            sortOrder: 9,
+            children: {
+              create: [
+                { label: "Cilt Bakımı", sortOrder: 1 },
+                { label: "Makyaj", sortOrder: 2 },
+                { label: "Parfüm", sortOrder: 3 },
+              ],
+            },
+          },
+          {
+            label: "Kitap & Hobi",
+            sortOrder: 10,
+            children: {
+              create: [
+                { label: "Roman", sortOrder: 1 },
+                { label: "Kişisel Gelişim", sortOrder: 2 },
+                { label: "Oyuncak", sortOrder: 3 },
+              ],
+            },
+          },
           { label: "Kampanyalar", isHighlighted: true, sortOrder: 11 },
         ],
       },

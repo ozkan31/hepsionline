@@ -68,6 +68,12 @@ export async function POST(request: Request) {
       paymentStatus: true,
       cartToken: true,
       customerEmail: true,
+      items: {
+        select: {
+          productId: true,
+          quantity: true,
+        },
+      },
     },
   });
 
@@ -118,9 +124,47 @@ export async function POST(request: Request) {
         });
 
         if (cart) {
-          await tx.cartItem.deleteMany({
-            where: { cartId: cart.id },
-          });
+          for (const orderItem of order.items) {
+            if (!orderItem.productId || orderItem.quantity <= 0) {
+              continue;
+            }
+
+            let remainingToRemove = orderItem.quantity;
+            const cartItems = await tx.cartItem.findMany({
+              where: {
+                cartId: cart.id,
+                productId: orderItem.productId,
+              },
+              orderBy: { id: "asc" },
+              select: {
+                id: true,
+                quantity: true,
+              },
+            });
+
+            for (const cartItem of cartItems) {
+              if (remainingToRemove <= 0) {
+                break;
+              }
+
+              if (cartItem.quantity <= remainingToRemove) {
+                remainingToRemove -= cartItem.quantity;
+                await tx.cartItem.delete({
+                  where: { id: cartItem.id },
+                });
+              } else {
+                await tx.cartItem.update({
+                  where: { id: cartItem.id },
+                  data: {
+                    quantity: {
+                      decrement: remainingToRemove,
+                    },
+                  },
+                });
+                remainingToRemove = 0;
+              }
+            }
+          }
         }
       }
 
@@ -178,28 +222,7 @@ export async function POST(request: Request) {
     });
   } else {
     await prisma.$transaction(async (tx) => {
-      await tx.order.update({
-        where: { id: order.id },
-        data: {
-          paymentStatus: "FAILED",
-          status: order.status === "PENDING" ? "CANCELLED" : order.status,
-          paytrTotalAmount: parsedTotalAmount,
-          paytrPaymentType: paymentType,
-          paytrFailedReasonCode: failedReasonCode,
-          paytrFailedReasonMsg: failedReasonMsg,
-          paymentCompletedAt: null,
-        },
-      });
-
-      const orderItems = await tx.orderItem.findMany({
-        where: { orderId: order.id, productId: { not: null } },
-        select: {
-          productId: true,
-          quantity: true,
-        },
-      });
-
-      for (const item of orderItems) {
+      for (const item of order.items) {
         if (!item.productId) {
           continue;
         }
@@ -216,6 +239,30 @@ export async function POST(request: Request) {
           },
         });
       }
+
+      await tx.couponUsage.deleteMany({
+        where: {
+          orderId: order.id,
+        },
+      });
+
+      await tx.adminAuditLog.create({
+        data: {
+          action: "paytr:failed_order_deleted",
+          entity: "order",
+          entityId: String(order.id),
+          afterJson: {
+            paytrTotalAmount: parsedTotalAmount,
+            paytrPaymentType: paymentType,
+            failedReasonCode,
+            failedReasonMsg,
+          },
+        },
+      });
+
+      await tx.order.delete({
+        where: { id: order.id },
+      });
     });
   }
 

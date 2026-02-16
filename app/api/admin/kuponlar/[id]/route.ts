@@ -40,7 +40,7 @@ export async function PATCH(
 
     const existing = await prisma.coupon.findUnique({
       where: { id: couponId },
-      select: { id: true, type: true },
+      select: { id: true, type: true, value: true },
     });
     if (!existing) {
       return jsonError(404, "NOT_FOUND", "Coupon not found.");
@@ -160,7 +160,7 @@ export async function PATCH(
     }
 
     const effectiveType = patch.type ?? existing.type;
-    const effectiveValue = patch.value;
+    const effectiveValue = patch.value ?? existing.value;
     if (effectiveType === "PERCENT" && effectiveValue && effectiveValue > 100) {
       return jsonError(
         400,
@@ -242,4 +242,3 @@ export async function DELETE(
     return jsonError(500, "INTERNAL_ERROR", "Unexpected server error.");
   }
 }
-

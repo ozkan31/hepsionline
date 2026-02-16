@@ -155,6 +155,17 @@ function PlusIcon({ className = "" }: IconProps) {
   );
 }
 
+function TrashIcon({ className = "" }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 7h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M9 7V5.8c0-.9.7-1.6 1.6-1.6h2.8c.9 0 1.6.7 1.6 1.6V7" stroke="currentColor" strokeWidth="2" />
+      <path d="M7.5 7.5 8.3 19c.1 1 .9 1.8 1.9 1.8h3.6c1 0 1.8-.8 1.9-1.8l.8-11.5" stroke="currentColor" strokeWidth="2" />
+      <path d="M10 10.5v6M14 10.5v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function formatPrice(value: number) {
   return new Intl.NumberFormat("tr-TR", {
     style: "currency",
@@ -365,7 +376,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
           {hasQuery && products.length > 0 ? (
             <div className="products-grid">
-              {products.map((product) => {
+              {products.map((product, index) => {
                 const cartState = cartStateByProductId.get(product.id);
                 const favoriteState = favoriteStateByProductId.get(product.id);
 
@@ -379,7 +390,17 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                             <span>{product.imageAlt}</span>
                           </div>
                         ) : (
-                          <Image src={product.imageUrl} alt={product.imageAlt} width={400} height={400} className="product-image" />
+                          <Image
+                            src={product.imageUrl}
+                            alt={product.imageAlt}
+                            width={400}
+                            height={400}
+                            className="product-image"
+                            sizes="(max-width: 560px) 50vw, (max-width: 980px) 33vw, 20vw"
+                            quality={70}
+                            loading={index < 10 ? "eager" : "lazy"}
+                            fetchPriority={index < 10 ? "high" : "auto"}
+                          />
                         )}
                       </Link>
 
@@ -446,18 +467,8 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                                 <form action={removeCartItemAction} className="quantity-step-form">
                                   <input type="hidden" name="cartItemId" value={cartState.cartItemId} />
                                   <input type="hidden" name="redirectTo" value={searchRedirect} />
-                                  <button
-                                    type="submit"
-                                    className="quantity-step quantity-step-delete"
-                                    style={{
-                                      color: "#EF4444",
-                                      background: "#FEE2E2",
-                                      backgroundImage: "none",
-                                      border: "1px solid #FECACA",
-                                    }}
-                                    aria-label={`${product.name} sepetten sil`}
-                                  >
-                                    Sil
+                                  <button type="submit" className="quantity-step quantity-step-delete" aria-label={`${product.name} sepetten sil`}>
+                                    <TrashIcon className="icon icon-qty" />
                                   </button>
                                 </form>
                               ) : (

@@ -30,14 +30,14 @@ function SidebarItem({
     <Link
       href={href}
       className={[
-        "group flex items-center gap-3 rounded-xl px-3 py-2 text-[15px] transition",
+        "group flex min-w-0 items-center gap-3 rounded-xl px-3 py-2 text-[14px] transition sm:text-[15px]",
         active
           ? "bg-white shadow-sm ring-1 ring-black/5"
           : "hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-black/5",
       ].join(" ")}
     >
       <span className="text-[#1BA7A6]">{icon}</span>
-      <span className="flex-1 text-slate-700">{label}</span>
+      <span className="flex-1 truncate text-slate-700">{label}</span>
       {badge ? <span className="mr-1">{badge}</span> : null}
       <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-400" />
     </Link>
@@ -53,7 +53,7 @@ export function AccountSidebar({
   className = "",
 }: {
   fullName: string;
-  active: "hesabim" | "adresler" | "siparislerim" | "kuponlar" | "puanlar";
+  active: "hesabim" | "adresler" | "siparislerim" | "kuponlar" | "puanlar" | "mesajlar";
   orderCount?: number;
   favoriteCount?: number;
   couponCount?: number;
@@ -63,7 +63,7 @@ export function AccountSidebar({
   const firstLetter = fullName.charAt(0).toUpperCase();
 
   return (
-    <aside className={`-ml-[70px] self-start rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 ${className}`.trim()}>
+    <aside className={`-ml-0 w-full self-start rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 md:-ml-[70px] ${className}`.trim()}>
       <div className="flex items-center gap-4">
         <div className="grid h-14 w-14 place-items-center rounded-full bg-slate-200 text-xl font-bold text-slate-700">{firstLetter}</div>
         <div className="min-w-0">
@@ -85,13 +85,17 @@ export function AccountSidebar({
           active={active === "siparislerim"}
           badge={<PillBadge text={String(orderCount)} />}
         />
-        <SidebarItem
-          href="/favoriler"
-          icon={<Heart className="h-5 w-5" />}
-          label="Favorilerim"
-          badge={<PillBadge text={String(favoriteCount)} />}
-        />
-        <SidebarItem href="/hesabim/yorumlar" icon={<Star className="h-5 w-5" />} label="Yorumlarım" />
+        <div className="hidden md:block">
+          <SidebarItem
+            href="/favoriler"
+            icon={<Heart className="h-5 w-5" />}
+            label="Favorilerim"
+            badge={<PillBadge text={String(favoriteCount)} />}
+          />
+        </div>
+        <div className="hidden md:block">
+          <SidebarItem href="/hesabim/yorumlar" icon={<Star className="h-5 w-5" />} label="Yorumlarım" />
+        </div>
         <SidebarItem
           href="/hesabim/kuponlar"
           icon={<TicketPercent className="h-5 w-5" />}
@@ -105,7 +109,7 @@ export function AccountSidebar({
           label="Puanlarım"
           active={active === "puanlar"}
         />
-        <SidebarItem href="/hesabim/mesajlar" icon={<MessageSquareText className="h-5 w-5" />} label="Mesajlarım" />
+        <SidebarItem href="/hesabim/mesajlar" icon={<MessageSquareText className="h-5 w-5" />} label="Mesajlarım" active={active === "mesajlar"} />
       </div>
 
       <div className="my-3 h-px bg-slate-200" />

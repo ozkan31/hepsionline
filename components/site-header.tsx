@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { LiveProductSearch } from "@/components/live-product-search";
 import type { SiteHeaderData } from "@/lib/site-header-data";
@@ -221,6 +221,7 @@ export function SiteHeader({
 }) {
   const [isCategoryVisible, setIsCategoryVisible] = useState(true);
   const [isMegaOpen, setIsMegaOpen] = useState(false);
+  const [isMobileMegaOpen, setIsMobileMegaOpen] = useState(false);
   const [isUserLoggedIn, setIsUserLoggedIn] = useState<boolean | null>(null);
   const [activeRootId, setActiveRootId] = useState<number | null>(site.categories[0]?.id ?? null);
   const [expandedChildMap, setExpandedChildMap] = useState<Record<number, boolean>>({});
@@ -298,10 +299,45 @@ export function SiteHeader({
     };
   }, []);
 
+  useEffect(() => {
+    if (!isMobileMegaOpen) {
+      return;
+    }
+
+    const originalOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMobileMegaOpen(false);
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isMobileMegaOpen]);
+
   return (
     <header className="shop-header">
       <div className="shop-container">
         <div className="header-main-row">
+          <button
+            type="button"
+            className="mobile-category-trigger"
+            onClick={() => {
+              if (!activeRootCategory && site.categories[0]) {
+                setActiveRootId(site.categories[0].id);
+              }
+              setIsMobileMegaOpen(true);
+            }}
+            aria-label="Kategoriler menüsünü aç"
+          >
+            <MenuIcon className="icon icon-menu" />
+          </button>
+
           <Link href="/" className="brand-box" aria-label="Ana sayfa">
             <span className="brand-badge">{site.brandLetter}</span>
             <strong className="brand-name">{site.brandName}</strong>
@@ -510,6 +546,116 @@ export function SiteHeader({
           ))}
         </nav>
       </div>
+
+      {isMobileMegaOpen && activeRootCategory ? (
+        <div className="mobile-category-overlay" role="dialog" aria-modal="true" aria-label="Kategoriler">
+          <button
+            type="button"
+            className="mobile-category-backdrop"
+            aria-label="Kategoriler menüsünü kapat"
+            onClick={() => setIsMobileMegaOpen(false)}
+          />
+
+          <div className="mobile-category-panel">
+            <div className="mobile-category-head">
+              <strong>Kategoriler</strong>
+              <button type="button" className="mobile-category-close" onClick={() => setIsMobileMegaOpen(false)}>
+                Kapat
+              </button>
+            </div>
+
+            <div className="mobile-category-body">
+              <div className="mobile-category-left">
+                {site.categories.map((category) => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    className={category.id === activeRootCategory.id ? "category-mega-root is-active" : "category-mega-root"}
+                    onClick={() => setActiveRootId(category.id)}
+                  >
+                    <CategoryRootIcon
+                      iconKey={getRootCategoryIconKey(category.slug, category.label)}
+                      className="icon icon-category-root"
+                    />
+                    <span className="category-root-label">{category.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="mobile-category-right">
+                {activeRootCategory.children.length === 0 ? (
+                  <p className="category-mega-empty">Alt kategori bulunamadı.</p>
+                ) : (
+                  <div className="category-mega-groups">
+                    {activeRootCategory.children.map((childCategory) => (
+                      <div key={childCategory.id} className="category-mega-group">
+                        <Link
+                          href={{ pathname: "/arama", query: { q: childCategory.label } }}
+                          className="category-mega-group-title"
+                          onClick={() => setIsMobileMegaOpen(false)}
+                        >
+                          {childCategory.label}
+                        </Link>
+
+                        {childCategory.children.length > 0 ? (
+                          <div className="category-mega-sublist">
+                            {(expandedChildMap[childCategory.id]
+                              ? childCategory.children
+                              : childCategory.children.slice(0, 5)
+                            ).map((grandChildCategory) => (
+                              <Link
+                                key={grandChildCategory.id}
+                                href={{ pathname: "/arama", query: { q: grandChildCategory.label } }}
+                                className="category-mega-subitem"
+                                onClick={() => setIsMobileMegaOpen(false)}
+                              >
+                                {grandChildCategory.label}
+                              </Link>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {childCategory.children.length > 5 ? (
+                          <button
+                            type="button"
+                            className="category-mega-more-btn"
+                            onClick={() =>
+                              setExpandedChildMap((previous) => ({
+                                ...previous,
+                                [childCategory.id]: !previous[childCategory.id],
+                              }))
+                            }
+                          >
+                            <span>{expandedChildMap[childCategory.id] ? "Daha az gör" : "Daha fazla gör"}</span>
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              aria-hidden="true"
+                              className={
+                                expandedChildMap[childCategory.id]
+                                  ? "icon icon-more-chevron is-open"
+                                  : "icon icon-more-chevron"
+                              }
+                            >
+                              <path
+                                d="M6.5 9.5 12 15l5.5-5.5"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 }

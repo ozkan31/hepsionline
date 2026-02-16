@@ -209,8 +209,11 @@ export default function Dashboard() {
               <div className="text-base font-bold text-slate-900">En cok satan urunler</div>
               {top.length ? (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {top.map((t) => (
-                    <span key={t.productId} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                  {top.map((t, index) => (
+                    <span
+                      key={t.productId != null ? `product-${t.productId}` : `top-${(t.title ?? "urun").toLowerCase()}-${index}`}
+                      className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700"
+                    >
                       {t.title}: {t.qty} adet
                     </span>
                   ))}

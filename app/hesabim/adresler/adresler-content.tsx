@@ -197,10 +197,10 @@ export function AdreslerContent({
                 setEditingAddress(null);
                 setOpen(true);
               }}
-              className="flex items-center gap-2 rounded-xl px-5 py-3 font-semibold text-white"
+              className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-white md:px-5 md:py-3 md:text-base"
               style={{ background: TEAL }}
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-4 w-4 md:h-5 md:w-5" />
               Yeni Adres Ekle
             </button>
           </div>

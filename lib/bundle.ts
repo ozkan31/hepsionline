@@ -9,6 +9,35 @@ type BundleItem = {
   unitPrice: number;
 };
 
+type CompanionRule = {
+  id: string;
+  baseKeywords: string[];
+  companionKeywords: string[];
+};
+
+const COMPANION_RULES: CompanionRule[] = [
+  {
+    id: "shoe-care",
+    baseKeywords: ["ayakkabi", "sneaker", "bot", "terlik", "spor ayakkabi"],
+    companionKeywords: ["temizleme", "temizleyici", "boya", "bakim", "sprey", "tabanlik", "bagcik", "corap"],
+  },
+  {
+    id: "phone-accessory",
+    baseKeywords: ["telefon", "iphone", "samsung", "xiaomi", "akilli telefon"],
+    companionKeywords: ["kilif", "ekran koruyucu", "sarj", "kablo", "adaptor", "powerbank", "kulaklik"],
+  },
+  {
+    id: "laptop-accessory",
+    baseKeywords: ["laptop", "notebook", "macbook", "matebook", "bilgisayar"],
+    companionKeywords: ["mouse", "fare", "klavye", "canta", "stand", "sarj", "adaptor", "kablo"],
+  },
+  {
+    id: "cosmetic-complement",
+    baseKeywords: ["parfum", "deodorant", "sampuan", "krem", "serum", "cilt"],
+    companionKeywords: ["nemlendirici", "yuz temizleme", "tonik", "maske", "gunes kremi", "bakim"],
+  },
+];
+
 export type BundleViewModel = {
   offerId: number | null;
   title: string;
@@ -22,6 +51,48 @@ export type BundleViewModel = {
 
 function clampDiscountPercent(value: number) {
   return Math.max(0, Math.min(40, Math.floor(value)));
+}
+
+function normalizeText(value: string) {
+  return value
+    .toLocaleLowerCase("tr")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchesAnyKeyword(haystack: string, keywords: string[]) {
+  return keywords.some((keyword) => haystack.includes(normalizeText(keyword)));
+}
+
+function getMatchedCompanionRules(baseText: string) {
+  return COMPANION_RULES.filter((rule) => matchesAnyKeyword(baseText, rule.baseKeywords));
+}
+
+function scoreCompanionCandidate(baseText: string, candidateText: string) {
+  const matchedRules = getMatchedCompanionRules(baseText);
+  if (matchedRules.length === 0) {
+    return 0;
+  }
+
+  let bestScore = 0;
+  for (const rule of matchedRules) {
+    let score = 0;
+    if (matchesAnyKeyword(baseText, rule.baseKeywords)) {
+      score += 2;
+    }
+    if (matchesAnyKeyword(candidateText, rule.companionKeywords)) {
+      score += 7;
+    }
+    if (matchesAnyKeyword(candidateText, rule.baseKeywords)) {
+      score -= 3;
+    }
+    bestScore = Math.max(bestScore, score);
+  }
+
+  return bestScore;
 }
 
 function calcBundleTotals(items: BundleItem[], discountPercent: number) {
@@ -122,11 +193,68 @@ async function getSmartCoPurchaseItems(baseProductId: number, limit = 2) {
   });
 
   const productById = new Map(suggestedProducts.map((row) => [row.id, row]));
+  const baseProduct = await prisma.product.findUnique({
+    where: { id: baseProductId },
+    select: { name: true },
+  });
+  const normalizedBase = normalizeText(baseProduct?.name ?? "");
+
   return sorted
     .map((row) => productById.get(row.productId))
     .filter((row): row is NonNullable<typeof row> => Boolean(row))
     .filter((row) => !row.quantityControl || row.quantity > 0)
+    .filter((row) => scoreCompanionCandidate(normalizedBase, normalizeText(row.name)) >= 7)
     .slice(0, limit);
+}
+
+async function getContextualCompanionItems(baseProduct: { id: number; name: string }, limit = 2) {
+  const normalizedBase = normalizeText(baseProduct.name);
+  const matchedRules = getMatchedCompanionRules(normalizedBase);
+  if (matchedRules.length === 0) {
+    return [];
+  }
+
+  const companionKeywords = Array.from(new Set(matchedRules.flatMap((rule) => rule.companionKeywords.map((k) => normalizeText(k)))));
+  if (companionKeywords.length === 0) {
+    return [];
+  }
+
+  const candidates = await prisma.product.findMany({
+    where: {
+      id: { not: baseProduct.id },
+      AND: [
+        { OR: [{ quantityControl: false }, { quantity: { gt: 0 } }] },
+        {
+          OR: companionKeywords.map((keyword) => ({
+            name: { contains: keyword },
+          })),
+        },
+      ],
+    },
+    select: {
+      id: true,
+      name: true,
+      imageUrl: true,
+      imageAlt: true,
+      price: true,
+      quantityControl: true,
+      quantity: true,
+    },
+    take: 80,
+  });
+
+  return candidates
+    .map((candidate) => ({
+      candidate,
+      score: scoreCompanionCandidate(normalizedBase, normalizeText(candidate.name)),
+    }))
+    .filter((row) => row.score >= 7)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.candidate.id - b.candidate.id;
+    })
+    .slice(0, Math.max(1, limit))
+    .map((row) => row.candidate);
 }
 
 export async function getBundleForProduct(productId: number, sectionId?: number | null): Promise<BundleViewModel | null> {
@@ -239,23 +367,8 @@ export async function getBundleForProduct(productId: number, sectionId?: number 
     };
   }
 
-  if (!sectionId) return null;
-  const fallbackProducts = await prisma.product.findMany({
-    where: {
-      sectionId,
-      id: { not: productId },
-    },
-    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-    take: 2,
-    select: {
-      id: true,
-      name: true,
-      imageUrl: true,
-      imageAlt: true,
-      price: true,
-    },
-  });
-  if (fallbackProducts.length < 2) return null;
+  const fallbackProducts = await getContextualCompanionItems(main, 2);
+  if (fallbackProducts.length === 0) return null;
 
   const items: BundleItem[] = [
     {
@@ -304,7 +417,10 @@ export async function getSmartBundleForCart(cartProductIds: number[]): Promise<B
     });
     if (!main) continue;
 
-    const smartCandidates = await getSmartCoPurchaseItems(baseProductId, 2);
+    let smartCandidates = await getSmartCoPurchaseItems(baseProductId, 2);
+    if (smartCandidates.length === 0) {
+      smartCandidates = await getContextualCompanionItems({ id: main.id, name: main.name }, 2);
+    }
     if (smartCandidates.length === 0) continue;
 
     const filteredItems: BundleItem[] = [

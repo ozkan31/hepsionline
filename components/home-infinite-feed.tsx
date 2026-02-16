@@ -1,12 +1,11 @@
-"use client";
+﻿"use client";
 
-import { HomeProductsCarousel } from "@/components/home-products-carousel";
 import { addToCartAction, removeCartItemAction, updateCartItemQuantityAction } from "@/lib/cart-actions";
 import { addToFavoritesAction, removeFavoriteItemAction } from "@/lib/favorites-actions";
 import { buildProductSlug } from "@/lib/product-slug";
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type ProductBadge = {
   id: number;
@@ -73,6 +72,8 @@ type HomeInfiniteFeedProps = {
   initialPagination: PaginationState;
   initialCartStateByProductId: CartStateByProductId;
   initialFavoriteStateByProductId: FavoriteStateByProductId;
+  initialFeedSeed: string;
+  homeFeedFooterGateEnabled: boolean;
 };
 
 type HomeSectionsApiResponse = {
@@ -139,6 +140,17 @@ function PlusIcon({ className = "" }: IconProps) {
   );
 }
 
+function TrashIcon({ className = "" }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 7h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M9 7V5.8c0-.9.7-1.6 1.6-1.6h2.8c.9 0 1.6.7 1.6 1.6V7" stroke="currentColor" strokeWidth="2" />
+      <path d="M7.5 7.5 8.3 19c.1 1 .9 1.8 1.9 1.8h3.6c1 0 1.8-.8 1.9-1.8l.8-11.5" stroke="currentColor" strokeWidth="2" />
+      <path d="M10 10.5v6M14 10.5v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function formatPrice(value: number) {
   return new Intl.NumberFormat("tr-TR", {
     style: "currency",
@@ -161,6 +173,8 @@ export function HomeInfiniteFeed({
   initialPagination,
   initialCartStateByProductId,
   initialFavoriteStateByProductId,
+  initialFeedSeed,
+  homeFeedFooterGateEnabled,
 }: HomeInfiniteFeedProps) {
   const [sections, setSections] = useState<ProductSection[]>(initialSections);
   const [pagination, setPagination] = useState<PaginationState>(initialPagination);
@@ -170,6 +184,7 @@ export function HomeInfiniteFeed({
   );
   const [isLoadingNextPage, setIsLoadingNextPage] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const isFetchingRef = useRef(false);
   const loadedPagesRef = useRef(new Set<number>([initialPagination.currentPage]));
@@ -186,7 +201,12 @@ export function HomeInfiniteFeed({
     setLoadError(null);
 
     try {
-      const response = await fetch(`/api/home/sections?page=${nextPage}`, {
+      const query = new URLSearchParams({
+        page: String(nextPage),
+        seed: initialFeedSeed,
+      });
+
+      const response = await fetch(`/api/home/sections?${query.toString()}`, {
         method: "GET",
         cache: "no-store",
         headers: {
@@ -219,9 +239,63 @@ export function HomeInfiniteFeed({
       isFetchingRef.current = false;
       setIsLoadingNextPage(false);
     }
-  }, [pagination.hasNextPage, pagination.nextPage]);
+  }, [initialFeedSeed, pagination.hasNextPage, pagination.nextPage]);
+
+  const flatProducts = useMemo(() => {
+    const seen = new Set<number>();
+    const result: ProductItem[] = [];
+
+    for (const section of sections) {
+      for (const product of section.products ?? []) {
+        if (seen.has(product.id)) {
+          continue;
+        }
+        seen.add(product.id);
+        result.push(product);
+      }
+    }
+
+    return result;
+  }, [sections]);
 
   useEffect(() => {
+    const query = window.matchMedia("(max-width: 820px)");
+    const sync = () => {
+      setIsMobileViewport(query.matches);
+    };
+
+    sync();
+    query.addEventListener("change", sync);
+
+    return () => {
+      query.removeEventListener("change", sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("feedSeed")) {
+      return;
+    }
+    url.searchParams.delete("feedSeed");
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState(null, "", next);
+  }, []);
+
+  const productLimit = isMobileViewport ? 50 : 100;
+  const shouldShowFooterGate =
+    homeFeedFooterGateEnabled && flatProducts.length >= productLimit;
+  const shouldPauseAutoLoad = shouldShowFooterGate;
+  const homeRedirectTarget = useMemo(
+    () => `/?feedSeed=${encodeURIComponent(initialFeedSeed)}`,
+    [initialFeedSeed],
+  );
+
+  useEffect(() => {
+    if (shouldPauseAutoLoad) {
+      return;
+    }
+
     const sentinelElement = sentinelRef.current;
     if (!sentinelElement) {
       return;
@@ -248,166 +322,205 @@ export function HomeInfiniteFeed({
     return () => {
       observer.disconnect();
     };
-  }, [loadNextPage]);
+  }, [loadNextPage, shouldPauseAutoLoad]);
+
+  useEffect(() => {
+    if (shouldPauseAutoLoad || !pagination.hasNextPage || isLoadingNextPage || isFetchingRef.current) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void loadNextPage();
+    }, 120);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isLoadingNextPage, loadNextPage, pagination.hasNextPage, pagination.currentPage, shouldPauseAutoLoad]);
 
   return (
     <div className="best-sellers-list">
-      {sections.map((section) => {
-        const sectionProducts = section.products ?? [];
+      <div className="section-title-row">
+        {site.sectionIcon === "fire" ? <FireIcon className="icon icon-fire" /> : null}
+        <h1>Sizin için öneriler</h1>
+      </div>
 
-        if (sectionProducts.length === 0) {
-          return null;
-        }
+      <div className="products-grid">
+        {flatProducts.map((product, index) => {
+          const cartState = cartStateByProductId[String(product.id)];
+          const favoriteState = favoriteStateByProductId[String(product.id)];
 
-        return (
-          <div key={section.id} className="best-sellers-container">
-            <div className="section-title-row">
-              {section.icon === "fire" || site.sectionIcon === "fire" ? <FireIcon className="icon icon-fire" /> : null}
-              <h1>{section.title}</h1>
-            </div>
-
-            <HomeProductsCarousel>
-              {sectionProducts.map((product) => {
-                const cartState = cartStateByProductId[String(product.id)];
-                const favoriteState = favoriteStateByProductId[String(product.id)];
-
-                return (
-                  <article key={product.id} className="product-card">
-                    <div className="product-image-wrap">
-                      <Link href={`/urun/${buildProductSlug(product.name, product.id)}`} aria-label={`${product.name} detayı`}>
-                        {product.imageBroken || !product.imageUrl ? (
-                          <div className="image-placeholder">
-                            <span className="placeholder-symbol">Görsel</span>
-                            <span>{product.imageAlt}</span>
-                          </div>
-                        ) : (
-                          <Image src={product.imageUrl} alt={product.imageAlt} width={400} height={400} className="product-image" />
-                        )}
-                      </Link>
-
-                      <div className="badge-stack">
-                        {product.badges.map((badge) => (
-                          <span
-                            key={badge.id}
-                            className={badge.tone === "orange" ? "product-badge badge-orange" : "product-badge badge-red"}
-                          >
-                            {badge.label}
-                          </span>
-                        ))}
-                      </div>
-
-                      {product.showWishlist ? (
-                        <form action={favoriteState ? removeFavoriteItemAction : addToFavoritesAction} className="wishlist-form">
-                          {favoriteState ? (
-                            <input type="hidden" name="favoriteItemId" value={favoriteState.favoriteItemId} />
-                          ) : (
-                            <input type="hidden" name="productId" value={product.id} />
-                          )}
-                          <input type="hidden" name="redirectTo" value="/" />
-                          <button
-                            type="submit"
-                            className={favoriteState ? "wishlist-button wishlist-button-active" : "wishlist-button"}
-                            aria-label={favoriteState ? "Favorilerden çıkar" : site.wishlistLabel}
-                          >
-                            <HeartIcon className={favoriteState ? "icon icon-heart-mini is-active" : "icon icon-heart-mini"} />
-                          </button>
-                        </form>
-                      ) : null}
+          return (
+            <article key={product.id} className="product-card">
+              <div className="product-image-wrap">
+                <Link href={`/urun/${buildProductSlug(product.name, product.id)}`} aria-label={`${product.name} detayı`}>
+                  {product.imageBroken || !product.imageUrl ? (
+                    <div className="image-placeholder">
+                      <span className="placeholder-symbol">Görsel</span>
+                      <span>{product.imageAlt}</span>
                     </div>
+                  ) : (
+                    <Image
+                      src={product.imageUrl}
+                      alt={product.imageAlt}
+                      width={400}
+                      height={400}
+                      className="product-image"
+                      sizes="(max-width: 560px) 50vw, (max-width: 980px) 33vw, 20vw"
+                      quality={70}
+                      loading={index < 10 ? "eager" : "lazy"}
+                      fetchPriority={index < 10 ? "high" : "auto"}
+                    />
+                  )}
+                </Link>
 
-                    <div className="product-content">
-                      <h2 className="product-name">
-                        <Link href={`/urun/${buildProductSlug(product.name, product.id)}`} className="product-link">
-                          {product.name}
-                        </Link>
-                      </h2>
+                <div className="badge-stack">
+                  {product.badges.map((badge) => (
+                    <span key={badge.id} className={badge.tone === "orange" ? "product-badge badge-orange" : "product-badge badge-red"}>
+                      {badge.label}
+                    </span>
+                  ))}
+                </div>
 
-                      <div className="rating-row">
-                        <div className="star-row" aria-hidden="true">
-                          {Array.from({ length: 5 }).map((_, starIndex) => (
-                            <StarIcon
-                              key={`${product.id}-${starIndex}`}
-                              className={starIndex < product.filledStars ? "icon icon-star-filled" : "icon icon-star-empty"}
-                            />
-                          ))}
-                        </div>
-                        <span className="rating-count">({product.ratingCount})</span>
-                      </div>
+                {product.showWishlist ? (
+                  <form action={favoriteState ? removeFavoriteItemAction : addToFavoritesAction} className="wishlist-form">
+                    {favoriteState ? (
+                      <input type="hidden" name="favoriteItemId" value={favoriteState.favoriteItemId} />
+                    ) : (
+                      <input type="hidden" name="productId" value={product.id} />
+                    )}
+                    <input type="hidden" name="redirectTo" value={homeRedirectTarget} />
+                    <button
+                      type="submit"
+                      className={favoriteState ? "wishlist-button wishlist-button-active" : "wishlist-button"}
+                      aria-label={favoriteState ? "Favorilerden çıkar" : site.wishlistLabel}
+                    >
+                      <HeartIcon className={favoriteState ? "icon icon-heart-mini is-active" : "icon icon-heart-mini"} />
+                    </button>
+                  </form>
+                ) : null}
+              </div>
 
-                      <div className="price-row">
-                        <strong className="current-price">{formatPrice(product.price)}</strong>
-                      </div>
+              <div className="product-content">
+                <h2 className="product-name">
+                  <Link href={`/urun/${buildProductSlug(product.name, product.id)}`} className="product-link">
+                    {product.name}
+                  </Link>
+                </h2>
 
-                      <div className="cart-row">
-                        {cartState ? (
-                          <div className="cart-split">
-                            <span className="cart-added-label">{product.cartStateLabel || "Sepete eklendi"}</span>
+                <div className="rating-row">
+                  <div className="star-row" aria-hidden="true">
+                    {Array.from({ length: 5 }).map((_, starIndex) => (
+                      <StarIcon
+                        key={`${product.id}-${starIndex}`}
+                        className={starIndex < product.filledStars ? "icon icon-star-filled" : "icon icon-star-empty"}
+                      />
+                    ))}
+                  </div>
+                  <span className="rating-count">({product.ratingCount})</span>
+                </div>
 
-                            <div className="quantity-box" aria-label={site.quantityLabel}>
-                              {cartState.quantity <= 1 ? (
-                                <form action={removeCartItemAction} className="quantity-step-form">
-                                  <input type="hidden" name="cartItemId" value={cartState.cartItemId} />
-                                  <input type="hidden" name="redirectTo" value="/" />
-                                  <button
-                                    type="submit"
-                                    className="quantity-step quantity-step-delete"
-                                    style={{
-                                      color: "#EF4444",
-                                      background: "#FEE2E2",
-                                      backgroundImage: "none",
-                                      border: "1px solid #FECACA",
-                                    }}
-                                    aria-label={`${product.name} sepetten sil`}
-                                  >
-                                    Sil
-                                  </button>
-                                </form>
-                              ) : (
-                                <form action={updateCartItemQuantityAction} className="quantity-step-form">
-                                  <input type="hidden" name="cartItemId" value={cartState.cartItemId} />
-                                  <input type="hidden" name="quantity" value={cartState.quantity - 1} />
-                                  <input type="hidden" name="redirectTo" value="/" />
-                                  <button type="submit" className="quantity-step" aria-label={`${product.name} adet azalt`}>
-                                    <MinusIcon className="icon icon-qty" />
-                                  </button>
-                                </form>
-                              )}
+                <div className="price-row">
+                  <strong className="current-price">{formatPrice(product.price)}</strong>
+                </div>
 
-                              <span className="quantity-value">{cartState.quantity}</span>
+                <div className="cart-row">
+                  {cartState ? (
+                    <div className="cart-split">
+                      <span className="cart-added-label">{product.cartStateLabel || "Sepete eklendi"}</span>
 
-                              <form action={updateCartItemQuantityAction} className="quantity-step-form">
-                                <input type="hidden" name="cartItemId" value={cartState.cartItemId} />
-                                <input type="hidden" name="quantity" value={cartState.quantity + 1} />
-                                <input type="hidden" name="redirectTo" value="/" />
-                                <button type="submit" className="quantity-step" aria-label={`${product.name} adet artır`}>
-                                  <PlusIcon className="icon icon-qty" />
-                                </button>
-                              </form>
-                            </div>
-                          </div>
+                      <div className="quantity-box" aria-label={site.quantityLabel}>
+                        {cartState.quantity <= 1 ? (
+                          <form action={removeCartItemAction} className="quantity-step-form">
+                            <input type="hidden" name="cartItemId" value={cartState.cartItemId} />
+                            <input type="hidden" name="redirectTo" value={homeRedirectTarget} />
+                            <button type="submit" className="quantity-step quantity-step-delete" aria-label={`${product.name} sepetten sil`}>
+                              <TrashIcon className="icon icon-qty" />
+                            </button>
+                          </form>
                         ) : (
-                          <form action={addToCartAction} className="cart-form">
-                            <input type="hidden" name="productId" value={product.id} />
-                            <input type="hidden" name="quantity" value={1} />
-                            <input type="hidden" name="redirectTo" value="/" />
-                            <button type="submit" className="cart-button">
-                              {product.addToCartLabel}
+                          <form action={updateCartItemQuantityAction} className="quantity-step-form">
+                            <input type="hidden" name="cartItemId" value={cartState.cartItemId} />
+                            <input type="hidden" name="quantity" value={cartState.quantity - 1} />
+                            <input type="hidden" name="redirectTo" value={homeRedirectTarget} />
+                            <button type="submit" className="quantity-step" aria-label={`${product.name} adet azalt`}>
+                              <MinusIcon className="icon icon-qty" />
                             </button>
                           </form>
                         )}
+
+                        <span className="quantity-value">{cartState.quantity}</span>
+
+                        <form action={updateCartItemQuantityAction} className="quantity-step-form">
+                          <input type="hidden" name="cartItemId" value={cartState.cartItemId} />
+                          <input type="hidden" name="quantity" value={cartState.quantity + 1} />
+                          <input type="hidden" name="redirectTo" value={homeRedirectTarget} />
+                          <button type="submit" className="quantity-step" aria-label={`${product.name} adet artır`}>
+                            <PlusIcon className="icon icon-qty" />
+                          </button>
+                        </form>
                       </div>
                     </div>
-                  </article>
-                );
-              })}
-            </HomeProductsCarousel>
-          </div>
-        );
-      })}
+                  ) : (
+                    <form action={addToCartAction} className="cart-form">
+                      <input type="hidden" name="productId" value={product.id} />
+                      <input type="hidden" name="quantity" value={1} />
+                      <input type="hidden" name="redirectTo" value={homeRedirectTarget} />
+                      <button type="submit" className="cart-button">
+                        {product.addToCartLabel}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
 
-      <div ref={sentinelRef} className="home-infinite-sentinel" aria-hidden="true" />
+      {!shouldPauseAutoLoad ? <div ref={sentinelRef} className="home-infinite-sentinel" aria-hidden="true" /> : null}
 
       {isLoadingNextPage ? <p className="home-infinite-status">Ürünler yükleniyor...</p> : null}
+
+      {shouldShowFooterGate ? (
+        <div className="home-footer-gate">
+          {pagination.hasNextPage ? (
+            <button
+              type="button"
+              className="home-footer-gate-button"
+              onClick={() => void loadNextPage()}
+              disabled={isLoadingNextPage || isFetchingRef.current}
+            >
+              {isLoadingNextPage ? "Yükleniyor..." : "Daha fazla gör"}
+            </button>
+          ) : null}
+
+          <footer className="home-site-footer" aria-label="Site alt bilgi">
+            <div className="home-site-footer-grid">
+              <div>
+                <h3>Iletisim</h3>
+                <p>Adres: atakent mahallesi 9. çıkmaz sokak eska no: 3 küçükçekmece/istanbul</p>
+                <p>Telefon: 05464759516</p>
+                <p>E-posta: luxeevora@gmail.com</p>
+              </div>
+
+              <div>
+                <h3>Kurumsal</h3>
+                <Link href="/on-bilgilendirme-formu">On Bilgilendirme Formu</Link>
+                <a href="#">Mesafeli Satis Sozlesmesi</a>
+                <Link href="/gizlilik-politikasi">Gizlilik Politikasi</Link>
+                <Link href="/kvkk-aydinlatma-metni">KVKK Aydinlatma Metni</Link>
+              </div>
+
+              <div>
+                <h3>Destek</h3>
+                <Link href="/iade-ve-iptal-politikasi">Iptal ve Iade Proseduru</Link>
+                <Link href="/teslimat-politikasi">Teslimat Politikasi</Link>
+              </div>
+            </div>
+          </footer>
+        </div>
+      ) : null}
 
       {loadError ? (
         <div className="home-infinite-error">

@@ -62,6 +62,35 @@ function mergePagePalette(base: PagePalette, partial?: Partial<PagePalette>): Pa
   };
 }
 
+function normalizeAbTests(input?: SettingsData["ab_tests"]): AbTestsSettings {
+  const fallback = DEFAULT_AB_TESTS.experiments.home_hero_copy;
+  const incomingHomeHero = input?.experiments?.home_hero_copy;
+  const incomingA = incomingHomeHero?.variants?.A;
+  const incomingB = incomingHomeHero?.variants?.B;
+
+  return {
+    enabled: input?.enabled ?? DEFAULT_AB_TESTS.enabled,
+    experiments: {
+      home_hero_copy: {
+        enabled: incomingHomeHero?.enabled ?? fallback.enabled,
+        traffic: incomingHomeHero?.traffic ?? fallback.traffic,
+        variants: {
+          A: {
+            title: incomingA?.title ?? fallback.variants.A.title,
+            subtitle: incomingA?.subtitle ?? fallback.variants.A.subtitle,
+            cta: incomingA?.cta ?? fallback.variants.A.cta,
+          },
+          B: {
+            title: incomingB?.title ?? fallback.variants.B.title,
+            subtitle: incomingB?.subtitle ?? fallback.variants.B.subtitle,
+            cta: incomingB?.cta ?? fallback.variants.B.cta,
+          },
+        },
+      },
+    },
+  };
+}
+
 export default function SettingsPage() {
   const [s, setS] = useState<SettingsData | null>(null);
   const [siteName, setSiteName] = useState("");
@@ -69,6 +98,7 @@ export default function SettingsPage() {
   const [pages, setPages] = useState<PagePalettes>(DEFAULT_PAGE_PALETTES);
   const [abTests, setAbTests] = useState<AbTestsSettings>(DEFAULT_AB_TESTS);
   const [maintenance, setMaintenance] = useState<MaintenanceSettings>(DEFAULT_MAINTENANCE);
+  const [homeFeedFooterGateEnabled, setHomeFeedFooterGateEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +126,7 @@ export default function SettingsPage() {
           product: mergePagePalette(DEFAULT_PAGE_PALETTES.product, incomingPages?.product),
         });
 
-        if (x.ab_tests) setAbTests(x.ab_tests);
+        setAbTests(normalizeAbTests(x.ab_tests));
 
         if (x.maintenance) {
           setMaintenance({
@@ -111,6 +141,8 @@ export default function SettingsPage() {
             enabled: Boolean(x.feature_toggles?.maintenance_mode),
           }));
         }
+
+        setHomeFeedFooterGateEnabled(Boolean(x.feature_toggles?.home_feed_footer_gate));
       })
       .catch((e) => {
         setError(e instanceof Error ? e.message : "Ayarlar yuklenemedi.");
@@ -174,9 +206,33 @@ export default function SettingsPage() {
     setMaintenance((prev) => ({ ...prev, ...patch }));
   };
 
+  const updateHomeFeedFooterGate = async (enabled: boolean) => {
+    setHomeFeedFooterGateEnabled(enabled);
+    setBusy(true);
+    setSaved(false);
+
+    try {
+      const updated = await adminApi.settingsPatch({
+        feature_toggles: {
+          ab_test: Boolean(abTests.enabled),
+          maintenance_mode: Boolean(maintenance.enabled),
+          home_feed_footer_gate: enabled,
+        },
+      });
+      setS(updated);
+      setHomeFeedFooterGateEnabled(Boolean(updated.feature_toggles?.home_feed_footer_gate));
+      setError(null);
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ozellik durumu kaydedilemedi.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div>
-      <h1>Site Ayarlari</h1>
+    <div className="settings-screen">
+      <h1 className="settings-page-title-main">Site Ayarlari</h1>
       {loading ? <div className="card">Yukleniyor...</div> : null}
       {error ? <div className="card" style={{ color: "#b91c1c" }}>Hata: {error}</div> : null}
 
@@ -186,7 +242,7 @@ export default function SettingsPage() {
           <div className="settings-sub">Site adi ve renk paletlerini kolayca guncelle.</div>
         </div>
         <button
-          className="btn btnPrimary"
+          className="btn btnPrimary settings-save-btn"
           disabled={busy}
           onClick={async () => {
             setBusy(true);
@@ -199,9 +255,9 @@ export default function SettingsPage() {
                 ab_tests: abTests,
                 maintenance,
                 feature_toggles: {
-                  ...(s?.feature_toggles ?? {}),
                   ab_test: Boolean(abTests.enabled),
                   maintenance_mode: Boolean(maintenance.enabled),
+                  home_feed_footer_gate: Boolean(homeFeedFooterGateEnabled),
                 },
               });
               setS(updated);
@@ -393,6 +449,27 @@ export default function SettingsPage() {
         </div>
       </div> : null}
 
+      {!loading && !error ? <div className="card settings-card" style={{ marginTop: 14 }}>
+        <div className="settings-card-title">Ana Sayfa Urun Limiti ve Footer</div>
+        <label className="settings-field">
+          <span>Durum</span>
+          <select
+            className="input"
+            value={homeFeedFooterGateEnabled ? "1" : "0"}
+            onChange={(e) => {
+              void updateHomeFeedFooterGate(e.target.value === "1");
+            }}
+          >
+            <option value="0">Kapali</option>
+            <option value="1">Acik</option>
+          </select>
+        </label>
+        <div className="settings-sub">
+          Acik oldugunda ana sayfada mobilde 200, masaustunde 500 urunden sonra otomatik yukleme durur.
+          "Daha fazla gor" butonu ve footer gorunur.
+        </div>
+      </div> : null}
+
       {!loading && !error ? <div className="card settings-debug">
         <div className="settings-debug-head">
           <div>
@@ -400,7 +477,7 @@ export default function SettingsPage() {
             <div className="settings-debug-sub">Ham ayar ciktisi (JSON)</div>
           </div>
           <button
-            className="btn"
+            className="btn settings-copy-btn"
             onClick={async () => {
               if (!s) return;
               const text = JSON.stringify(s, null, 2);

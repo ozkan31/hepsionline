@@ -9,12 +9,20 @@ import { getCurrentUserFromSession } from "@/lib/user-auth";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+type SearchParams = Promise<{
+  feedSeed?: string;
+}>;
+
+export default async function Home({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  const requestedSeed = typeof params.feedSeed === "string" ? params.feedSeed.trim() : "";
+  const safeFeedSeed = requestedSeed.length > 0 && requestedSeed.length <= 120 ? requestedSeed : undefined;
+
   let site = null;
   let loadError: string | null = null;
 
   try {
-    site = await getHomepageData(1);
+    site = await getHomepageData(1, safeFeedSeed);
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Bilinmeyen veritabanı hatası";
     console.error("Homepage DB load failed:", error);
@@ -101,6 +109,8 @@ export default async function Home() {
             initialPagination={site.pagination}
             initialCartStateByProductId={initialCartStateByProductId}
             initialFavoriteStateByProductId={initialFavoriteStateByProductId}
+            initialFeedSeed={site.feedSeed}
+            homeFeedFooterGateEnabled={site.homeFeedFooterGateEnabled}
           />
         </div>
       </section>

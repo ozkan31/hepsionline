@@ -41,6 +41,15 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function parseSelectedCartItemIds(raw: string) {
+  if (!raw) return null;
+  const ids = raw
+    .split(",")
+    .map((value) => Number.parseInt(value.trim(), 10))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  return ids.length > 0 ? Array.from(new Set(ids)) : [];
+}
+
 const STOCK_RESERVATION_ERROR = "STOCK_RESERVATION_ERROR";
 const COUPON_VALIDATION_ERROR = "COUPON_VALIDATION_ERROR";
 const ORDER_NO_GENERATION_ERROR = "ORDER_NO_GENERATION_ERROR";
@@ -410,8 +419,15 @@ export async function clearCartAction(formData: FormData) {
 export async function createOrderFromCartAction(formData: FormData) {
   const perf = createPerfScope("cartAction.createOrderFromCart");
   try {
+  const selectedRaw = getStringField(formData, "selectedCartItemIds");
+  const selectedCartItemIds = parseSelectedCartItemIds(selectedRaw);
+  const checkoutPath =
+    selectedCartItemIds && selectedCartItemIds.length > 0
+      ? `/checkout?selectedCartItemIds=${selectedCartItemIds.join(",")}`
+      : "/checkout";
+
   if (!getPaytrConfig()) {
-    redirect("/checkout?status=paytr_config");
+    redirect(`${checkoutPath}${checkoutPath.includes("?") ? "&" : "?"}status=paytr_config`);
   }
 
   const currentUser = await getCurrentUserFromSession();
@@ -435,12 +451,12 @@ export async function createOrderFromCartAction(formData: FormData) {
   const customerNote = getStringField(formData, "customerNote");
 
   if (!customerName || !customerPhone || !customerAddress || !customerEmail || !isValidEmail(customerEmail)) {
-    redirect("/checkout?status=address_required");
+    redirect(`${checkoutPath}${checkoutPath.includes("?") ? "&" : "?"}status=address_required`);
   }
 
   const cartRef = await findCurrentCart();
   if (!cartRef) {
-    redirect("/checkout?status=empty");
+    redirect(`${checkoutPath}${checkoutPath.includes("?") ? "&" : "?"}status=empty`);
   }
 
   const cart = await perf.time("db.cart.findUnique.forCheckout", () =>
@@ -450,6 +466,7 @@ export async function createOrderFromCartAction(formData: FormData) {
         id: true,
         items: {
           select: {
+            id: true,
             quantity: true,
             unitPrice: true,
             product: {
@@ -467,10 +484,19 @@ export async function createOrderFromCartAction(formData: FormData) {
   );
 
   if (!cart || cart.items.length === 0) {
-    redirect("/checkout?status=empty");
+    redirect(`${checkoutPath}${checkoutPath.includes("?") ? "&" : "?"}status=empty`);
   }
 
-  const totalAmount = cart.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const selectedIdSet = selectedCartItemIds && selectedCartItemIds.length > 0 ? new Set(selectedCartItemIds) : null;
+  const checkoutItems = cart.items.filter((item) => (selectedIdSet ? selectedIdSet.has(item.id) : true));
+
+  if (checkoutItems.length === 0) {
+    redirect(`${checkoutPath}${checkoutPath.includes("?") ? "&" : "?"}status=empty`);
+  }
+
+  const subtotalAmount = checkoutItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const shippingAmount = checkoutItems.length === 0 ? 0 : subtotalAmount >= 1500 ? 0 : 69;
+  const payableTotalAmount = Math.max(0, subtotalAmount + shippingAmount);
   const appliedCouponCode = await getAppliedCouponCodeFromCookie();
   const homeAbVariant = await resolveAbVariantForToken("home_hero_copy", cartRef.token);
   const couponAbVariant = await resolveCouponAbVariantForToken(cartRef.token);
@@ -489,7 +515,7 @@ export async function createOrderFromCartAction(formData: FormData) {
 
       if (appliedCouponCode) {
         const couponValidation = await perf.time("tx.validateCouponInTx", () =>
-          validateCouponInTx(tx, appliedCouponCode, totalAmount, customerEmail.toLowerCase()),
+          validateCouponInTx(tx, appliedCouponCode, subtotalAmount, customerEmail.toLowerCase()),
         );
         if (!couponValidation.ok) {
           throw new Error(COUPON_VALIDATION_ERROR);
@@ -501,7 +527,7 @@ export async function createOrderFromCartAction(formData: FormData) {
         };
       }
 
-      for (const item of cart.items) {
+      for (const item of checkoutItems) {
         if (!item.product.quantityControl) {
           continue;
         }
@@ -539,9 +565,9 @@ export async function createOrderFromCartAction(formData: FormData) {
             customerNote: customerNote.length > 0 ? customerNote : null,
             paytrMerchantOid,
             cartToken: cartRef.token,
-            totalAmount: Math.max(0, totalAmount - (couponUsage?.discountAmount ?? 0)),
+            totalAmount: Math.max(0, payableTotalAmount - (couponUsage?.discountAmount ?? 0)),
             items: {
-              create: cart.items.map((item) => ({
+              create: checkoutItems.map((item) => ({
                 productId: item.product.id,
                 productName: item.product.name,
                 quantity: item.quantity,
@@ -577,8 +603,10 @@ export async function createOrderFromCartAction(formData: FormData) {
             entity: "order",
             entityId: String(createdOrder.id),
             afterJson: {
-              totalAmount,
-              itemCount: cart.items.length,
+              totalAmount: Math.max(0, payableTotalAmount - (couponUsage?.discountAmount ?? 0)),
+              subtotalAmount,
+              shippingAmount,
+              itemCount: checkoutItems.length,
               couponCode: appliedCouponCode || null,
               discountAmount: couponUsage?.discountAmount ?? 0,
             },
@@ -627,16 +655,16 @@ export async function createOrderFromCartAction(formData: FormData) {
   } catch (error) {
     console.error("Create cart order failed:", error);
     if (error instanceof Error && error.message === STOCK_RESERVATION_ERROR) {
-      redirect("/checkout?status=stock");
+      redirect(`${checkoutPath}${checkoutPath.includes("?") ? "&" : "?"}status=stock`);
     }
     if (error instanceof Error && error.message === COUPON_VALIDATION_ERROR) {
       await clearAppliedCouponCodeCookie();
-      redirect("/checkout?status=coupon");
+      redirect(`${checkoutPath}${checkoutPath.includes("?") ? "&" : "?"}status=coupon`);
     }
     if (error instanceof Error && error.message === ORDER_NO_GENERATION_ERROR) {
-      redirect("/checkout?status=error");
+      redirect(`${checkoutPath}${checkoutPath.includes("?") ? "&" : "?"}status=error`);
     }
-    redirect("/checkout?status=error");
+    redirect(`${checkoutPath}${checkoutPath.includes("?") ? "&" : "?"}status=error`);
   }
 
   await clearAppliedCouponCodeCookie();

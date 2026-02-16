@@ -26,7 +26,17 @@ export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<{
   status?: string;
+  selectedCartItemIds?: string;
 }>;
+
+function parseSelectedCartItemIds(raw?: string) {
+  if (!raw) return null;
+  const ids = raw
+    .split(",")
+    .map((value) => Number.parseInt(value.trim(), 10))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  return ids.length > 0 ? Array.from(new Set(ids)) : [];
+}
 
 function formatPrice(value: number) {
   return new Intl.NumberFormat("tr-TR", {
@@ -67,15 +77,24 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
     redirect("/giris?status=required&next=%2Fcheckout");
   }
 
-  const hasItems = Boolean(cartSummary.cart && cartSummary.cart.items.length > 0);
+  const selectedCartItemIds = parseSelectedCartItemIds(query.selectedCartItemIds);
+  const selectedIdSet = selectedCartItemIds && selectedCartItemIds.length > 0 ? new Set(selectedCartItemIds) : null;
+  const checkoutItems = (cartSummary.cart?.items ?? []).filter((item) => (selectedIdSet ? selectedIdSet.has(item.id) : true));
+  const checkoutItemCount = checkoutItems.reduce((sum, item) => sum + item.quantity, 0);
+  const checkoutTotalAmount = checkoutItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const shippingFree = checkoutTotalAmount >= 1500;
+  const shippingAmount = checkoutItems.length === 0 ? 0 : shippingFree ? 0 : 69;
+  const selectedIdsForRedirect = checkoutItems.map((item) => item.id).join(",");
+  const checkoutRedirectTo = selectedIdsForRedirect ? `/checkout?selectedCartItemIds=${selectedIdsForRedirect}` : "/checkout";
+  const hasItems = checkoutItems.length > 0;
   const hasSavedAddress = Boolean(currentUser.addressLine1?.trim() && currentUser.city?.trim() && currentUser.district?.trim());
   const canSubmit = hasItems && hasSavedAddress;
-  const couponValidation = appliedCouponCode ? await validateCoupon(appliedCouponCode, cartSummary.totalAmount, currentUser.email) : null;
+  const couponValidation = appliedCouponCode ? await validateCoupon(appliedCouponCode, checkoutTotalAmount, currentUser.email) : null;
   const couponDiscount = couponValidation?.ok ? couponValidation.discountAmount : 0;
   const appliedValidCouponCode = couponValidation?.ok ? couponValidation.coupon.code : null;
-  const payableTotal = Math.max(0, cartSummary.totalAmount - couponDiscount);
+  const payableTotal = Math.max(0, checkoutTotalAmount - couponDiscount + shippingAmount);
   const bestCouponSuggestion = await getBestCouponSuggestionForUser(
-    cartSummary.totalAmount,
+    checkoutTotalAmount,
     currentUser.email,
   );
   const couponAbVariant = await resolveCouponAbVariantForToken(
@@ -84,8 +103,8 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   const couponAbValidation =
     couponAbVariant?.couponCode
       ? await validateCoupon(
-          couponAbVariant.couponCode,
-          cartSummary.totalAmount,
+        couponAbVariant.couponCode,
+          checkoutTotalAmount,
           currentUser.email,
         )
       : null;
@@ -104,7 +123,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   const canShowSmartUpsell = hasItems ? await canShowSmartBundleCheckout() : false;
   const smartBundle = canShowSmartUpsell
     ? await getSmartBundleForCart(
-        cartSummary.cart?.items.map((item) => item.product.id) ?? [],
+        checkoutItems.map((item) => item.product.id),
       )
     : null;
 
@@ -233,7 +252,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
                 <h2>Sipariş Özeti</h2>
 
                 <div className={styles.summaryList}>
-                  {cartSummary.cart?.items.map((item) => (
+                  {checkoutItems.map((item) => (
                     <article key={item.id} className={styles.summaryItem}>
                       <div className={styles.summaryImageWrap}>
                         {item.product.imageBroken || !item.product.imageUrl ? (
@@ -274,7 +293,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
                       <b>{formatPrice(couponAbValidation.discountAmount)}</b>
                     </div>
                     <form action={applyCouponAction}>
-                      <input type="hidden" name="redirectTo" value="/checkout" />
+                      <input type="hidden" name="redirectTo" value={checkoutRedirectTo} />
                       <input
                         type="hidden"
                         name="recommendationSource"
@@ -303,7 +322,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
                       <b>{formatPrice(bestCouponSuggestion.discountAmount)}</b>
                     </div>
                     <form action={applyCouponAction}>
-                      <input type="hidden" name="redirectTo" value="/checkout" />
+                      <input type="hidden" name="redirectTo" value={checkoutRedirectTo} />
                       <input type="hidden" name="recommendationSource" value="checkout_best_coupon" />
                       <input
                         type="hidden"
@@ -350,7 +369,11 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
                     </div>
 
                     <form action={addBundleToCartAction}>
-                      <input type="hidden" name="redirectTo" value="/checkout?status=smart_bundle_added" />
+                      <input
+                        type="hidden"
+                        name="redirectTo"
+                        value={`${checkoutRedirectTo}${checkoutRedirectTo.includes("?") ? "&" : "?"}status=smart_bundle_added`}
+                      />
                       <input type="hidden" name="discountPercent" value={smartBundle.discountPercent} />
                       <input type="hidden" name="bundleMode" value="fallback" />
                       <input type="hidden" name="productIds" value={smartBundle.items.map((i) => i.productId).join(",")} />
@@ -365,28 +388,37 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
 
                 <div className={styles.totalRow}>
                   <span>Toplam ürün</span>
-                  <strong>{cartSummary.itemCount}</strong>
+                  <strong>{checkoutItemCount}</strong>
                 </div>
 
                 <div className={styles.totalRow}>
                   <span>Genel toplam</span>
-                  <strong>{formatPrice(cartSummary.totalAmount)}</strong>
+                  <strong>{formatPrice(checkoutTotalAmount)}</strong>
+                </div>
+
+                <div className={styles.totalRow}>
+                  <span>Kargo</span>
+                  <strong>{shippingFree ? "Ucretsiz" : formatPrice(shippingAmount)}</strong>
                 </div>
 
                 {couponDiscount > 0 ? (
-                  <>
-                    <div className={styles.totalRow}>
-                      <span>Kupon indirimi</span>
-                      <strong>-{formatPrice(couponDiscount)}</strong>
-                    </div>
-                    <div className={styles.totalRow}>
-                      <span>Ödenecek tutar</span>
-                      <strong>{formatPrice(payableTotal)}</strong>
-                    </div>
-                  </>
+                  <div className={styles.totalRow}>
+                    <span>Kupon indirimi</span>
+                    <strong>-{formatPrice(couponDiscount)}</strong>
+                  </div>
                 ) : null}
 
+                <div className={styles.totalRow}>
+                  <span>Ödenecek tutar</span>
+                  <strong>{formatPrice(payableTotal)}</strong>
+                </div>
+
                 <form id="checkout-pay-form" action={createOrderFromCartAction} className={styles.payForm}>
+                  <input
+                    type="hidden"
+                    name="selectedCartItemIds"
+                    value={checkoutItems.map((item) => item.id).join(",")}
+                  />
                   <button type="submit" className={styles.submitButton} disabled={!canSubmit}>
                     Ödemeye geç
                   </button>

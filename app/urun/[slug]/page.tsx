@@ -18,6 +18,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import GalleryClient from "./GalleryClient";
+import VariantSelectorClient from "./VariantSelectorClient";
 
 type ParamsLike = {
   params: Promise<{ slug: string }>;
@@ -45,6 +46,126 @@ function normalizeCategoryLabel(value?: string | null) {
   if (!raw) return "Urunler";
   if (raw.toLowerCase() === "xml urun havuzu") return "Urunler";
   return raw;
+}
+
+function normalizeText(value: string) {
+  return value
+    .toLocaleLowerCase("tr")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isLikelyShoeSize(value: string) {
+  const num = Number.parseInt(value, 10);
+  if (Number.isNaN(num)) {
+    return false;
+  }
+  return num >= 30 && num <= 55;
+}
+
+type VariantRow = {
+  option1Name: string | null;
+  option1Value: string | null;
+  option2Name: string | null;
+  option2Value: string | null;
+  option3Name: string | null;
+  option3Value: string | null;
+  stock: number | null;
+};
+
+type VariantOptionGroup = {
+  name: string;
+  values: Array<{ value: string; inStock: boolean }>;
+};
+
+type ColorLink = {
+  label: string;
+  href: string;
+  isActive: boolean;
+};
+
+const KNOWN_COLOR_SLUGS = new Set([
+  "siyah",
+  "beyaz",
+  "krem",
+  "haki",
+  "taba",
+  "bej",
+  "kahve",
+  "mavi",
+  "lacivert",
+  "gri",
+  "kirmizi",
+  "yesil",
+  "mor",
+  "pembe",
+  "turuncu",
+  "sari",
+  "bordo",
+  "antrasit",
+  "camel",
+  "vizon",
+  "ekru",
+  "gold",
+  "gumus",
+  "nude",
+  "mint",
+]);
+
+function toDisplayLabelFromSlug(slug: string) {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildVariantOptionGroups(variants: VariantRow[]) {
+  const groupMap = new Map<string, Map<string, boolean>>();
+  const order: string[] = [];
+
+  for (const variant of variants) {
+    const optionPairs = [
+      [variant.option1Name, variant.option1Value],
+      [variant.option2Name, variant.option2Value],
+      [variant.option3Name, variant.option3Value],
+    ] as const;
+
+    for (const [nameRaw, valueRaw] of optionPairs) {
+      const name = (nameRaw ?? "").trim();
+      const value = (valueRaw ?? "").trim();
+      if (!name || !value) continue;
+
+      if (!groupMap.has(name)) {
+        groupMap.set(name, new Map());
+        order.push(name);
+      }
+
+      const valueMap = groupMap.get(name)!;
+      const prev = valueMap.get(value) ?? false;
+      const inStock = (variant.stock ?? 0) > 0;
+      valueMap.set(value, prev || inStock);
+    }
+  }
+
+  const groups: VariantOptionGroup[] = order.map((name) => {
+    const valueMap = groupMap.get(name)!;
+    const values = Array.from(valueMap.entries()).map(([value, inStock]) => ({ value, inStock }));
+    const allNumeric = values.length > 0 && values.every((item) => !Number.isNaN(Number.parseFloat(item.value)));
+
+    values.sort((a, b) => {
+      if (allNumeric) {
+        return Number.parseFloat(a.value) - Number.parseFloat(b.value);
+      }
+      return a.value.localeCompare(b.value, "tr");
+    });
+
+    return { name, values };
+  });
+
+  return groups;
 }
 
 function Stars({ value }: { value: number }) {
@@ -115,6 +236,7 @@ async function getProductBySlug(slug: string) {
       where: { id },
       select: {
         id: true,
+        sourceProductId: true,
         name: true,
         imageUrl: true,
         imageAlt: true,
@@ -138,50 +260,47 @@ async function getProductBySlug(slug: string) {
 
   const recentlyViewed = await perf.time("cache.recentlyViewed", () => getCachedRecentlyViewedProducts(product.id));
 
-  const [metrics, variants] = await Promise.all([
+  const [metrics, variants, imageUrls, colorLinks] = await Promise.all([
     perf.time("cache.metrics", () => getCachedProductMetrics(product.id)),
-    perf.time("cache.variants", () => getCachedProductVariants(product.id)),
+    perf.time("cache.variants", () => getCachedProductVariants(product.sourceProductId, product.name)),
+    perf.time("cache.images", () => getCachedProductImages(product.sourceProductId, product.imageUrl)),
+    perf.time("cache.colorLinks", () => getCachedVariantColorLinks(product.sourceProductId)),
   ]);
   const bundle = await perf.time("bundle.getBundleForProduct", () => getBundleForProduct(product.id, product.section?.id ?? null));
-
-  const colorSet = new Set<string>();
-  const sizeSet = new Set<string>();
-  for (const variant of variants) {
-    const optionPairs = [
-      [variant.option1Name, variant.option1Value],
-      [variant.option2Name, variant.option2Value],
-      [variant.option3Name, variant.option3Value],
-    ] as const;
-
-    for (const [name, value] of optionPairs) {
-      if (!name || !value) {
-        continue;
-      }
-
-      const normalized = name.toLowerCase();
-      if (normalized.includes("renk") || normalized.includes("color")) {
-        colorSet.add(value);
-      }
-      if (normalized.includes("beden") || normalized.includes("size") || normalized.includes("numara")) {
-        sizeSet.add(value);
-      }
-    }
-  }
+  const variantOptions = buildVariantOptionGroups(variants);
 
   const result = {
     product,
+    imageUrls,
     recentlyViewed,
     reviewCount: metrics.reviewCount,
     questionCount: metrics.questionCount,
     last24HourViews: metrics.last24HourViews,
     last24HourAddToCart: metrics.last24HourAddToCart,
-    colors: Array.from(colorSet),
-    sizes: Array.from(sizeSet),
+    variantOptions,
+    colorLinks,
     bundle,
   };
 
   perf.flush();
   return result;
+}
+
+async function getProductSeoBySlug(slug: string) {
+  const id = parseProductIdFromSlug(slug);
+  if (!id) {
+    return null;
+  }
+
+  return prisma.product.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      imageUrl: true,
+      imageAlt: true,
+    },
+  });
 }
 
 const getCachedRecentlyViewedProducts = unstable_cache(
@@ -252,9 +371,40 @@ const getCachedProductMetrics = unstable_cache(
 );
 
 const getCachedProductVariants = unstable_cache(
-  async (productId: number) =>
-    prisma.xmlImportedProductVariant.findMany({
-      where: { productId },
+  async (sourceProductId: string | null, productName: string) => {
+    let importedProduct: { id: number; name: string } | null = null;
+
+    if (sourceProductId) {
+      importedProduct = await prisma.xmlImportedProduct.findFirst({
+        where: {
+          isActive: true,
+          sourceProductId,
+        },
+        select: { id: true, name: true },
+      });
+    }
+
+    if (!importedProduct) {
+      const normalizedName = normalizeText(productName);
+      if (!normalizedName) {
+        return [];
+      }
+
+      const byName = await prisma.xmlImportedProduct.findFirst({
+        where: { isActive: true, name: productName },
+        select: { id: true, name: true },
+        orderBy: { id: "desc" },
+      });
+
+      if (!byName || normalizeText(byName.name) !== normalizedName) {
+        return [];
+      }
+
+      importedProduct = byName;
+    }
+
+    return prisma.xmlImportedProductVariant.findMany({
+      where: { productId: importedProduct.id },
       select: {
         option1Name: true,
         option1Value: true,
@@ -262,43 +412,178 @@ const getCachedProductVariants = unstable_cache(
         option2Value: true,
         option3Name: true,
         option3Value: true,
+        stock: true,
       },
-      take: 50,
-    }),
+      take: 200,
+    });
+  },
   ["product-detail-variants"],
+  { revalidate: 300 },
+);
+
+const getCachedVariantColorLinks = unstable_cache(
+  async (sourceProductId: string | null): Promise<ColorLink[]> => {
+    if (!sourceProductId) {
+      return [];
+    }
+
+    const current = await prisma.xmlImportedProduct.findUnique({
+      where: { sourceProductId },
+      select: {
+        sourceProductId: true,
+        sourceSeo: true,
+        categoryCode: true,
+      },
+    });
+
+    const currentSeo = (current?.sourceSeo ?? "").trim().toLowerCase();
+    if (!currentSeo) {
+      return [];
+    }
+
+    const parts = currentSeo.split("-").filter(Boolean);
+    if (parts.length < 2) {
+      return [];
+    }
+
+    const suffix = parts[parts.length - 1]!;
+    if (!KNOWN_COLOR_SLUGS.has(suffix)) {
+      return [];
+    }
+
+    const prefix = parts.slice(0, -1).join("-");
+    const siblings = await prisma.xmlImportedProduct.findMany({
+      where: {
+        isActive: true,
+        sourceSeo: { startsWith: `${prefix}-` },
+        categoryCode: current?.categoryCode ?? undefined,
+      },
+      select: {
+        sourceProductId: true,
+        sourceSeo: true,
+        name: true,
+      },
+      take: 40,
+    });
+
+    if (siblings.length === 0) {
+      return [];
+    }
+
+    const products = await prisma.product.findMany({
+      where: {
+        sourceProductId: { in: siblings.map((s) => s.sourceProductId) },
+      },
+      select: {
+        id: true,
+        name: true,
+        sourceProductId: true,
+      },
+    });
+
+    const productBySourceId = new Map(products.map((p) => [p.sourceProductId, p]));
+    const links: ColorLink[] = [];
+    for (const sibling of siblings) {
+      const sourceSeo = (sibling.sourceSeo ?? "").trim().toLowerCase();
+      if (!sourceSeo.startsWith(`${prefix}-`)) continue;
+      const siblingProduct = productBySourceId.get(sibling.sourceProductId);
+      if (!siblingProduct) continue;
+
+      const siblingParts = sourceSeo.split("-").filter(Boolean);
+      const colorToken = siblingParts[siblingParts.length - 1] ?? "";
+      if (!KNOWN_COLOR_SLUGS.has(colorToken)) continue;
+
+      links.push({
+        label: toDisplayLabelFromSlug(colorToken),
+        href: `/urun/${buildProductSlug(siblingProduct.name, siblingProduct.id)}`,
+        isActive: sibling.sourceProductId === sourceProductId,
+      });
+    }
+
+    links.sort((a, b) => a.label.localeCompare(b.label, "tr"));
+    return links;
+  },
+  ["product-detail-color-links"],
+  { revalidate: 300 },
+);
+
+const getCachedProductImages = unstable_cache(
+  async (sourceProductId: string | null, fallbackImageUrl: string | null) => {
+    const unique = new Set<string>();
+
+    if (fallbackImageUrl) {
+      unique.add(fallbackImageUrl);
+    }
+
+    if (!sourceProductId) {
+      return Array.from(unique);
+    }
+
+    const imported = await prisma.xmlImportedProduct.findUnique({
+      where: { sourceProductId },
+      select: {
+        primaryImageUrl: true,
+        imageUrls: true,
+      },
+    });
+
+    if (!imported) {
+      return Array.from(unique);
+    }
+
+    if (imported.primaryImageUrl) {
+      unique.add(imported.primaryImageUrl);
+    }
+
+    if (Array.isArray(imported.imageUrls)) {
+      for (const item of imported.imageUrls) {
+        if (typeof item !== "string") {
+          continue;
+        }
+        const trimmed = item.trim();
+        if (!trimmed) {
+          continue;
+        }
+        unique.add(trimmed);
+      }
+    }
+
+    return Array.from(unique);
+  },
+  ["product-detail-images"],
   { revalidate: 300 },
 );
 
 export async function generateMetadata({ params }: ParamsLike): Promise<Metadata> {
   const { slug } = await params;
-  const data = await getProductBySlug(slug);
-  if (!data) {
+  const product = await getProductSeoBySlug(slug);
+  if (!product) {
     return { title: "Ürün bulunamadı" };
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || resolveLocalBaseUrl();
-  const canonicalSlug = buildProductSlug(data.product.name, data.product.id);
+  const canonicalSlug = buildProductSlug(product.name, product.id);
   const canonicalUrl = `${baseUrl}/urun/${canonicalSlug}`;
   const imageUrl =
-    data.product.imageUrl ||
+    product.imageUrl ||
     "https://images.unsplash.com/photo-1528701800489-20be3c2ea2d6?auto=format&fit=crop&w=1200&q=70";
-  const description = `${data.product.name} ürün detay sayfası`;
+  const description = `${product.name} ürün detay sayfası`;
 
   return {
-    title: data.product.name,
+    title: product.name,
     description,
     alternates: {
       canonical: canonicalUrl,
     },
     openGraph: {
-      title: data.product.name,
+      title: product.name,
       description,
       type: "website",
       url: canonicalUrl,
       images: [
         {
           url: imageUrl,
-          alt: data.product.imageAlt || data.product.name,
+          alt: product.imageAlt || product.name,
         },
       ],
     },
@@ -325,7 +610,7 @@ export default async function ProductDetailPage({ params, searchParams }: Params
     redirect(`/urun/${canonicalSlug}`);
   }
 
-  await prisma.adminAuditLog.create({
+  void prisma.adminAuditLog.create({
     data: {
       action: "event:product_view",
       actorId: currentUser?.email ?? undefined,
@@ -335,13 +620,13 @@ export default async function ProductDetailPage({ params, searchParams }: Params
         slug: canonicalSlug,
       },
     },
-  });
+  }).catch(() => {});
 
   const smartFrom = resolvedSearchParams?.smart_from?.trim();
   const smartBase = Number.parseInt(resolvedSearchParams?.smart_base ?? "", 10);
   const smartTarget = Number.parseInt(resolvedSearchParams?.smart_target ?? "", 10);
   if (smartFrom && Number.isInteger(smartBase) && smartBase > 0 && Number.isInteger(smartTarget) && smartTarget > 0) {
-    await prisma.adminAuditLog.create({
+    void prisma.adminAuditLog.create({
       data: {
         action: "event:smart_bundle_click",
         actorId: currentUser?.email ?? undefined,
@@ -353,11 +638,11 @@ export default async function ProductDetailPage({ params, searchParams }: Params
           currentProductId: data.product.id,
         },
       },
-    });
+    }).catch(() => {});
   }
 
   if (data.bundle?.source === "smart") {
-    await prisma.adminAuditLog.create({
+    void prisma.adminAuditLog.create({
       data: {
         action: "event:smart_bundle_impression",
         actorId: currentUser?.email ?? undefined,
@@ -370,18 +655,17 @@ export default async function ProductDetailPage({ params, searchParams }: Params
           discountPercent: data.bundle.discountPercent,
         },
       },
-    });
+    }).catch(() => {});
   }
 
   const favoriteItem = favoriteSummary.favoriteList?.items.find((item) => item.product.id === data.product.id) ?? null;
 
-  const images = [
-    {
-      id: data.product.id,
-      url: data.product.imageUrl || "https://images.unsplash.com/photo-1528701800489-20be3c2ea2d6?auto=format&fit=crop&w=1200&q=70",
-      alt: data.product.imageAlt || data.product.name || "Ürün görseli",
-    },
-  ];
+  const fallbackImage = data.product.imageUrl || "https://images.unsplash.com/photo-1528701800489-20be3c2ea2d6?auto=format&fit=crop&w=1200&q=70";
+  const images = (data.imageUrls.length > 0 ? data.imageUrls : [fallbackImage]).map((url, index) => ({
+    id: `${data.product.id}-${index + 1}`,
+    url,
+    alt: data.product.imageAlt || data.product.name || "Ürün görseli",
+  }));
 
   const title = data.product.name;
   const categoryLabel = normalizeCategoryLabel(data.product.section?.title);
@@ -432,11 +716,6 @@ export default async function ProductDetailPage({ params, searchParams }: Params
           }
         : undefined,
   };
-  const colors = data.colors;
-  const sizes = data.sizes;
-
-  const activeColor = colors[0];
-  const activeSize = sizes[1] ?? sizes[0];
   const isOutOfStock = stock !== null && stock <= 0;
   const notice =
     resolvedSearchParams?.status === "stock_alert_subscribed"
@@ -506,24 +785,8 @@ export default async function ProductDetailPage({ params, searchParams }: Params
                       </div>
                     </div>
 
-                    {colors.length > 0 ? (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {colors.map((c) => (
-                          <Pill key={c} active={c === activeColor}>
-                            {c}
-                          </Pill>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {sizes.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {sizes.map((s) => (
-                          <SizeBox key={s} active={s === activeSize}>
-                            {s}
-                          </SizeBox>
-                        ))}
-                      </div>
+                    {data.variantOptions.length > 0 ? (
+                      <VariantSelectorClient optionGroups={data.variantOptions} colorLinks={data.colorLinks} />
                     ) : null}
                   </div>
 
@@ -539,6 +802,70 @@ export default async function ProductDetailPage({ params, searchParams }: Params
                   </div>
                 </div>
               </div>
+
+              {data.bundle ? (
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-200/60">
+                  <div className="text-sm font-semibold text-slate-900">{data.bundle.title}</div>
+                  <div className="mt-1 text-xs text-slate-600">%{data.bundle.discountPercent} kombin indirimi (ek urunlerde)</div>
+                  <div className="mt-3 space-y-2">
+                    {data.bundle.items.map((item, idx) => (
+                      <div key={`bundle-mid-${item.productId}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="h-12 w-12 overflow-hidden rounded-lg bg-slate-100">
+                            {item.imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={item.imageUrl} alt={item.imageAlt || item.title} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="grid h-full w-full place-items-center text-[10px] text-slate-500">Gorsel</div>
+                            )}
+                          </div>
+                          {idx === 0 ? (
+                            <span className="line-clamp-2 text-xs text-slate-700">{item.title}</span>
+                          ) : (
+                            <Link
+                              href={`/urun/${buildProductSlug(item.title, item.productId)}?smart_from=product_detail&smart_base=${data.product.id}&smart_target=${item.productId}`}
+                              className="line-clamp-2 text-xs text-slate-700 hover:text-slate-900 hover:underline"
+                            >
+                              {item.title}
+                            </Link>
+                          )}
+                        </div>
+                        <span className="whitespace-nowrap text-xs font-semibold text-slate-800">{formatTRY(item.unitPrice * item.quantity)}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-600">
+                    <div className="flex items-center justify-between">
+                      <span>Paket normal fiyat</span>
+                      <span>{formatTRY(data.bundle.baseTotal)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between font-semibold text-slate-900">
+                      <span>Paket fiyatı</span>
+                      <span>{formatTRY(data.bundle.discountedTotal)}</span>
+                    </div>
+                    <div className="mt-1 text-emerald-700">Kazancınız: {formatTRY(data.bundle.savings)}</div>
+                  </div>
+
+                  <form action={addBundleToCartAction} className="mt-3">
+                    <input type="hidden" name="redirectTo" value={`/urun/${canonicalSlug}`} />
+                    <input type="hidden" name="discountPercent" value={data.bundle.discountPercent} />
+                    <input type="hidden" name="recommendationSource" value={data.bundle.source} />
+                    <input type="hidden" name="baseProductId" value={data.product.id} />
+                    {data.bundle.offerId ? (
+                      <input type="hidden" name="offerId" value={data.bundle.offerId} />
+                    ) : (
+                      <>
+                        <input type="hidden" name="bundleMode" value="fallback" />
+                        <input type="hidden" name="productIds" value={data.bundle.items.map((i) => i.productId).join(",")} />
+                      </>
+                    )}
+                    <button type="submit" className="w-full rounded-xl bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">
+                      Paketi Sepete Ekle
+                    </button>
+                  </form>
+                </div>
+              ) : null}
             </div>
 
             <div className="col-span-12 lg:col-span-3">
@@ -562,19 +889,10 @@ export default async function ProductDetailPage({ params, searchParams }: Params
                       <span className="font-medium text-slate-700">Bugün Kargoda</span>
                     </div>
 
-                    <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-50/70 px-4 py-3 ring-1 ring-slate-200/60">
+                    <div className="mt-4 rounded-2xl bg-slate-50/70 px-4 py-3 ring-1 ring-slate-200/60">
                       <span className="text-sm text-slate-600">
                         Adet: <span className="font-semibold text-slate-800">{stockLabel}</span>
                       </span>
-                      <div className="flex items-center gap-2">
-                        <button className="h-9 w-9 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" type="button">
-                          –
-                        </button>
-                        <div className="min-w-8 text-center text-sm font-semibold text-slate-800">1</div>
-                        <button className="h-9 w-9 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" type="button">
-                          +
-                        </button>
-                      </div>
                     </div>
 
                     {!isOutOfStock ? (
@@ -623,59 +941,6 @@ export default async function ProductDetailPage({ params, searchParams }: Params
                       </button>
                     </form>
 
-                    {data.bundle ? (
-                      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
-                        <div className="text-sm font-semibold text-slate-900">{data.bundle.title}</div>
-                        <div className="mt-1 text-xs text-slate-600">%{data.bundle.discountPercent} kombin indirimi (ek urunlerde)</div>
-                        <div className="mt-3 space-y-2">
-                          {data.bundle.items.map((item, idx) => (
-                            <div key={`bundle-${item.productId}`} className="flex items-center justify-between text-xs text-slate-700">
-                              {idx === 0 ? (
-                                <span className="line-clamp-1">{item.title}</span>
-                              ) : (
-                                <Link
-                                  href={`/urun/${buildProductSlug(item.title, item.productId)}?smart_from=product_detail&smart_base=${data.product.id}&smart_target=${item.productId}`}
-                                  className="line-clamp-1 hover:text-slate-900 hover:underline"
-                                >
-                                  {item.title}
-                                </Link>
-                              )}
-                              <span>{formatTRY(item.unitPrice * item.quantity)}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="mt-2 border-t border-slate-200 pt-2 text-xs text-slate-600">
-                          <div className="flex items-center justify-between">
-                            <span>Paket normal fiyat</span>
-                            <span>{formatTRY(data.bundle.baseTotal)}</span>
-                          </div>
-                          <div className="mt-1 flex items-center justify-between font-semibold text-slate-900">
-                            <span>Paket fiyatı</span>
-                            <span>{formatTRY(data.bundle.discountedTotal)}</span>
-                          </div>
-                          <div className="mt-1 text-emerald-700">Kazancınız: {formatTRY(data.bundle.savings)}</div>
-                        </div>
-
-                        <form action={addBundleToCartAction} className="mt-3">
-                          <input type="hidden" name="redirectTo" value={`/urun/${canonicalSlug}`} />
-                          <input type="hidden" name="discountPercent" value={data.bundle.discountPercent} />
-                          <input type="hidden" name="recommendationSource" value={data.bundle.source} />
-                          <input type="hidden" name="baseProductId" value={data.product.id} />
-                          {data.bundle.offerId ? (
-                            <input type="hidden" name="offerId" value={data.bundle.offerId} />
-                          ) : (
-                            <>
-                              <input type="hidden" name="bundleMode" value="fallback" />
-                              <input type="hidden" name="productIds" value={data.bundle.items.map((i) => i.productId).join(",")} />
-                            </>
-                          )}
-                          <button type="submit" className="w-full rounded-xl bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">
-                            Paketi Sepete Ekle
-                          </button>
-                        </form>
-                      </div>
-                    ) : null}
-
                     <div className="mt-5 space-y-3 text-sm text-slate-600">
                       <div className="flex items-center gap-2">
                         <span className="text-teal-700">✓</span> 14 Gün İade
@@ -715,7 +980,7 @@ export default async function ProductDetailPage({ params, searchParams }: Params
                   <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-700">
                     <li>{title}</li>
                     <li>Kategori: {categoryLabel}</li>
-                    <li>Günlük kullanım ve spor aktiviteleri için ideal</li>
+                    <li>Fiyat: {formatTRY(priceNum)}</li>
                   </ul>
                 </div>
               </div>

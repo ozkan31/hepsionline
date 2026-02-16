@@ -84,6 +84,7 @@ async function main() {
     where: { isActive: true },
     select: {
       id: true,
+      sourceProductId: true,
       name: true,
       primaryImageUrl: true,
       discounted: true,
@@ -111,6 +112,7 @@ async function main() {
 
     return {
       sectionId: section.id,
+      sourceProductId: product.sourceProductId,
       name: product.name || `XML Ürün ${product.id}`,
       imageUrl: product.primaryImageUrl || null,
       imageAlt: product.name || `XML Ürün ${product.id}`,
@@ -121,8 +123,8 @@ async function main() {
       oldPrice,
       addToCartLabel: "Sepete ekle",
       cartStateLabel: "Sepete eklendi",
-      quantityControl: false,
-      quantity: 1,
+      quantityControl: product.stock !== null,
+      quantity: Math.max(0, product.stock ?? 0),
       showWishlist: true,
       sortOrder: index + 1,
     };

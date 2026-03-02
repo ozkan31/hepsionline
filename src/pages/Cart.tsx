@@ -157,7 +157,7 @@ export function Cart() {
                 onClick={() =>
                   state.isAuthenticated
                     ? navigate('/odeme')
-                    : navigate('/hesabim?mode=register&redirect=/odeme')
+                    : navigate('/giris?redirect=/odeme')
                 }
                 className="w-full bg-black text-white py-4 rounded-full font-medium text-sm hover:bg-gray-800 transition-colors"
               >

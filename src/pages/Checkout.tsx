@@ -326,7 +326,7 @@ export function Checkout() {
                       <p>Adres eklemek ve siparişe devam etmek için giriş yapmalısınız.</p>
                       <button
                         type="button"
-                        onClick={() => navigate("/hesabim?mode=register&redirect=/odeme")}
+                        onClick={() => navigate("/giris?redirect=/odeme")}
                         className="bg-black text-white px-5 py-2 rounded-full text-sm"
                       >
                         Giriş Yap / Kayıt Ol

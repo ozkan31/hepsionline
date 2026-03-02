@@ -3,22 +3,26 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Heart, LogOut, MapPin, Package, User, ChevronDown, ChevronUp, Copy } from "lucide-react";
 import { useStore } from "@/store/StoreContext";
 import {
+  checkAuthEmailStatus,
   clearAuthToken,
   deleteAddress,
   fetchCurrentUser,
   getAuthToken,
-  loginUser,
   loginWithGoogle,
   logoutUser,
-  registerUser,
+  requestPasswordReset,
+  resetPassword,
+  startAuthFlow,
+  validateResetToken,
   saveAddress,
   updateAddress,
   updateProfile,
+  verifyAuthFlowCode,
 } from "@/lib/api";
 import { loadTurkeyLocations } from "@/lib/turkiye";
 import type { Address } from "@/types";
 
-type AuthMode = "login" | "register";
+type AuthMode = "login" | "forgot" | "reset";
 type ActiveTab = "orders" | "profile" | "addresses" | "wishlist";
 
 const emptyAddressForm: Omit<Address, "id"> = {
@@ -40,18 +44,21 @@ export function Account() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const [registerForm, setRegisterForm] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authGender, setAuthGender] = useState<"kadin" | "erkek" | "">("");
+  const [authEmailExists, setAuthEmailExists] = useState<boolean | null>(null);
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
+  const [isVerificationCodeSending, setIsVerificationCodeSending] = useState(false);
+  const [verificationDigits, setVerificationDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [resetForm, setResetForm] = useState({
     password: "",
     confirmPassword: "",
   });
-
-  const [loginForm, setLoginForm] = useState({
-    email: "",
-    password: "",
-  });
+  const [successMessage, setSuccessMessage] = useState("");
+  const [resetTokenStatus, setResetTokenStatus] = useState<"idle" | "checking" | "valid" | "invalid">("idle");
+  const [resetTokenError, setResetTokenError] = useState("");
 
   const [profileForm, setProfileForm] = useState({
     firstName: "",
@@ -69,6 +76,24 @@ export function Account() {
   const googleClientId = String(import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "").trim();
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
   const hasRenderedGoogleButtonRef = useRef(false);
+  const verificationInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const normalizeAuthMessage = (message: string) => {
+    const input = String(message ?? "").trim();
+    if (!input) return "İşlem başarısız.";
+    const lower = input.toLowerCase();
+
+    if (lower.includes("google login failed")) return "Google ile giriş başarısız.";
+    if (lower.includes("google client id")) return "Google yapılandırması hatalı.";
+    if (lower.includes("invalid google account")) return "Geçersiz Google hesabı.";
+    if (lower.includes("google email is not verified")) return "Google e-posta hesabı doğrulanmamış.";
+    if (lower.includes("token used too early")) return "Cihaz veya sunucu saati geri. Saati senkronize edip tekrar deneyin.";
+    if (lower.includes("token used too late") || lower.includes("expired")) return "Google oturum süresi dolmuş. Tekrar deneyin.";
+    if (lower.includes("api request failed")) return "İstek sırasında bir hata oluştu.";
+    if (lower.includes("required")) return "Zorunlu alanları doldurun.";
+    if (lower.includes("invalid")) return "Girilen bilgiler geçersiz.";
+    if (lower.includes("failed")) return "İşlem başarısız.";
+    return input;
+  };
 
   useEffect(() => {
     const loadSession = async () => {
@@ -125,12 +150,19 @@ export function Account() {
   }, []);
 
   useEffect(() => {
-    if (state.isAuthenticated) return;
     const params = new URLSearchParams(location.search);
     const mode = params.get("mode");
-    if (mode === "register") {
-      setAuthMode("register");
-    } else if (mode === "login") {
+    const token = params.get("token");
+
+    // Reset token should always take precedence, even if mode is missing.
+    if (token && (mode === "reset" || mode === null || mode === "")) {
+      setAuthMode("reset");
+      return;
+    }
+
+    if (state.isAuthenticated) return;
+
+    if (mode === "login" || mode === "register") {
       setAuthMode("login");
     }
   }, [location.search, state.isAuthenticated]);
@@ -141,7 +173,31 @@ export function Account() {
     }
   }, [authMode]);
 
+  useEffect(() => {
+    setErrorMessage("");
+    setSuccessMessage("");
+  }, [authMode]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get("reset") === "success") {
+      setSuccessMessage("Şifreniz başarıyla değiştirildi.");
+    }
+  }, [location.search]);
+
   const provinceOptions = useMemo(() => Object.keys(locationMap), [locationMap]);
+  const resetTokenFromUrl = useMemo(
+    () => new URLSearchParams(location.search).get("token") ?? "",
+    [location.search]
+  );
+  const resetModeFromUrl = useMemo(
+    () => new URLSearchParams(location.search).get("mode") ?? "",
+    [location.search]
+  );
+  const shouldEnterResetFlow = useMemo(
+    () => Boolean(resetTokenFromUrl) && (resetModeFromUrl === "reset" || resetModeFromUrl === ""),
+    [resetTokenFromUrl, resetModeFromUrl]
+  );
   const addressDistrictOptions = useMemo(
     () => (addressForm.province ? locationMap[addressForm.province] ?? [] : []),
     [locationMap, addressForm.province]
@@ -267,45 +323,180 @@ export function Account() {
     }
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleCheckEmailForAuthFlow = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
+    setSuccessMessage("");
+    try {
+      const result = await checkAuthEmailStatus(authEmail);
+      setAuthEmailExists(result.exists);
+      setAuthPassword("");
+      setAuthGender("");
+      setSuccessMessage("");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "E-posta kontrol edilemedi.");
+    }
+  };
+
+  const handleStartUnifiedAuthFlow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage("");
+    setSuccessMessage("");
+    const isRegisterAttempt = authEmailExists === false;
+
+    if (isRegisterAttempt) {
+      // Open modal immediately for faster UX while code is being sent in background.
+      setIsVerificationModalOpen(true);
+      setVerificationDigits(["", "", "", "", "", ""]);
+      setIsVerificationCodeSending(true);
+      setSuccessMessage("Doğrulama kodu gönderiliyor...");
+    }
 
     try {
-      const user = await registerUser(registerForm);
-      dispatch({ type: "SET_USER", payload: user });
-      const redirectPath = new URLSearchParams(location.search).get("redirect");
-      setRegisterForm({
-        firstName: "",
-        lastName: "",
-        email: "",
-        password: "",
-        confirmPassword: "",
+      const result = await startAuthFlow({
+        email: authEmail,
+        password: authPassword,
+        gender: authEmailExists ? undefined : authGender || undefined,
       });
-      if (redirectPath && redirectPath.startsWith("/")) {
-        navigate(redirectPath);
+
+      if (result.mode === "login" && result.user) {
+        dispatch({ type: "SET_USER", payload: result.user });
+        navigate("/");
+        return;
+      }
+
+      if (result.mode === "register" && result.requiresVerification) {
+        setIsVerificationCodeSending(false);
+        setErrorMessage("");
+        setSuccessMessage("Do\u011frulama kodu e-posta adresinize g\u00f6nderildi.");
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Kay\u0131t ba\u015far\u0131s\u0131z.");
+      if (isRegisterAttempt) {
+        setIsVerificationCodeSending(false);
+        setIsVerificationModalOpen(false);
+      }
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "İşlem başarısız.");
     }
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleVerifyEmailCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSuccessMessage("");
+    const normalizedCode = verificationDigits.join("");
+    if (normalizedCode.length !== 6) {
+      setErrorMessage("L\u00fctfen 6 haneli do\u011frulama kodunu girin.");
+      return;
+    }
+    try {
+      const user = await verifyAuthFlowCode({
+        email: authEmail,
+        code: normalizedCode,
+      });
+      dispatch({ type: "SET_USER", payload: user });
+      setIsVerificationModalOpen(false);
+      navigate("/");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Do\u011frulama kodu hatal\u0131.");
+    }
+  };
+
+  const handleVerificationDigitChange = (index: number, value: string) => {
+    const digit = value.replace(/\D/g, "").slice(-1);
+    setVerificationDigits((prev) => {
+      const next = [...prev];
+      next[index] = digit;
+      return next;
+    });
+    if (digit && index < 5) {
+      verificationInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleVerificationDigitKeyDown = (index: number, event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Backspace" && !verificationDigits[index] && index > 0) {
+      verificationInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleVerificationPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const pasted = event.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!pasted) return;
+    const next = ["", "", "", "", "", ""];
+    for (let i = 0; i < pasted.length; i += 1) {
+      next[i] = pasted[i];
+    }
+    setVerificationDigits(next);
+    const focusIndex = Math.min(pasted.length, 5);
+    verificationInputRefs.current[focusIndex]?.focus();
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
-
+    setSuccessMessage("");
     try {
-      const user = await loginUser(loginForm);
-      dispatch({ type: "SET_USER", payload: user });
-      const redirectPath = new URLSearchParams(location.search).get("redirect");
-      setLoginForm({ email: "", password: "" });
-      if (redirectPath && redirectPath.startsWith("/")) {
-        navigate(redirectPath);
-      }
+      const result = await requestPasswordReset(forgotEmail);
+      setSuccessMessage(result.message);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Giri\u015f ba\u015far\u0131s\u0131z.");
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Şifre yenileme e-postası gönderilemedi.");
     }
   };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage("");
+    setSuccessMessage("");
+    const token = resetTokenFromUrl;
+    if (!token) {
+      setErrorMessage("Şifre yenileme bağlantısı geçersiz.");
+      return;
+    }
+    try {
+      await resetPassword({
+        token,
+        password: resetForm.password,
+        confirmPassword: resetForm.confirmPassword,
+      });
+      setResetForm({ password: "", confirmPassword: "" });
+      setAuthMode("login");
+      navigate("/giris?mode=login&reset=success", { replace: true });
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Şifre sıfırlama başarısız.");
+    }
+  };
+
+  useEffect(() => {
+    if (!shouldEnterResetFlow) {
+      setResetTokenStatus("idle");
+      setResetTokenError("");
+      return;
+    }
+
+    let mounted = true;
+    setResetTokenStatus("checking");
+    setResetTokenError("");
+
+    validateResetToken(resetTokenFromUrl)
+      .then((result) => {
+        if (!mounted) return;
+        if (result.valid) {
+          setResetTokenStatus("valid");
+        } else {
+          setResetTokenStatus("invalid");
+          setResetTokenError(result.message ?? "Şifre yenileme bağlantısı geçersiz veya süresi dolmuş.");
+        }
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        setResetTokenStatus("invalid");
+        setResetTokenError(error instanceof Error ? normalizeAuthMessage(error.message) : "Şifre yenileme bağlantısı doğrulanamadı.");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [shouldEnterResetFlow, resetTokenFromUrl]);
 
   const handleGoogleLogin = async (credential: string) => {
     setErrorMessage("");
@@ -317,12 +508,27 @@ export function Account() {
         navigate(redirectPath);
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Google ile giriş başarısız.");
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Google ile giriş başarısız.");
     }
   };
 
   useEffect(() => {
-    if (!googleClientId || state.isAuthenticated || authMode !== "login") return;
+    const canRenderGoogleButton =
+      Boolean(googleClientId) &&
+      !loading &&
+      !state.isAuthenticated &&
+      !shouldEnterResetFlow &&
+      authMode === "login" &&
+      authEmailExists === null;
+
+    if (!canRenderGoogleButton) {
+      hasRenderedGoogleButtonRef.current = false;
+      if (googleButtonRef.current) {
+        googleButtonRef.current.innerHTML = "";
+      }
+      return;
+    }
+
     let cancelled = false;
 
     const initGoogleButton = () => {
@@ -380,7 +586,17 @@ export function Account() {
       cancelled = true;
       script.removeEventListener("load", initGoogleButton);
     };
-  }, [authMode, googleClientId, navigate, location.search, state.isAuthenticated, dispatch]);
+  }, [
+    authMode,
+    googleClientId,
+    navigate,
+    location.search,
+    state.isAuthenticated,
+    dispatch,
+    loading,
+    shouldEnterResetFlow,
+    authEmailExists,
+  ]);
 
   const handleLogout = async () => {
     await logoutUser();
@@ -468,132 +684,267 @@ export function Account() {
     );
   }
 
-  if (!state.isAuthenticated || !state.user) {
+  if (!state.isAuthenticated || !state.user || authMode === "reset" || shouldEnterResetFlow) {
     return (
       <div className="min-h-screen bg-[#F8F7F4] pt-20 md:pt-24 pb-20">
         <div className="w-full px-4 md:px-8">
-          <h1 className="text-2xl md:text-3xl font-light mb-8">{"Hesab\u0131m"}</h1>
+          {location.pathname !== "/giris" && (
+            <h1 className="text-2xl md:text-3xl font-light mb-8">{"Hesab\u0131m"}</h1>
+          )}
 
           <div className="max-w-lg mx-auto bg-white rounded-lg p-6 md:p-8">
-            <div className="flex gap-3 mb-6">
-              <button
-                onClick={() => setAuthMode("login")}
-                className={`flex-1 py-2 rounded-full text-sm ${
-                  authMode === "login" ? "bg-black text-white" : "bg-gray-100"
-                }`}
-              >
-                {"Giri\u015f Yap"}
-              </button>
-              <button
-                onClick={() => setAuthMode("register")}
-                className={`flex-1 py-2 rounded-full text-sm ${
-                  authMode === "register" ? "bg-black text-white" : "bg-gray-100"
-                }`}
-              >
-                {"Kay\u0131t Ol"}
-              </button>
-            </div>
 
             {errorMessage && (
               <p className="mb-4 text-sm text-red-600 bg-red-50 p-3 rounded">{errorMessage}</p>
             )}
+            {successMessage && !isVerificationModalOpen && (
+              <p className="mb-4 text-sm text-green-700 bg-green-50 p-3 rounded">{successMessage}</p>
+            )}
 
-            {authMode === "login" ? (
-              <form onSubmit={handleLogin} className="space-y-4">
+            {shouldEnterResetFlow && resetTokenStatus === "checking" ? (
+              <div className="text-sm text-gray-600 py-2">Şifre yenileme bağlantısı kontrol ediliyor...</div>
+            ) : shouldEnterResetFlow && resetTokenStatus === "invalid" ? (
+              <div className="space-y-4">
+                <p className="text-sm text-red-600 bg-red-50 p-3 rounded">
+                  {resetTokenError || "Şifre yenileme bağlantısı geçersiz veya süresi dolmuş."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate("/giris?mode=login", { replace: true })}
+                  className="w-full bg-black text-white py-3 rounded-full text-sm"
+                >
+                  Giriş Yap Sayfasına Dön
+                </button>
+              </div>
+            ) : shouldEnterResetFlow && resetTokenStatus === "valid" ? (
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                <p className="text-sm text-gray-600">Yeni şifrenizi belirleyin.</p>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Yeni Şifre</label>
+                  <input
+                    type="password"
+                    required
+                    value={resetForm.password}
+                    onChange={(e) => setResetForm({ ...resetForm, password: e.target.value })}
+                    className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Yeni Şifre Tekrar</label>
+                  <input
+                    type="password"
+                    required
+                    value={resetForm.confirmPassword}
+                    onChange={(e) => setResetForm({ ...resetForm, confirmPassword: e.target.value })}
+                    className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                  />
+                </div>
+                <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
+                  Şifreyi Güncelle
+                </button>
+              </form>
+            ) : authMode === "forgot" ? (
+              <form onSubmit={handleForgotPassword} className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Şifre yenileme bağlantısını göndermek için e-posta adresinizi girin.
+                </p>
                 <div>
                   <label className="block text-sm font-medium mb-2">E-posta</label>
                   <input
                     type="email"
                     required
-                    value={loginForm.email}
-                    onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
-                    className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">{"\u015eifre"}</label>
-                  <input
-                    type="password"
-                    required
-                    value={loginForm.password}
-                    onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
                     className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
                   />
                 </div>
                 <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
-                  {"Giri\u015f Yap"}
+                  Şifre Yenileme E-postası Gönder
                 </button>
-                {googleClientId && (
-                  <>
-                    <div className="flex items-center gap-3 py-1">
-                      <span className="h-px flex-1 bg-gray-200" />
-                      <span className="text-xs text-gray-500">veya</span>
-                      <span className="h-px flex-1 bg-gray-200" />
-                    </div>
-                    <div className="flex justify-center">
-                      <div ref={googleButtonRef} />
-                    </div>
-                  </>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setAuthMode("login")}
+                  className="w-full border border-gray-200 py-3 rounded-full text-sm hover:border-black transition-colors"
+                >
+                  Girişe Dön
+                </button>
               </form>
             ) : (
-              <form onSubmit={handleRegister} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Ad</label>
-                    <input
-                      type="text"
-                      required
-                      value={registerForm.firstName}
-                      onChange={(e) => setRegisterForm({ ...registerForm, firstName: e.target.value })}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
-                    />
+              <div className="space-y-4">
+                <p className="text-sm font-medium">
+                  {authEmailExists === null
+                    ? "Giri\u015f yap veya kaydol"
+                    : authEmailExists
+                      ? "Giri\u015f Yap"
+                      : "Kay\u0131t Ol"}
+                </p>
+                {authEmailExists === null ? (
+                  <form onSubmit={handleCheckEmailForAuthFlow} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">E-posta</label>
+                      <input
+                        type="email"
+                        required
+                        value={authEmail}
+                        onChange={(e) => setAuthEmail(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                      />
+                    </div>
+                    <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
+                      Devam Et
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleStartUnifiedAuthFlow} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">E-posta</label>
+                      <input
+                        type="email"
+                        required
+                        value={authEmail}
+                        readOnly
+                        className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        {authEmailExists ? "Şifre" : "Şifre Oluştur"}
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                      />
+                    </div>
+                    {!authEmailExists && (
+                      <div>
+                        <label className="block text-sm font-medium mb-2">
+                          Cinsiyet <span className="text-xs text-gray-500 font-normal">(isteğe bağlı)</span>
+                        </label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setAuthGender((prev) => (prev === "kadin" ? "" : "kadin"))}
+                            className={`border rounded-lg py-2 text-sm ${
+                              authGender === "kadin" ? "border-black bg-black text-white" : "border-gray-200"
+                            }`}
+                          >
+                            Kadın
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAuthGender((prev) => (prev === "erkek" ? "" : "erkek"))}
+                            className={`border rounded-lg py-2 text-sm ${
+                              authGender === "erkek" ? "border-black bg-black text-white" : "border-gray-200"
+                            }`}
+                          >
+                            Erkek
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
+                      {authEmailExists ? "Giriş Yap" : "Üye Ol"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthEmailExists(null);
+                        setAuthPassword("");
+                        setAuthGender("");
+                        setSuccessMessage("");
+                      }}
+                      className="w-full border border-gray-200 py-3 rounded-full text-sm hover:border-black transition-colors"
+                    >
+                      Başka E-posta Kullan
+                    </button>
+                    {authEmailExists && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForgotEmail(authEmail);
+                          setAuthMode("forgot");
+                        }}
+                        className="w-full text-sm text-gray-600 hover:text-black transition-colors"
+                      >
+                        Şifremi Unuttum
+                      </button>
+                    )}
+                  </form>
+                )}
+                {googleClientId && authEmailExists === null && (
+                  <div className="pt-2">
+                    <div className="relative mb-3">
+                      <div className="h-px bg-gray-200" />
+                      <span className="absolute left-1/2 -translate-x-1/2 -top-2.5 bg-white px-2 text-xs text-gray-500">
+                        veya
+                      </span>
+                    </div>
+                    <div ref={googleButtonRef} className="flex justify-center" />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Soyad</label>
-                    <input
-                      type="text"
-                      required
-                      value={registerForm.lastName}
-                      onChange={(e) => setRegisterForm({ ...registerForm, lastName: e.target.value })}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
-                    />
+                )}
+                {isVerificationModalOpen && (
+                  <div className="fixed inset-0 z-[90] bg-black/30 flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-md rounded-lg p-6 space-y-4 relative">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsVerificationModalOpen(false);
+                          setErrorMessage("");
+                          setSuccessMessage("");
+                        }}
+                        className="absolute top-3 right-3 w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center text-gray-600 hover:border-black hover:text-black transition-colors"
+                        aria-label="Kapat"
+                      >
+                        x
+                      </button>
+                      <h3 className="text-lg font-medium">{"E-posta Do\u011frulamas\u0131"}</h3>
+                      <p className="text-sm text-gray-600">
+                        {authEmail} adresine gönderilen doğrulama kodunu girin.
+                      </p>
+                      {isVerificationCodeSending && (
+                        <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded">Doğrulama kodu gönderiliyor...</p>
+                      )}
+                      {errorMessage && (
+                        <p className="text-sm text-red-600 bg-red-50 p-3 rounded">{errorMessage}</p>
+                      )}
+                      <form onSubmit={handleVerifyEmailCode} className="space-y-4">
+                        <div onPaste={handleVerificationPaste}>
+                          <label className="block text-sm font-medium mb-2">{"Do\u011frulama Kodu"}</label>
+                          <div className="flex items-center justify-center gap-3 py-2">
+                            {verificationDigits.map((digit, index) => (
+                              <input
+                                key={index}
+                                ref={(el) => {
+                                  verificationInputRefs.current[index] = el;
+                                }}
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                maxLength={1}
+                                disabled={isVerificationCodeSending}
+                                value={digit}
+                                onChange={(e) => handleVerificationDigitChange(index, e.target.value)}
+                                onKeyDown={(e) => handleVerificationDigitKeyDown(index, e)}
+                                className="w-8 text-center text-lg bg-transparent border-0 border-b border-gray-300 rounded-none outline-none focus:border-black"
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={isVerificationCodeSending}
+                          className="w-full bg-black text-white py-3 rounded-full text-sm disabled:opacity-60"
+                        >
+                          {"Do\u011frula"}
+                        </button>
+                      </form>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">E-posta</label>
-                  <input
-                    type="email"
-                    required
-                    value={registerForm.email}
-                    onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}
-                    className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">{"\u015eifre"}</label>
-                  <input
-                    type="password"
-                    required
-                    value={registerForm.password}
-                    onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })}
-                    className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">{"\u015eifre Tekrar"}</label>
-                  <input
-                    type="password"
-                    required
-                    value={registerForm.confirmPassword}
-                    onChange={(e) => setRegisterForm({ ...registerForm, confirmPassword: e.target.value })}
-                    className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
-                  />
-                </div>
-                <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
-                  {"Kay\u0131t Ol"}
-                </button>
-              </form>
+                )}
+              </div>
             )}
           </div>
         </div>

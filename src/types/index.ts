@@ -43,6 +43,7 @@ export interface User {
   firstName: string;
   lastName: string;
   phone?: string;
+  gender?: string;
   addresses: Address[];
 }
 

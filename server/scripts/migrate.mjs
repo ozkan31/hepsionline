@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS users (
   last_name VARCHAR(120) NOT NULL,
   email VARCHAR(255) NOT NULL UNIQUE,
   phone VARCHAR(40) NULL,
+  gender VARCHAR(20) NULL,
   password_hash VARCHAR(255) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -80,6 +81,41 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     REFERENCES users(id)
     ON UPDATE CASCADE
     ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
+const createPasswordResetTokensSql = `
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id CHAR(36) PRIMARY KEY,
+  user_id CHAR(36) NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_password_reset_tokens_user
+    FOREIGN KEY (user_id)
+    REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+  UNIQUE KEY uq_password_reset_token_hash (token_hash),
+  KEY idx_password_reset_user (user_id),
+  KEY idx_password_reset_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
+const createEmailVerificationCodesSql = `
+CREATE TABLE IF NOT EXISTS email_verification_codes (
+  id CHAR(36) PRIMARY KEY,
+  email VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  gender VARCHAR(20) NOT NULL,
+  code_hash CHAR(64) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_email_verification_code_hash (code_hash),
+  KEY idx_email_verification_email (email),
+  KEY idx_email_verification_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
@@ -177,6 +213,8 @@ async function migrate() {
   await pool.query(createUsersSql);
   await pool.query(createUserAddressesSql);
   await pool.query(createUserSessionsSql);
+  await pool.query(createPasswordResetTokensSql);
+  await pool.query(createEmailVerificationCodesSql);
   await pool.query(createUserCartItemsSql);
   await pool.query(createUserWishlistItemsSql);
   await pool.query(createUserOrdersSql);
@@ -261,6 +299,13 @@ async function migrate() {
     await pool.query(
       `ALTER TABLE products ADD COLUMN images_json JSON NULL AFTER image`
     );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE users ADD COLUMN gender VARCHAR(20) NULL AFTER phone`);
   } catch (error) {
     if (error?.code !== "ER_DUP_FIELDNAME") {
       throw error;

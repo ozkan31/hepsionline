@@ -3,6 +3,7 @@ import express from "express";
 import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
+import nodemailer from "nodemailer";
 import { OAuth2Client } from "google-auth-library";
 import { pool } from "./db.mjs";
 
@@ -17,8 +18,35 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 
 const SESSION_DAYS = 30;
-const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID ?? "").trim();
-const googleOAuthClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
+const PASSWORD_RESET_TTL_MINUTES = 30;
+const GOOGLE_CLIENT_IDS = Array.from(
+  new Set(
+    [process.env.GOOGLE_CLIENT_ID, process.env.VITE_GOOGLE_CLIENT_ID]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+  )
+);
+const googleOAuthClient = GOOGLE_CLIENT_IDS.length > 0 ? new OAuth2Client() : null;
+const PASSWORD_RESET_BASE_URL = String(process.env.PASSWORD_RESET_BASE_URL ?? "").trim();
+const SMTP_HOST = String(process.env.SMTP_HOST ?? "").trim();
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_SECURE = String(process.env.SMTP_SECURE ?? "false").toLowerCase() === "true";
+const SMTP_USER = String(process.env.SMTP_USER ?? "").trim();
+const SMTP_PASS = String(process.env.SMTP_PASS ?? "").trim();
+const SMTP_FROM_NAME = String(process.env.SMTP_FROM_NAME ?? "Paris move").trim();
+const SMTP_FROM_EMAIL = String(process.env.SMTP_FROM_EMAIL ?? SMTP_USER).trim();
+const isSmtpConfigured = Boolean(SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS && SMTP_FROM_EMAIL);
+const mailTransporter = isSmtpConfigured
+  ? nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_SECURE,
+      auth: {
+        user: SMTP_USER,
+        pass: SMTP_PASS,
+      },
+    })
+  : null;
 const allowedShippingCompanies = new Set([
   "Sen Kargo",
   "Aras Kargo",
@@ -27,6 +55,87 @@ const allowedShippingCompanies = new Set([
   "Sürat Kargo",
   "Yurtiçi Kargo",
 ]);
+
+function sha256(input) {
+  return crypto.createHash("sha256").update(String(input)).digest("hex");
+}
+
+function buildPasswordResetUrl(req, token) {
+  const routePath = `/giris?mode=reset&token=${encodeURIComponent(token)}`;
+  if (PASSWORD_RESET_BASE_URL) {
+    const rawBase = PASSWORD_RESET_BASE_URL.trim();
+    const hasScheme = /^https?:\/\//i.test(rawBase);
+    const normalizedBase = hasScheme
+      ? rawBase
+      : /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(rawBase)
+        ? `http://${rawBase}`
+        : `https://${rawBase}`;
+    const base = normalizedBase.replace(/\/+$/, "");
+    return `${base}${routePath}`;
+  }
+  return `${req.protocol}://${req.get("host")}${routePath}`;
+}
+
+async function sendPasswordResetEmail({ to, firstName, resetUrl }) {
+  if (!mailTransporter) {
+    throw new Error("SMTP is not configured.");
+  }
+
+  const safeName = String(firstName ?? "").trim() || "Musterimiz";
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111;">
+      <h2 style="margin:0 0 12px;">Sifre Sifirlama</h2>
+      <p>Merhaba ${safeName},</p>
+      <p>Hesabiniz icin sifre sifirlama talebi alindi.</p>
+      <p>
+        <a href="${resetUrl}" style="display:inline-block;padding:10px 16px;background:#000;color:#fff;text-decoration:none;border-radius:999px;">
+          Sifremi Yenile
+        </a>
+      </p>
+      <p>Bu baglanti ${PASSWORD_RESET_TTL_MINUTES} dakika gecerlidir.</p>
+      <p>Eger bu islemi siz yapmadiysaniz bu e-postayi yok sayabilirsiniz.</p>
+    </div>
+  `;
+  const text = [
+    `Merhaba ${safeName},`,
+    "Hesabiniz icin sifre sifirlama talebi alindi.",
+    `Sifre yenileme baglantisi: ${resetUrl}`,
+    `Bu baglanti ${PASSWORD_RESET_TTL_MINUTES} dakika gecerlidir.`,
+    "Eger bu islemi siz yapmadiysaniz bu e-postayi yok sayabilirsiniz.",
+  ].join("\n");
+
+  await mailTransporter.sendMail({
+    from: `"${SMTP_FROM_NAME}" <${SMTP_FROM_EMAIL}>`,
+    to,
+    subject: "Sifre Yenileme",
+    text,
+    html,
+  });
+}
+
+async function sendEmailVerificationCodeEmail({ to, code }) {
+  if (!mailTransporter) {
+    throw new Error("SMTP is not configured.");
+  }
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111;">
+      <h2 style="margin:0 0 12px;">E-posta Dogrulamasi</h2>
+      <p>Hesabinizi tamamlamak icin dogrulama kodunuz:</p>
+      <p style="font-size:24px;font-weight:700;letter-spacing:4px;margin:12px 0;">${code}</p>
+      <p>Bu kod 10 dakika gecerlidir.</p>
+    </div>
+  `;
+  const text = `E-posta dogrulama kodunuz: ${code}. Bu kod 10 dakika gecerlidir.`;
+
+  await mailTransporter.sendMail({
+    from: `"${SMTP_FROM_NAME}" <${SMTP_FROM_EMAIL}>`,
+    to,
+    subject: "E-posta Dogrulama Kodu",
+    text,
+    html,
+  });
+}
 
 function mapProductRow(row) {
   let images = [];
@@ -75,6 +184,7 @@ function mapUserRow(row, addresses = []) {
     lastName: row.last_name,
     email: row.email,
     phone: row.phone ?? "",
+    gender: row.gender ?? "",
     addresses,
   };
 }
@@ -226,7 +336,7 @@ async function getUserOrders(userId) {
 async function getSessionUser(token) {
   const [rows] = await pool.query(
     `
-    SELECT u.id, u.first_name, u.last_name, u.email, u.phone
+    SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.gender
     FROM user_sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.token = ? AND s.expires_at > NOW()
@@ -448,6 +558,143 @@ app.get("/api/health", async (_req, res) => {
   }
 });
 
+app.post("/api/auth/email/status", async (req, res) => {
+  try {
+    const email = String(req.body?.email ?? "").trim().toLowerCase();
+    if (!email) {
+      return res.status(400).json({ message: "E-posta zorunludur." });
+    }
+    const [rows] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
+    return res.json({ exists: rows.length > 0 });
+  } catch (error) {
+    return res.status(500).json({ message: "E-posta kontrolü başarısız." });
+  }
+});
+
+app.post("/api/auth/flow/start", async (req, res) => {
+  try {
+    const email = String(req.body?.email ?? "").trim().toLowerCase();
+    const password = String(req.body?.password ?? "");
+    const gender = String(req.body?.gender ?? "").trim().toLowerCase();
+    const normalizedGender = gender === "kadin" || gender === "erkek" ? gender : "";
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "E-posta ve şifre zorunludur." });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Şifre en az 6 karakter olmalı." });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT id, first_name, last_name, email, phone, gender, password_hash FROM users WHERE email = ? LIMIT 1`,
+      [email]
+    );
+
+    if (rows.length > 0) {
+      const found = rows[0];
+      const isValid = await bcrypt.compare(password, found.password_hash);
+      if (!isValid) {
+        return res.status(401).json({ message: "Şifre hatalı." });
+      }
+      const token = await createSession(found.id);
+      const user = await getSessionUser(token);
+      return res.json({ mode: "login", token, user });
+    }
+
+    if (!isSmtpConfigured) {
+      return res.status(500).json({ message: "E-posta servisi henüz yapılandırılmamış." });
+    }
+
+    const code = String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
+    const codeHash = sha256(code);
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    await pool.query(`DELETE FROM email_verification_codes WHERE email = ? OR expires_at < NOW()`, [email]);
+    await pool.query(
+      `
+      INSERT INTO email_verification_codes (id, email, password_hash, gender, code_hash, expires_at)
+      VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
+      `,
+      [crypto.randomUUID(), email, passwordHash, normalizedGender, codeHash]
+    );
+
+    await sendEmailVerificationCodeEmail({ to: email, code });
+    return res.json({
+      mode: "register",
+      requiresVerification: true,
+      message: "Doğrulama kodu e-posta adresinize gönderildi.",
+    });
+  } catch (error) {
+    if (error?.code === "ER_NO_SUCH_TABLE") {
+      return res.status(500).json({ message: "Auth akışı için DB migration gerekli. npm run db:migrate çalıştırın." });
+    }
+    return res.status(500).json({ message: "İşlem başarısız." });
+  }
+});
+
+app.post("/api/auth/flow/verify", async (req, res) => {
+  try {
+    const email = String(req.body?.email ?? "").trim().toLowerCase();
+    const code = String(req.body?.code ?? "").trim();
+    if (!email || !code) {
+      return res.status(400).json({ message: "E-posta ve doğrulama kodu zorunludur." });
+    }
+
+    const codeHash = sha256(code);
+    const [verifyRows] = await pool.query(
+      `
+      SELECT id, email, password_hash, gender
+      FROM email_verification_codes
+      WHERE email = ? AND code_hash = ? AND used_at IS NULL AND expires_at > NOW()
+      LIMIT 1
+      `,
+      [email, codeHash]
+    );
+
+    if (verifyRows.length === 0) {
+      return res.status(400).json({ message: "Doğrulama kodu geçersiz veya süresi dolmuş." });
+    }
+
+    const verifyRow = verifyRows[0];
+    const [existing] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
+    let userId = existing.length > 0 ? existing[0].id : null;
+
+    if (!userId) {
+      const localPart = email.split("@")[0] || "Uye";
+      const fallbackFirst = localPart.slice(0, 120) || "Uye";
+      await pool.query(
+        `
+        INSERT INTO users (id, first_name, last_name, email, phone, gender, password_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          crypto.randomUUID(),
+          fallbackFirst,
+          "Uye",
+          email,
+          "",
+          verifyRow.gender,
+          verifyRow.password_hash,
+        ]
+      );
+      const [fresh] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
+      userId = fresh[0].id;
+    }
+
+    await pool.query(`UPDATE email_verification_codes SET used_at = NOW() WHERE id = ?`, [verifyRow.id]);
+    await pool.query(`DELETE FROM email_verification_codes WHERE email = ?`, [email]);
+
+    const token = await createSession(userId);
+    const user = await getSessionUser(token);
+    return res.json({ token, user });
+  } catch (error) {
+    if (error?.code === "ER_NO_SUCH_TABLE") {
+      return res.status(500).json({ message: "Auth akışı için DB migration gerekli. npm run db:migrate çalıştırın." });
+    }
+    return res.status(500).json({ message: "Doğrulama işlemi başarısız." });
+  }
+});
+
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { firstName, lastName, email, password, confirmPassword } = req.body ?? {};
@@ -528,30 +775,208 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+app.post("/api/auth/password/forgot", async (req, res) => {
+  try {
+    const email = String(req.body?.email ?? "").trim().toLowerCase();
+    if (!email) {
+      return res.status(400).json({ message: "E-posta zorunludur." });
+    }
+
+    if (!isSmtpConfigured) {
+      return res.status(500).json({ message: "E-posta servisi henüz yapılandırılmamış." });
+    }
+
+    const [rows] = await pool.query(
+      `
+      SELECT id, first_name, email
+      FROM users
+      WHERE email = ?
+      LIMIT 1
+      `,
+      [email]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Bu e-posta ile kayitli kullanici bulunmuyor." });
+    }
+
+    const user = rows[0];
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = sha256(rawToken);
+
+    await pool.query(
+      `
+      DELETE FROM password_reset_tokens
+      WHERE user_id = ? OR expires_at < NOW()
+      `,
+      [user.id]
+    );
+
+    await pool.query(
+      `
+      INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at)
+      VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))
+      `,
+      [crypto.randomUUID(), user.id, tokenHash, PASSWORD_RESET_TTL_MINUTES]
+    );
+
+    const resetUrl = buildPasswordResetUrl(req, rawToken);
+    // Do not block the HTTP response while SMTP is sending.
+    setImmediate(async () => {
+      try {
+        await sendPasswordResetEmail({
+          to: user.email,
+          firstName: user.first_name,
+          resetUrl,
+        });
+      } catch (error) {
+        console.error("Password reset email send failed:", error?.message || error);
+      }
+    });
+
+    return res.json({
+      ok: true,
+      message: "Şifre yenileme bağlantısı e-posta adresinize gönderildi.",
+    });
+  } catch (error) {
+    if (error?.code === "ER_NO_SUCH_TABLE") {
+      return res.status(500).json({
+        message: "Şifre yenileme için DB migration gerekli. npm run db:migrate çalıştırın.",
+      });
+    }
+    return res.status(500).json({ message: "Şifre yenileme e-postası gönderilemedi." });
+  }
+});
+
+app.get("/api/auth/password/reset/validate", async (req, res) => {
+  try {
+    const token = String(req.query?.token ?? "").trim().toLowerCase();
+    if (!token) {
+      return res.status(400).json({ valid: false, message: "Token zorunludur." });
+    }
+
+    const tokenHash = sha256(token);
+    const [rows] = await pool.query(
+      `
+      SELECT id
+      FROM password_reset_tokens
+      WHERE token_hash = ? AND used_at IS NULL AND expires_at > NOW()
+      LIMIT 1
+      `,
+      [tokenHash]
+    );
+
+    if (rows.length === 0) {
+      return res.json({ valid: false, message: "Şifre yenileme bağlantısı geçersiz veya süresi dolmuş." });
+    }
+
+    return res.json({ valid: true });
+  } catch (error) {
+    if (error?.code === "ER_NO_SUCH_TABLE") {
+      return res.status(500).json({
+        valid: false,
+        message: "Şifre yenileme için DB migration gerekli. npm run db:migrate çalıştırın.",
+      });
+    }
+    return res.status(500).json({ valid: false, message: "Token dogrulanamadi." });
+  }
+});
+
+app.post("/api/auth/password/reset", async (req, res) => {
+  try {
+    const token = String(req.body?.token ?? "").trim().toLowerCase();
+    const password = String(req.body?.password ?? "");
+    const confirmPassword = String(req.body?.confirmPassword ?? "");
+
+    if (!token || !password || !confirmPassword) {
+      return res.status(400).json({ message: "Tum alanlar zorunludur." });
+    }
+    if (password !== confirmPassword) {
+      return res.status(400).json({ message: "Şifreler eşleşmiyor." });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Şifre en az 6 karakter olmalı." });
+    }
+
+    const tokenHash = sha256(token);
+    const [tokenRows] = await pool.query(
+      `
+      SELECT id, user_id
+      FROM password_reset_tokens
+      WHERE token_hash = ? AND used_at IS NULL AND expires_at > NOW()
+      LIMIT 1
+      `,
+      [tokenHash]
+    );
+
+    if (tokenRows.length === 0) {
+      return res.status(400).json({ message: "Şifre yenileme bağlantısı geçersiz veya süresi dolmuş." });
+    }
+
+    const resetTokenRow = tokenRows[0];
+    const [userRows] = await pool.query(
+      `
+      SELECT password_hash
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [resetTokenRow.user_id]
+    );
+    if (userRows.length === 0) {
+      return res.status(400).json({ message: "Kullanici bulunamadi." });
+    }
+
+    const isSameAsCurrent = await bcrypt.compare(password, userRows[0].password_hash);
+    if (isSameAsCurrent) {
+      return res.status(400).json({ message: "Yeni sifre mevcut sifre ile ayni olamaz." });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    await pool.query(`UPDATE users SET password_hash = ? WHERE id = ?`, [passwordHash, resetTokenRow.user_id]);
+    await pool.query(
+      `UPDATE password_reset_tokens SET used_at = NOW() WHERE id = ?`,
+      [resetTokenRow.id]
+    );
+    await pool.query(`DELETE FROM password_reset_tokens WHERE user_id = ?`, [resetTokenRow.user_id]);
+    await pool.query(`DELETE FROM user_sessions WHERE user_id = ?`, [resetTokenRow.user_id]);
+
+    return res.json({ ok: true, message: "Şifreniz başarıyla güncellendi." });
+  } catch (error) {
+    if (error?.code === "ER_NO_SUCH_TABLE") {
+      return res.status(500).json({
+        message: "Şifre yenileme için DB migration gerekli. npm run db:migrate çalıştırın.",
+      });
+    }
+    return res.status(500).json({ message: "Şifre sıfırlama işlemi başarısız." });
+  }
+});
+
 app.post("/api/auth/google", async (req, res) => {
   try {
     const { credential } = req.body ?? {};
     if (!credential) {
-      return res.status(400).json({ message: "Google credential is required." });
+      return res.status(400).json({ message: "Google kimlik bilgisi zorunludur." });
     }
 
-    if (!googleOAuthClient || !GOOGLE_CLIENT_ID) {
-      return res.status(500).json({ message: "Google login is not configured." });
+    if (!googleOAuthClient || GOOGLE_CLIENT_IDS.length === 0) {
+      return res.status(500).json({ message: "Google ile giriş henüz yapılandırılmamış." });
     }
 
     const ticket = await googleOAuthClient.verifyIdToken({
       idToken: String(credential),
-      audience: GOOGLE_CLIENT_ID,
+      audience: GOOGLE_CLIENT_IDS,
     });
     const payload = ticket.getPayload();
     const email = String(payload?.email ?? "").trim().toLowerCase();
 
     if (!email) {
-      return res.status(401).json({ message: "Invalid Google account." });
+      return res.status(401).json({ message: "Geçersiz Google hesabı." });
     }
 
     if (payload?.email_verified === false) {
-      return res.status(401).json({ message: "Google email is not verified." });
+      return res.status(401).json({ message: "Google e-posta hesabı doğrulanmamış." });
     }
 
     const [existing] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
@@ -577,7 +1002,18 @@ app.post("/api/auth/google", async (req, res) => {
     const user = await getSessionUser(token);
     return res.json({ token, user });
   } catch (error) {
-    return res.status(401).json({ message: "Google login failed." });
+    console.error("Google auth error:", error);
+    const rawMessage = String(error?.message ?? "").toLowerCase();
+    if (rawMessage.includes("audience")) {
+      return res.status(401).json({ message: "Google client id uyuşmuyor." });
+    }
+    if (rawMessage.includes("token used too early")) {
+      return res.status(401).json({ message: "Cihaz veya sunucu saati geri. Saati otomatik senkronize edip tekrar deneyin." });
+    }
+    if (rawMessage.includes("token used too late") || rawMessage.includes("expired")) {
+      return res.status(401).json({ message: "Google token süresi dolmuş. Tekrar deneyin." });
+    }
+    return res.status(401).json({ message: "Google ile giriş başarısız." });
   }
 });
 

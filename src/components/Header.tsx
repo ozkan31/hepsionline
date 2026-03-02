@@ -4,12 +4,14 @@ import { Search, Heart, User, ShoppingBag, Menu, X } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
 import { fetchPublicSettings } from '@/lib/api';
 
+const SITE_NAME_CACHE_KEY = 'parisMoveSiteName';
+
 export function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [siteName, setSiteName] = useState('Paris move');
+  const [siteName, setSiteName] = useState(() => localStorage.getItem(SITE_NAME_CACHE_KEY) ?? '');
   const headerRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
@@ -74,7 +76,10 @@ export function Header() {
       .then((data) => {
         if (!mounted) return;
         const name = String(data?.siteName ?? '').trim();
-        if (name) setSiteName(name);
+        if (name) {
+          setSiteName(name);
+          localStorage.setItem(SITE_NAME_CACHE_KEY, name);
+        }
       })
       .catch(() => {});
     return () => {
@@ -121,7 +126,7 @@ export function Header() {
 
             <a
               href="/"
-              className="font-serif text-xl md:text-2xl font-medium tracking-tight absolute left-1/2 -translate-x-1/2 lg:static lg:translate-x-0"
+              className="font-serif text-xl md:text-2xl font-medium tracking-tight absolute left-1/2 -translate-x-1/2 -ml-[2ch] lg:static lg:translate-x-0 lg:ml-0"
             >
               {siteName}
             </a>
@@ -181,7 +186,7 @@ export function Header() {
               </div>
 
               <Link
-                to={state.isAuthenticated ? '/hesabim' : '/hesabim?mode=register'}
+                to={state.isAuthenticated ? '/hesabim' : '/giris'}
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors lg:hidden"
                 aria-label={state.isAuthenticated ? 'Hesabım' : 'Kayıt Ol'}
               >
@@ -202,7 +207,7 @@ export function Header() {
               </Link>
 
               <Link
-                to="/hesabim"
+                to={state.isAuthenticated ? '/hesabim' : '/giris'}
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors hidden sm:block"
                 aria-label="Hesabım"
               >
@@ -284,7 +289,11 @@ export function Header() {
               <Link to="/sepet" onClick={() => setIsMobileMenuOpen(false)} className="text-lg py-3 border-b border-gray-100">
                 Sepetim ({cartCount})
               </Link>
-              <Link to="/hesabim" onClick={() => setIsMobileMenuOpen(false)} className="text-lg py-3 border-b border-gray-100">
+              <Link
+                to={state.isAuthenticated ? "/hesabim" : "/giris"}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="text-lg py-3 border-b border-gray-100"
+              >
                 Hesabım
               </Link>
             </nav>

@@ -60,6 +60,7 @@ function AppLayout() {
             <Route path="/product/:id" element={<Product />} />
             <Route path="/sepet" element={<Cart />} />
             <Route path="/favoriler" element={<Wishlist />} />
+            <Route path="/giris" element={<Account />} />
             <Route path="/hesabim" element={<Account />} />
             <Route path="/odeme" element={<Checkout />} />
             <Route path="/odeme/basarili" element={<Checkout />} />

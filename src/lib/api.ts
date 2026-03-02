@@ -8,7 +8,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
     const message =
       typeof data?.message === "string"
         ? data.message
-        : `API request failed: ${response.status}`;
+        : `İstek başarısız: ${response.status}`;
     throw new Error(message);
   }
   return data as T;
@@ -105,6 +105,86 @@ export async function loginWithGoogle(credential: string): Promise<User> {
   const data = await parseResponse<{ token: string; user: User }>(response);
   setAuthToken(data.token);
   return data.user;
+}
+
+export async function checkAuthEmailStatus(email: string): Promise<{ exists: boolean }> {
+  const response = await fetch("/api/auth/email/status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return parseResponse<{ exists: boolean }>(response);
+}
+
+export async function startAuthFlow(input: {
+  email: string;
+  password: string;
+  gender?: "kadin" | "erkek";
+}): Promise<{
+  mode: "login" | "register";
+  token?: string;
+  user?: User;
+  requiresVerification?: boolean;
+  message?: string;
+}> {
+  const response = await fetch("/api/auth/flow/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const data = await parseResponse<{
+    mode: "login" | "register";
+    token?: string;
+    user?: User;
+    requiresVerification?: boolean;
+    message?: string;
+  }>(response);
+  if (data.token) {
+    setAuthToken(data.token);
+  }
+  return data;
+}
+
+export async function verifyAuthFlowCode(input: {
+  email: string;
+  code: string;
+}): Promise<User> {
+  const response = await fetch("/api/auth/flow/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const data = await parseResponse<{ token: string; user: User }>(response);
+  setAuthToken(data.token);
+  return data.user;
+}
+
+export async function requestPasswordReset(email: string): Promise<{ ok: boolean; message: string }> {
+  const response = await fetch("/api/auth/password/forgot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return parseResponse<{ ok: boolean; message: string }>(response);
+}
+
+export async function resetPassword(input: {
+  token: string;
+  password: string;
+  confirmPassword: string;
+}): Promise<{ ok: boolean; message: string }> {
+  const response = await fetch("/api/auth/password/reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return parseResponse<{ ok: boolean; message: string }>(response);
+}
+
+export async function validateResetToken(token: string): Promise<{ valid: boolean; message?: string }> {
+  const query = new URLSearchParams({ token });
+  const response = await fetch(`/api/auth/password/reset/validate?${query.toString()}`);
+  return parseResponse<{ valid: boolean; message?: string }>(response);
 }
 
 export async function logoutUser(): Promise<void> {

@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS user_addresses (
   street VARCHAR(255) NOT NULL,
   province VARCHAR(120) NOT NULL,
   district VARCHAR(120) NOT NULL,
+  neighborhood VARCHAR(120) NOT NULL,
   is_default BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -249,6 +250,15 @@ async function migrate() {
       throw error;
     }
   }
+  try {
+    await pool.query(
+      `ALTER TABLE user_addresses ADD COLUMN neighborhood VARCHAR(120) NOT NULL DEFAULT '' AFTER district`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
   // Keep existing address data usable after schema change.
   try {
     await pool.query(
@@ -262,6 +272,15 @@ async function migrate() {
   try {
     await pool.query(
       `UPDATE user_addresses SET district = postal_code WHERE (district = '' OR district IS NULL) AND postal_code IS NOT NULL`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_BAD_FIELD_ERROR") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `UPDATE user_addresses SET neighborhood = district WHERE (neighborhood = '' OR neighborhood IS NULL) AND district IS NOT NULL`
     );
   } catch (error) {
     if (error?.code !== "ER_BAD_FIELD_ERROR") {

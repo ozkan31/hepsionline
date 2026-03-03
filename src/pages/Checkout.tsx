@@ -17,15 +17,42 @@ export function Checkout() {
   const [isAddressFormOpen, setIsAddressFormOpen] = useState(false);
   const [isSavingAddress, setIsSavingAddress] = useState(false);
   const [addressError, setAddressError] = useState("");
-  const [locationMap, setLocationMap] = useState<Record<string, string[]>>({});
+  const [newAddressDetail, setNewAddressDetail] = useState("");
+  const [locationMap, setLocationMap] = useState<Record<string, Record<string, string[]>>>({});
   const [paytrIframeUrl, setPaytrIframeUrl] = useState("");
   const [isPaytrLoading, setIsPaytrLoading] = useState(false);
   const [paytrError, setPaytrError] = useState("");
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const processedPathRef = useRef<string>("");
+  const newAddressDistrictSelectRef = useRef<HTMLSelectElement | null>(null);
+  const newAddressNeighborhoodSelectRef = useRef<HTMLSelectElement | null>(null);
 
   const generateOrderId = () =>
     String(Math.floor(1000000000 + Math.random() * 9000000000));
+  const splitStreetParts = (street: string) => {
+    const input = String(street ?? "");
+    const [namePart, ...detailParts] = input.split("|||");
+    return {
+      addressName: (namePart ?? "").trim(),
+      addressDetail: detailParts.join("|||").trim(),
+    };
+  };
+  const combineStreetParts = (addressName: string, detail: string) =>
+    `${String(addressName ?? "").trim()}|||${String(detail ?? "").trim()}`;
+  const openNativeSelect = (element: HTMLSelectElement | null) => {
+    if (!element) return;
+    element.focus();
+    const picker = (element as HTMLSelectElement & { showPicker?: () => void }).showPicker;
+    if (typeof picker === "function") {
+      try {
+        picker.call(element);
+        return;
+      } catch {
+        // ignore picker errors and fall back to click
+      }
+    }
+    element.click();
+  };
 
   const shippingCost = cartTotal >= 1500 ? 0 : 79;
   const total = cartTotal + shippingCost;
@@ -38,6 +65,7 @@ export function Checkout() {
     street: "",
     province: "",
     district: "",
+    neighborhood: "",
   });
 
   const [newAddressForm, setNewAddressForm] = useState({
@@ -47,6 +75,7 @@ export function Checkout() {
     street: "",
     province: "",
     district: "",
+    neighborhood: "",
     isDefault: false,
   });
 
@@ -69,8 +98,15 @@ export function Checkout() {
 
   const provinceOptions = useMemo(() => Object.keys(locationMap), [locationMap]);
   const newAddressDistrictOptions = useMemo(
-    () => (newAddressForm.province ? locationMap[newAddressForm.province] ?? [] : []),
+    () => (newAddressForm.province ? Object.keys(locationMap[newAddressForm.province] ?? {}) : []),
     [locationMap, newAddressForm.province]
+  );
+  const newAddressNeighborhoodOptions = useMemo(
+    () =>
+      newAddressForm.province && newAddressForm.district
+        ? locationMap[newAddressForm.province]?.[newAddressForm.district] ?? []
+        : [],
+    [locationMap, newAddressForm.province, newAddressForm.district]
   );
 
   useEffect(() => {
@@ -160,14 +196,16 @@ export function Checkout() {
 
   const handleSavedAddressContinue = () => {
     if (!selectedAddress) return;
+    const parsedStreet = splitStreetParts(selectedAddress.street);
     setShippingInfo({
       firstName: selectedAddress.firstName,
       lastName: selectedAddress.lastName,
       email: state.user?.email ?? "",
       phone: selectedAddress.phone || state.user?.phone || "",
-      street: selectedAddress.street,
+      street: parsedStreet.addressDetail || parsedStreet.addressName,
       province: selectedAddress.province,
       district: selectedAddress.district,
+      neighborhood: selectedAddress.neighborhood,
     });
     setStep("payment");
     window.scrollTo(0, 0);
@@ -179,7 +217,10 @@ export function Checkout() {
     setIsSavingAddress(true);
     try {
       const previousIds = new Set((state.user?.addresses ?? []).map((a) => a.id));
-      const updatedUser = await saveAddress(newAddressForm);
+      const updatedUser = await saveAddress({
+        ...newAddressForm,
+        street: combineStreetParts(newAddressForm.street, newAddressDetail),
+      });
       dispatch({ type: "SET_USER", payload: updatedUser });
 
       const addedAddress = updatedUser.addresses.find((a) => !previousIds.has(a.id));
@@ -196,8 +237,10 @@ export function Checkout() {
         street: "",
         province: "",
         district: "",
+        neighborhood: "",
         isDefault: false,
       });
+      setNewAddressDetail("");
       setIsAddressFormOpen(false);
     } catch (error) {
       setAddressError(error instanceof Error ? error.message : "Adres eklenemedi.");
@@ -208,7 +251,14 @@ export function Checkout() {
 
   useEffect(() => {
     if (step !== "payment" || isPaymentSuccessPath || isPaymentFailPath) return;
-    if (!shippingInfo.email || !shippingInfo.phone || !shippingInfo.street || !shippingInfo.province || !shippingInfo.district) {
+    if (
+      !shippingInfo.email ||
+      !shippingInfo.phone ||
+      !shippingInfo.street ||
+      !shippingInfo.province ||
+      !shippingInfo.district ||
+      !shippingInfo.neighborhood
+    ) {
       setPaytrError("Teslimat bilgileri eksik.");
       setPaytrIframeUrl("");
       return;
@@ -336,7 +386,7 @@ export function Checkout() {
 
                   {state.isAuthenticated && isAddressFormOpen && (
                     <form onSubmit={handleAddAddress} className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-3 gap-3">
                         <input
                           type="text"
                           required
@@ -358,13 +408,15 @@ export function Checkout() {
                         <select
                           required
                           value={newAddressForm.province}
-                          onChange={(e) =>
+                          onChange={(e) => {
                             setNewAddressForm({
                               ...newAddressForm,
                               province: e.target.value,
                               district: "",
-                            })
-                          }
+                              neighborhood: "",
+                            });
+                            window.setTimeout(() => openNativeSelect(newAddressDistrictSelectRef.current), 0);
+                          }}
                           className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                         >
                           <option value="">{ "\u0130l se\u00e7in" }</option>
@@ -378,7 +430,11 @@ export function Checkout() {
                           required
                           disabled={!newAddressForm.province}
                           value={newAddressForm.district}
-                          onChange={(e) => setNewAddressForm({ ...newAddressForm, district: e.target.value })}
+                          onChange={(e) => {
+                            setNewAddressForm({ ...newAddressForm, district: e.target.value, neighborhood: "" });
+                            window.setTimeout(() => openNativeSelect(newAddressNeighborhoodSelectRef.current), 0);
+                          }}
+                          ref={newAddressDistrictSelectRef}
                           className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black disabled:bg-gray-100 disabled:text-gray-500"
                         >
                           <option value="">{ "\u0130l\u00e7e se\u00e7in" }</option>
@@ -388,29 +444,54 @@ export function Checkout() {
                             </option>
                           ))}
                         </select>
+                        <select
+                          required
+                          disabled={!newAddressForm.district}
+                          value={newAddressForm.neighborhood}
+                          onChange={(e) => setNewAddressForm({ ...newAddressForm, neighborhood: e.target.value })}
+                          ref={newAddressNeighborhoodSelectRef}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black disabled:bg-gray-100 disabled:text-gray-500"
+                        >
+                          <option value="">Mahalle seçin</option>
+                          {newAddressNeighborhoodOptions.map((neighborhood) => (
+                            <option key={neighborhood} value={neighborhood}>
+                              {neighborhood}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                      <input
-                        type="tel"
-                        required
-                        placeholder="Telefon"
-                        value={newAddressForm.phone}
-                        onChange={(e) => setNewAddressForm({ ...newAddressForm, phone: e.target.value })}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                      />
-                      <input
-                        type="text"
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          type="tel"
+                          required
+                          placeholder="Telefon"
+                          value={newAddressForm.phone}
+                          onChange={(e) => setNewAddressForm({ ...newAddressForm, phone: e.target.value })}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                        />
+                        <input
+                          type="text"
+                          required
+                          placeholder="örn. ev adresim, iş adresim"
+                          value={newAddressForm.street}
+                          onChange={(e) => setNewAddressForm({ ...newAddressForm, street: e.target.value })}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                        />
+                      </div>
+                      <textarea
                         required
                         minLength={10}
-                        placeholder="Adres"
-                        value={newAddressForm.street}
-                        onChange={(e) => setNewAddressForm({ ...newAddressForm, street: e.target.value })}
+                        placeholder="Adres Detayı"
+                        value={newAddressDetail}
+                        onChange={(e) => setNewAddressDetail(e.target.value)}
                         onInvalid={(e) => {
-                          e.currentTarget.setCustomValidity("Adres en az 10 karakter olmalıdır.");
+                          e.currentTarget.setCustomValidity("Adres detayı en az 10 karakter olmalıdır.");
                         }}
                         onInput={(e) => {
                           e.currentTarget.setCustomValidity("");
                         }}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                        rows={4}
+                        className="w-full resize-none bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                       />
                       <label className="flex items-center gap-2 text-sm">
                         <input
@@ -431,7 +512,9 @@ export function Checkout() {
                   )}
 
                   <div className="space-y-3">
-                    {savedAddresses.map((address) => (
+                    {savedAddresses.map((address) => {
+                      const parsedStreet = splitStreetParts(address.street);
+                      return (
                       <button
                         key={address.id}
                         type="button"
@@ -446,12 +529,15 @@ export function Checkout() {
                           {address.firstName} {address.lastName}
                         </p>
                         <p className="text-sm text-gray-500">{address.phone}</p>
-                        <p className="text-sm text-gray-500">{address.street}</p>
+                        <p className="text-sm text-gray-500">{parsedStreet.addressName}</p>
+                        {parsedStreet.addressDetail ? (
+                          <p className="text-sm text-gray-500">{parsedStreet.addressDetail}</p>
+                        ) : null}
                         <p className="text-sm text-gray-500">
-                          {address.district} / {address.province}
+                          {address.neighborhood}, {address.district} / {address.province}
                         </p>
                       </button>
-                    ))}
+                    )})}
                   </div>
                   <button
                     type="button"

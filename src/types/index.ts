@@ -55,6 +55,7 @@ export interface Address {
   street: string;
   province: string;
   district: string;
+  neighborhood: string;
   isDefault: boolean;
 }
 
@@ -70,6 +71,7 @@ export interface AdminOrderCustomer {
     street: string;
     province: string;
     district: string;
+    neighborhood: string;
   } | null;
 }
 

@@ -1,6 +1,6 @@
-﻿export type TurkeyLocationMap = Record<string, string[]>;
+export type TurkeyLocationMap = Record<string, Record<string, string[]>>;
 
-const TURKEY_DATA_URL = new URL("../../turkiye.json", import.meta.url).href;
+const TURKEY_DATA_URL = new URL("../../turkiye-il-ilce-mahalle.json", import.meta.url).href;
 
 function fixMojibake(value: string): string {
   const mojibakePattern = /[\u00C3\u00C4\u00C5\uFFFD]/;
@@ -21,12 +21,19 @@ export async function loadTurkeyLocations(): Promise<TurkeyLocationMap> {
     throw new Error("Failed to load turkey locations.");
   }
 
-  const raw = (await response.json()) as Record<string, string[]>;
+  const raw = (await response.json()) as Record<string, Record<string, string[]>>;
   const normalized: TurkeyLocationMap = {};
 
-  for (const [province, districts] of Object.entries(raw)) {
+  for (const [province, districtMap] of Object.entries(raw)) {
     const normalizedProvince = fixMojibake(province);
-    normalized[normalizedProvince] = districts.map((district) => fixMojibake(district));
+    normalized[normalizedProvince] = {};
+
+    for (const [district, neighborhoods] of Object.entries(districtMap ?? {})) {
+      const normalizedDistrict = fixMojibake(district);
+      normalized[normalizedProvince][normalizedDistrict] = Array.isArray(neighborhoods)
+        ? neighborhoods.map((neighborhood) => fixMojibake(neighborhood))
+        : [];
+    }
   }
 
   return normalized;

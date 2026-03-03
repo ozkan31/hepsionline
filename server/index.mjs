@@ -28,6 +28,9 @@ const GOOGLE_CLIENT_IDS = Array.from(
 );
 const googleOAuthClient = GOOGLE_CLIENT_IDS.length > 0 ? new OAuth2Client() : null;
 const PASSWORD_RESET_BASE_URL = String(process.env.PASSWORD_RESET_BASE_URL ?? "").trim();
+const ORDER_EMAIL_BASE_URL = String(
+  process.env.ORDER_EMAIL_BASE_URL ?? process.env.PASSWORD_RESET_BASE_URL ?? ""
+).trim();
 const SMTP_HOST = String(process.env.SMTP_HOST ?? "").trim();
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_SECURE = String(process.env.SMTP_SECURE ?? "false").toLowerCase() === "true";
@@ -44,6 +47,31 @@ const mailTransporter = isSmtpConfigured
       auth: {
         user: SMTP_USER,
         pass: SMTP_PASS,
+      },
+    })
+  : null;
+const ORDER_SMTP_HOST = String(process.env.ORDER_SMTP_HOST ?? "").trim();
+const ORDER_SMTP_PORT = Number(process.env.ORDER_SMTP_PORT || 587);
+const ORDER_SMTP_SECURE = String(process.env.ORDER_SMTP_SECURE ?? "false").toLowerCase() === "true";
+const ORDER_SMTP_USER = String(process.env.ORDER_SMTP_USER ?? "").trim();
+const ORDER_SMTP_PASS = String(process.env.ORDER_SMTP_PASS ?? "").trim();
+const ORDER_SMTP_FROM_NAME = String(process.env.ORDER_SMTP_FROM_NAME ?? "Paris move").trim();
+const ORDER_SMTP_FROM_EMAIL = String(process.env.ORDER_SMTP_FROM_EMAIL ?? ORDER_SMTP_USER).trim();
+const isOrderSmtpConfigured = Boolean(
+  ORDER_SMTP_HOST &&
+    ORDER_SMTP_PORT &&
+    ORDER_SMTP_USER &&
+    ORDER_SMTP_PASS &&
+    ORDER_SMTP_FROM_EMAIL
+);
+const orderMailTransporter = isOrderSmtpConfigured
+  ? nodemailer.createTransport({
+      host: ORDER_SMTP_HOST,
+      port: ORDER_SMTP_PORT,
+      secure: ORDER_SMTP_SECURE,
+      auth: {
+        user: ORDER_SMTP_USER,
+        pass: ORDER_SMTP_PASS,
       },
     })
   : null;
@@ -76,38 +104,90 @@ function buildPasswordResetUrl(req, token) {
   return `${req.protocol}://${req.get("host")}${routePath}`;
 }
 
+function buildPublicBaseUrl(req) {
+  const rawBase = String(ORDER_EMAIL_BASE_URL ?? "").trim();
+  if (rawBase) {
+    const hasScheme = /^https?:\/\//i.test(rawBase);
+    const normalizedBase = hasScheme
+      ? rawBase
+      : /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(rawBase)
+        ? `http://${rawBase}`
+        : `https://${rawBase}`;
+    return normalizedBase.replace(/\/+$/, "");
+  }
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+function escapeHtml(input) {
+  return String(input ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatOrderDateForEmail(value) {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return "-";
+    return value.toLocaleString("tr-TR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  const raw = String(value ?? "").trim();
+  if (!raw) return "-";
+  const normalized = raw.includes(" ") ? raw.replace(" ", "T") : raw;
+  const hasTime = normalized.includes("T");
+  const hasExplicitTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(normalized);
+  const candidate = hasTime && !hasExplicitTimezone ? `${normalized}Z` : normalized;
+  const parsed = new Date(candidate);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toLocaleString("tr-TR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 async function sendPasswordResetEmail({ to, firstName, resetUrl }) {
   if (!mailTransporter) {
     throw new Error("SMTP is not configured.");
   }
 
-  const safeName = String(firstName ?? "").trim() || "Musterimiz";
+  const safeName = String(firstName ?? "").trim() || "M\u00fc\u015fterimiz";
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111;">
-      <h2 style="margin:0 0 12px;">Sifre Sifirlama</h2>
+      <h2 style="margin:0 0 12px;">\u015eifre S\u0131f\u0131rlama</h2>
       <p>Merhaba ${safeName},</p>
-      <p>Hesabiniz icin sifre sifirlama talebi alindi.</p>
+      <p>Hesab\u0131n\u0131z i\u00e7in \u015fifre s\u0131f\u0131rlama talebi al\u0131nd\u0131.</p>
       <p>
         <a href="${resetUrl}" style="display:inline-block;padding:10px 16px;background:#000;color:#fff;text-decoration:none;border-radius:999px;">
-          Sifremi Yenile
+          \u015eifremi Yenile
         </a>
       </p>
-      <p>Bu baglanti ${PASSWORD_RESET_TTL_MINUTES} dakika gecerlidir.</p>
-      <p>Eger bu islemi siz yapmadiysaniz bu e-postayi yok sayabilirsiniz.</p>
+      <p>Bu ba\u011flant\u0131 ${PASSWORD_RESET_TTL_MINUTES} dakika ge\u00e7erlidir.</p>
+      <p>E\u011fer bu i\u015flemi siz yapmad\u0131ysan\u0131z bu e-postay\u0131 yok sayabilirsiniz.</p>
     </div>
   `;
   const text = [
     `Merhaba ${safeName},`,
-    "Hesabiniz icin sifre sifirlama talebi alindi.",
-    `Sifre yenileme baglantisi: ${resetUrl}`,
-    `Bu baglanti ${PASSWORD_RESET_TTL_MINUTES} dakika gecerlidir.`,
-    "Eger bu islemi siz yapmadiysaniz bu e-postayi yok sayabilirsiniz.",
+    "Hesab\u0131n\u0131z i\u00e7in \u015fifre s\u0131f\u0131rlama talebi al\u0131nd\u0131.",
+    `\u015eifre yenileme ba\u011flant\u0131s\u0131: ${resetUrl}`,
+    `Bu ba\u011flant\u0131 ${PASSWORD_RESET_TTL_MINUTES} dakika ge\u00e7erlidir.`,
+    "E\u011fer bu i\u015flemi siz yapmad\u0131ysan\u0131z bu e-postay\u0131 yok sayabilirsiniz.",
   ].join("\n");
 
   await mailTransporter.sendMail({
     from: `"${SMTP_FROM_NAME}" <${SMTP_FROM_EMAIL}>`,
     to,
-    subject: "Sifre Yenileme",
+    subject: "\u015eifre Yenileme",
     text,
     html,
   });
@@ -120,18 +200,133 @@ async function sendEmailVerificationCodeEmail({ to, code }) {
 
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111;">
-      <h2 style="margin:0 0 12px;">E-posta Dogrulamasi</h2>
-      <p>Hesabinizi tamamlamak icin dogrulama kodunuz:</p>
+      <h2 style="margin:0 0 12px;">E-posta Do\u011frulamas\u0131</h2>
+      <p>Hesab\u0131n\u0131z\u0131 tamamlamak i\u00e7in do\u011frulama kodunuz:</p>
       <p style="font-size:24px;font-weight:700;letter-spacing:4px;margin:12px 0;">${code}</p>
-      <p>Bu kod 10 dakika gecerlidir.</p>
+      <p>Bu kod 10 dakika ge\u00e7erlidir.</p>
     </div>
   `;
-  const text = `E-posta dogrulama kodunuz: ${code}. Bu kod 10 dakika gecerlidir.`;
+  const text = `E-posta do\u011frulama kodunuz: ${code}. Bu kod 10 dakika ge\u00e7erlidir.`;
 
   await mailTransporter.sendMail({
     from: `"${SMTP_FROM_NAME}" <${SMTP_FROM_EMAIL}>`,
     to,
-    subject: "E-posta Dogrulama Kodu",
+    subject: "E-posta Do\u011frulama Kodu",
+    text,
+    html,
+  });
+}
+
+async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryAddress }) {
+  if (!orderMailTransporter) {
+    throw new Error("Order SMTP is not configured.");
+  }
+
+  const baseUrl = buildPublicBaseUrl(req);
+  const safeFirstName = escapeHtml(firstName || "M\u00fc\u015fterimiz");
+  const safeOrderId = escapeHtml(order?.id ?? "");
+  const safeOrderDate = escapeHtml(formatOrderDateForEmail(order?.date ?? ""));
+  const safeOrderTotal = Number(order?.total ?? 0).toLocaleString("tr-TR");
+  const receiverName = `${deliveryAddress?.firstName ?? ""} ${deliveryAddress?.lastName ?? ""}`.trim();
+  const safeReceiverName = escapeHtml(receiverName || `${firstName || "M\u00fc\u015fterimiz"}`);
+  const deliveryNeighborhood = String(deliveryAddress?.neighborhood ?? "").trim();
+  const deliveryDistrict = String(deliveryAddress?.district ?? "").trim();
+  const deliveryProvince = String(deliveryAddress?.province ?? "").trim();
+  const deliveryStreet = String(deliveryAddress?.street ?? "").trim();
+  const deliveryAddressText = [deliveryStreet, deliveryNeighborhood, `${deliveryDistrict} / ${deliveryProvince}`]
+    .filter((part) => part && part !== "/")
+    .join(", ");
+  const safeDeliveryAddress = escapeHtml(
+    deliveryAddressText || "-"
+  );
+  const safeDeliveryPhone = escapeHtml(String(deliveryAddress?.phone ?? "").trim() || "-");
+  const items = Array.isArray(order?.items) ? order.items : [];
+
+  const itemsHtml = items
+    .map((item) => {
+      const product = item?.product ?? {};
+      const productId = String(product?.id ?? "").trim();
+      const productUrl = productId ? `${baseUrl}/product/${encodeURIComponent(productId)}` : baseUrl;
+      const productName = escapeHtml(product?.name ?? "Urun");
+      const quantity = Number(item?.quantity ?? 1);
+      const unitPrice = Number(product?.price ?? 0);
+      const totalPrice = (unitPrice * quantity).toLocaleString("tr-TR");
+      const image = String(product?.image ?? "").trim();
+      const color = String(item?.color ?? "").trim();
+
+      return `
+        <tr>
+          <td style="padding:12px;border-bottom:1px solid #eee;vertical-align:top;">
+            ${
+              image
+                ? `<img src="${escapeHtml(image)}" alt="${productName}" style="width:84px;height:84px;object-fit:cover;border-radius:8px;display:block;" />`
+                : `<div style="width:84px;height:84px;background:#f2f2f2;border-radius:8px;"></div>`
+            }
+          </td>
+          <td style="padding:12px;border-bottom:1px solid #eee;vertical-align:top;">
+            <a href="${escapeHtml(productUrl)}" style="color:#111;text-decoration:none;font-weight:600;">${productName}</a>
+            <div style="margin-top:6px;font-size:13px;color:#666;">Adet: ${quantity}</div>
+            ${color ? `<div style="margin-top:2px;font-size:13px;color:#666;">Renk: ${escapeHtml(color)}</div>` : ""}
+          </td>
+          <td style="padding:12px;border-bottom:1px solid #eee;vertical-align:top;text-align:right;white-space:nowrap;">
+            ${totalPrice} TL
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111;">
+      <h2 style="margin:0 0 12px;">Sipari\u015f Bilgileriniz</h2>
+      <p>Merhaba ${safeFirstName},</p>
+      <p>Sipari\u015finiz ba\u015far\u0131yla olu\u015fturuldu.</p>
+      <p style="margin:0 0 4px;"><strong>Sipari\u015f No:</strong> ${safeOrderId}</p>
+      <p style="margin:0 0 4px;"><strong>Tarih:</strong> ${safeOrderDate}</p>
+      <p style="margin:0 0 4px;"><strong>Teslim Alacak Ki\u015fi:</strong> ${safeReceiverName}</p>
+      <p style="margin:0 0 4px;"><strong>Telefon:</strong> ${safeDeliveryPhone}</p>
+      <p style="margin:0 0 16px;"><strong>Teslimat Adresi:</strong> ${safeDeliveryAddress}</p>
+      <table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+        <tbody>
+          ${itemsHtml}
+        </tbody>
+      </table>
+      <p style="margin-top:16px;"><strong>Toplam:</strong> ${safeOrderTotal} TL</p>
+      <p>Sipari\u015f detaylar\u0131n\u0131 hesab\u0131n\u0131zdan da takip edebilirsiniz.</p>
+    </div>
+  `;
+
+  const textItems = items
+    .map((item) => {
+      const product = item?.product ?? {};
+      const productName = String(product?.name ?? "Urun");
+      const quantity = Number(item?.quantity ?? 1);
+      const unitPrice = Number(product?.price ?? 0);
+      const totalPrice = (unitPrice * quantity).toLocaleString("tr-TR");
+      const productId = String(product?.id ?? "").trim();
+      const productUrl = productId ? `${baseUrl}/product/${productId}` : baseUrl;
+      return `- ${productName} x${quantity} (${totalPrice} TL) ${productUrl}`;
+    })
+    .join("\n");
+  const text = [
+    `Merhaba ${firstName || "M\u00fc\u015fterimiz"},`,
+    "Sipari\u015finiz ba\u015far\u0131yla olu\u015fturuldu.",
+    `Sipari\u015f No: ${order?.id ?? ""}`,
+    `Tarih: ${formatOrderDateForEmail(order?.date ?? "")}`,
+    `Teslim Alacak Ki\u015fi: ${receiverName || firstName || "M\u00fc\u015fterimiz"}`,
+    `Telefon: ${String(deliveryAddress?.phone ?? "").trim() || "-"}`,
+    `Teslimat Adresi: ${deliveryAddressText || "-"}`,
+    "",
+    "\u00dcr\u00fcnler:",
+    textItems,
+    "",
+    `Toplam: ${safeOrderTotal} TL`,
+  ].join("\n");
+
+  await orderMailTransporter.sendMail({
+    from: `"${ORDER_SMTP_FROM_NAME}" <${ORDER_SMTP_FROM_EMAIL}>`,
+    to,
+    subject: `Sipari\u015finiz Al\u0131nd\u0131 - #${order?.id ?? ""}`,
     text,
     html,
   });
@@ -173,6 +368,7 @@ function mapAddressRow(row) {
     street: row.street,
     province: row.province,
     district: row.district ?? "",
+    neighborhood: row.neighborhood ?? "",
     isDefault: Boolean(row.is_default),
   };
 }
@@ -211,7 +407,7 @@ async function createSession(userId) {
 async function getUserAddresses(userId) {
   const [rows] = await pool.query(
     `
-    SELECT id, first_name, last_name, phone, street, province, district, is_default
+    SELECT id, first_name, last_name, phone, street, province, district, neighborhood, is_default
     FROM user_addresses
     WHERE user_id = ?
     ORDER BY is_default DESC, created_at DESC
@@ -375,6 +571,7 @@ function normalizeAddressInput(body = {}) {
     street,
     province,
     district,
+    neighborhood,
     city,
     postalCode,
     isDefault,
@@ -387,6 +584,7 @@ function normalizeAddressInput(body = {}) {
     street: String(street ?? "").trim(),
     province: String(province ?? city ?? "").trim(),
     district: String(district ?? postalCode ?? "").trim(),
+    neighborhood: String(neighborhood ?? "").trim(),
     isDefault: Boolean(isDefault),
   };
 
@@ -396,7 +594,8 @@ function normalizeAddressInput(body = {}) {
     !normalized.phone ||
     !normalized.street ||
     !normalized.province ||
-    !normalized.district
+    !normalized.district ||
+    !normalized.neighborhood
   ) {
     return { error: "All address fields are required.", value: normalized };
   }
@@ -1082,9 +1281,9 @@ app.post("/api/auth/addresses", requireAuth, async (req, res) => {
     await pool.query(
       `
       INSERT INTO user_addresses (
-        id, user_id, first_name, last_name, phone, street, province, district, is_default
+        id, user_id, first_name, last_name, phone, street, province, district, neighborhood, is_default
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         crypto.randomUUID(),
@@ -1095,6 +1294,7 @@ app.post("/api/auth/addresses", requireAuth, async (req, res) => {
         value.street,
         value.province,
         value.district,
+        value.neighborhood,
         value.isDefault,
       ]
     );
@@ -1121,7 +1321,7 @@ app.put("/api/auth/addresses/:id", requireAuth, async (req, res) => {
     const [result] = await pool.query(
       `
       UPDATE user_addresses
-      SET first_name = ?, last_name = ?, phone = ?, street = ?, province = ?, district = ?, is_default = ?
+      SET first_name = ?, last_name = ?, phone = ?, street = ?, province = ?, district = ?, neighborhood = ?, is_default = ?
       WHERE id = ? AND user_id = ?
       `,
       [
@@ -1131,6 +1331,7 @@ app.put("/api/auth/addresses/:id", requireAuth, async (req, res) => {
         value.street,
         value.province,
         value.district,
+        value.neighborhood,
         value.isDefault,
         req.params.id,
         req.authUser.id,
@@ -1342,6 +1543,19 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     await connection.commit();
     const orders = await getUserOrders(req.authUser.id);
     const createdOrder = orders.find((order) => order.id === orderId);
+
+    if (createdOrder && isOrderSmtpConfigured) {
+      const deliveryAddress = req.authUser.addresses.find((address) => address.isDefault) ?? req.authUser.addresses[0] ?? null;
+      sendOrderConfirmationEmail(req, {
+        to: req.authUser.email,
+        firstName: req.authUser.firstName,
+        order: createdOrder,
+        deliveryAddress,
+      }).catch((error) => {
+        console.error("Order confirmation email send failed:", error?.message || error);
+      });
+    }
+
     return res.status(201).json({ order: createdOrder ?? null, orders });
   } catch (error) {
     await connection.rollback();
@@ -1626,7 +1840,7 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
     const userPlaceholders = userIds.map(() => "?").join(", ");
     const [addressRows] = await pool.query(
       `
-      SELECT user_id, first_name, last_name, phone, street, province, district, is_default, created_at
+      SELECT user_id, first_name, last_name, phone, street, province, district, neighborhood, is_default, created_at
       FROM user_addresses
       WHERE user_id IN (${userPlaceholders})
       ORDER BY is_default DESC, created_at DESC
@@ -1644,6 +1858,7 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
         street: row.street,
         province: row.province,
         district: row.district,
+        neighborhood: row.neighborhood ?? "",
       });
     }
 

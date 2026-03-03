@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Heart, LogOut, MapPin, Package, User, ChevronDown, ChevronUp, Copy } from "lucide-react";
 import { useStore } from "@/store/StoreContext";
@@ -32,6 +32,7 @@ const emptyAddressForm: Omit<Address, "id"> = {
   street: "",
   province: "",
   district: "",
+  neighborhood: "",
   isDefault: false,
 };
 
@@ -68,32 +69,62 @@ export function Account() {
   });
 
   const [addressForm, setAddressForm] = useState<Omit<Address, "id">>(emptyAddressForm);
+  const [addressDetail, setAddressDetail] = useState("");
   const [isAddressFormOpen, setIsAddressFormOpen] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [editAddressForm, setEditAddressForm] = useState<Omit<Address, "id">>(emptyAddressForm);
-  const [locationMap, setLocationMap] = useState<Record<string, string[]>>({});
+  const [editAddressDetail, setEditAddressDetail] = useState("");
+  const [locationMap, setLocationMap] = useState<Record<string, Record<string, string[]>>>({});
   const [copiedTrackingOrderId, setCopiedTrackingOrderId] = useState<string | null>(null);
   const googleClientId = String(import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "").trim();
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
   const hasRenderedGoogleButtonRef = useRef(false);
   const verificationInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const addressDistrictSelectRef = useRef<HTMLSelectElement | null>(null);
+  const addressNeighborhoodSelectRef = useRef<HTMLSelectElement | null>(null);
+  const editDistrictSelectRef = useRef<HTMLSelectElement | null>(null);
+  const editNeighborhoodSelectRef = useRef<HTMLSelectElement | null>(null);
+  const openNativeSelect = (element: HTMLSelectElement | null) => {
+    if (!element) return;
+    element.focus();
+    const picker = (element as HTMLSelectElement & { showPicker?: () => void }).showPicker;
+    if (typeof picker === "function") {
+      try {
+        picker.call(element);
+        return;
+      } catch {
+        // ignore picker errors and fall back to click
+      }
+    }
+    element.click();
+  };
   const normalizeAuthMessage = (message: string) => {
     const input = String(message ?? "").trim();
-    if (!input) return "İşlem başarısız.";
+    if (!input) return "Ä°ÅŸlem baÅŸarÄ±sÄ±z.";
     const lower = input.toLowerCase();
 
-    if (lower.includes("google login failed")) return "Google ile giriş başarısız.";
-    if (lower.includes("google client id")) return "Google yapılandırması hatalı.";
-    if (lower.includes("invalid google account")) return "Geçersiz Google hesabı.";
-    if (lower.includes("google email is not verified")) return "Google e-posta hesabı doğrulanmamış.";
+    if (lower.includes("google login failed")) return "Google ile giriÅŸ baÅŸarÄ±sÄ±z.";
+    if (lower.includes("google client id")) return "Google yapÄ±landÄ±rmasÄ± hatalÄ±.";
+    if (lower.includes("invalid google account")) return "GeÃ§ersiz Google hesabÄ±.";
+    if (lower.includes("google email is not verified")) return "Google e-posta hesabÄ± doÄŸrulanmamÄ±ÅŸ.";
     if (lower.includes("token used too early")) return "Cihaz veya sunucu saati geri. Saati senkronize edip tekrar deneyin.";
-    if (lower.includes("token used too late") || lower.includes("expired")) return "Google oturum süresi dolmuş. Tekrar deneyin.";
-    if (lower.includes("api request failed")) return "İstek sırasında bir hata oluştu.";
-    if (lower.includes("required")) return "Zorunlu alanları doldurun.";
-    if (lower.includes("invalid")) return "Girilen bilgiler geçersiz.";
-    if (lower.includes("failed")) return "İşlem başarısız.";
+    if (lower.includes("token used too late") || lower.includes("expired")) return "Google oturum sÃ¼resi dolmuÅŸ. Tekrar deneyin.";
+    if (lower.includes("api request failed")) return "Ä°stek sÄ±rasÄ±nda bir hata oluÅŸtu.";
+    if (lower.includes("required")) return "Zorunlu alanlarÄ± doldurun.";
+    if (lower.includes("invalid")) return "Girilen bilgiler geÃ§ersiz.";
+    if (lower.includes("failed")) return "Ä°ÅŸlem baÅŸarÄ±sÄ±z.";
     return input;
   };
+  const splitStreetParts = (street: string) => {
+    const input = String(street ?? "");
+    const [namePart, ...detailParts] = input.split("|||");
+    return {
+      addressName: (namePart ?? "").trim(),
+      addressDetail: detailParts.join("|||").trim(),
+    };
+  };
+  const combineStreetParts = (addressName: string, detail: string) =>
+    `${String(addressName ?? "").trim()}|||${String(detail ?? "").trim()}`;
 
   useEffect(() => {
     const loadSession = async () => {
@@ -181,7 +212,7 @@ export function Account() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (params.get("reset") === "success") {
-      setSuccessMessage("Şifreniz başarıyla değiştirildi.");
+      setSuccessMessage("Åifreniz baÅŸarÄ±yla deÄŸiÅŸtirildi.");
     }
   }, [location.search]);
 
@@ -199,12 +230,26 @@ export function Account() {
     [resetTokenFromUrl, resetModeFromUrl]
   );
   const addressDistrictOptions = useMemo(
-    () => (addressForm.province ? locationMap[addressForm.province] ?? [] : []),
+    () => (addressForm.province ? Object.keys(locationMap[addressForm.province] ?? {}) : []),
     [locationMap, addressForm.province]
   );
+  const addressNeighborhoodOptions = useMemo(
+    () =>
+      addressForm.province && addressForm.district
+        ? locationMap[addressForm.province]?.[addressForm.district] ?? []
+        : [],
+    [locationMap, addressForm.province, addressForm.district]
+  );
   const editDistrictOptions = useMemo(
-    () => (editAddressForm.province ? locationMap[editAddressForm.province] ?? [] : []),
+    () => (editAddressForm.province ? Object.keys(locationMap[editAddressForm.province] ?? {}) : []),
     [locationMap, editAddressForm.province]
+  );
+  const editNeighborhoodOptions = useMemo(
+    () =>
+      editAddressForm.province && editAddressForm.district
+        ? locationMap[editAddressForm.province]?.[editAddressForm.district] ?? []
+        : [],
+    [locationMap, editAddressForm.province, editAddressForm.district]
   );
 
   const menuItems = useMemo(
@@ -300,9 +345,9 @@ export function Account() {
         return `https://gonderitakip.ptt.gov.tr/Track/Verify?q=${no}`;
       case "DHL":
         return `https://www.dhl.com/tr-tr/home/tracking.html?tracking-id=${no}&submit=1`;
-      case "Sürat Kargo":
+      case "SÃ¼rat Kargo":
         return `https://www.suratkargo.com.tr/KargoTakip/?kargotakipno=${no}`;
-      case "Yurtiçi Kargo":
+      case "YurtiÃ§i Kargo":
         return `https://www.yurticikargo.com/tr/online-servisler/gonderi-sorgula?code=${no}`;
       case "Sen Kargo":
         return `https://www.google.com/search?q=${encodeURIComponent(`Sen Kargo takip ${trackingNo}`)}`;
@@ -319,7 +364,7 @@ export function Account() {
         setCopiedTrackingOrderId((prev) => (prev === orderId ? null : prev));
       }, 1200);
     } catch {
-      setErrorMessage("Takip numarası kopyalanamadı.");
+      setErrorMessage("Takip numarasÄ± kopyalanamadÄ±.");
     }
   };
 
@@ -349,7 +394,7 @@ export function Account() {
       setIsVerificationModalOpen(true);
       setVerificationDigits(["", "", "", "", "", ""]);
       setIsVerificationCodeSending(true);
-      setSuccessMessage("Doğrulama kodu gönderiliyor...");
+      setSuccessMessage("DoÄŸrulama kodu gÃ¶nderiliyor...");
     }
 
     try {
@@ -375,7 +420,7 @@ export function Account() {
         setIsVerificationCodeSending(false);
         setIsVerificationModalOpen(false);
       }
-      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "İşlem başarısız.");
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Ä°ÅŸlem baÅŸarÄ±sÄ±z.");
     }
   };
 
@@ -439,7 +484,7 @@ export function Account() {
       const result = await requestPasswordReset(forgotEmail);
       setSuccessMessage(result.message);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Şifre yenileme e-postası gönderilemedi.");
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Åifre yenileme e-postasÄ± gÃ¶nderilemedi.");
     }
   };
 
@@ -449,7 +494,7 @@ export function Account() {
     setSuccessMessage("");
     const token = resetTokenFromUrl;
     if (!token) {
-      setErrorMessage("Şifre yenileme bağlantısı geçersiz.");
+      setErrorMessage("Åifre yenileme baÄŸlantÄ±sÄ± geÃ§ersiz.");
       return;
     }
     try {
@@ -462,7 +507,7 @@ export function Account() {
       setAuthMode("login");
       navigate("/giris?mode=login&reset=success", { replace: true });
     } catch (error) {
-      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Şifre sıfırlama başarısız.");
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Åifre sÄ±fÄ±rlama baÅŸarÄ±sÄ±z.");
     }
   };
 
@@ -484,13 +529,13 @@ export function Account() {
           setResetTokenStatus("valid");
         } else {
           setResetTokenStatus("invalid");
-          setResetTokenError(result.message ?? "Şifre yenileme bağlantısı geçersiz veya süresi dolmuş.");
+          setResetTokenError(result.message ?? "Åifre yenileme baÄŸlantÄ±sÄ± geÃ§ersiz veya sÃ¼resi dolmuÅŸ.");
         }
       })
       .catch((error) => {
         if (!mounted) return;
         setResetTokenStatus("invalid");
-        setResetTokenError(error instanceof Error ? normalizeAuthMessage(error.message) : "Şifre yenileme bağlantısı doğrulanamadı.");
+        setResetTokenError(error instanceof Error ? normalizeAuthMessage(error.message) : "Åifre yenileme baÄŸlantÄ±sÄ± doÄŸrulanamadÄ±.");
       });
 
     return () => {
@@ -508,7 +553,7 @@ export function Account() {
         navigate(redirectPath);
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Google ile giriş başarısız.");
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Google ile giriÅŸ baÅŸarÄ±sÄ±z.");
     }
   };
 
@@ -540,7 +585,7 @@ export function Account() {
         callback: (response) => {
           const credential = String(response?.credential ?? "");
           if (!credential) {
-            setErrorMessage("Google kimlik doğrulaması alınamadı.");
+            setErrorMessage("Google kimlik doÄŸrulamasÄ± alÄ±namadÄ±.");
             return;
           }
           void handleGoogleLogin(credential);
@@ -622,9 +667,13 @@ export function Account() {
     e.preventDefault();
     setErrorMessage("");
     try {
-      const user = await saveAddress(addressForm);
+      const user = await saveAddress({
+        ...addressForm,
+        street: combineStreetParts(addressForm.street, addressDetail),
+      });
       dispatch({ type: "SET_USER", payload: user });
       setAddressForm(emptyAddressForm);
+      setAddressDetail("");
       setIsAddressFormOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Adres kaydedilemedi.");
@@ -642,21 +691,25 @@ export function Account() {
   };
 
   const handleStartAddressEdit = (address: Address) => {
+    const parsedStreet = splitStreetParts(address.street);
     setEditingAddressId(address.id);
     setEditAddressForm({
       firstName: address.firstName,
       lastName: address.lastName,
       phone: address.phone,
-      street: address.street,
+      street: parsedStreet.addressName,
       province: address.province,
       district: address.district,
+      neighborhood: address.neighborhood,
       isDefault: address.isDefault,
     });
+    setEditAddressDetail(parsedStreet.addressDetail);
   };
 
   const handleCancelAddressEdit = () => {
     setEditingAddressId(null);
     setEditAddressForm(emptyAddressForm);
+    setEditAddressDetail("");
   };
 
   const handleUpdateAddress = async (e: React.FormEvent) => {
@@ -664,7 +717,10 @@ export function Account() {
     if (!editingAddressId) return;
     setErrorMessage("");
     try {
-      const user = await updateAddress(editingAddressId, editAddressForm);
+      const user = await updateAddress(editingAddressId, {
+        ...editAddressForm,
+        street: combineStreetParts(editAddressForm.street, editAddressDetail),
+      });
       dispatch({ type: "SET_USER", payload: user });
       handleCancelAddressEdit();
     } catch (error) {
@@ -702,25 +758,25 @@ export function Account() {
             )}
 
             {shouldEnterResetFlow && resetTokenStatus === "checking" ? (
-              <div className="text-sm text-gray-600 py-2">Şifre yenileme bağlantısı kontrol ediliyor...</div>
+              <div className="text-sm text-gray-600 py-2">Åifre yenileme baÄŸlantÄ±sÄ± kontrol ediliyor...</div>
             ) : shouldEnterResetFlow && resetTokenStatus === "invalid" ? (
               <div className="space-y-4">
                 <p className="text-sm text-red-600 bg-red-50 p-3 rounded">
-                  {resetTokenError || "Şifre yenileme bağlantısı geçersiz veya süresi dolmuş."}
+                  {resetTokenError || "Åifre yenileme baÄŸlantÄ±sÄ± geÃ§ersiz veya sÃ¼resi dolmuÅŸ."}
                 </p>
                 <button
                   type="button"
                   onClick={() => navigate("/giris?mode=login", { replace: true })}
                   className="w-full bg-black text-white py-3 rounded-full text-sm"
                 >
-                  Giriş Yap Sayfasına Dön
+                  GiriÅŸ Yap SayfasÄ±na DÃ¶n
                 </button>
               </div>
             ) : shouldEnterResetFlow && resetTokenStatus === "valid" ? (
               <form onSubmit={handleResetPassword} className="space-y-4">
-                <p className="text-sm text-gray-600">Yeni şifrenizi belirleyin.</p>
+                <p className="text-sm text-gray-600">Yeni ÅŸifrenizi belirleyin.</p>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Yeni Şifre</label>
+                  <label className="block text-sm font-medium mb-2">Yeni Åifre</label>
                   <input
                     type="password"
                     required
@@ -730,7 +786,7 @@ export function Account() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Yeni Şifre Tekrar</label>
+                  <label className="block text-sm font-medium mb-2">Yeni Åifre Tekrar</label>
                   <input
                     type="password"
                     required
@@ -740,13 +796,13 @@ export function Account() {
                   />
                 </div>
                 <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
-                  Şifreyi Güncelle
+                  Åifreyi GÃ¼ncelle
                 </button>
               </form>
             ) : authMode === "forgot" ? (
               <form onSubmit={handleForgotPassword} className="space-y-4">
                 <p className="text-sm text-gray-600">
-                  Şifre yenileme bağlantısını göndermek için e-posta adresinizi girin.
+                  Åifre yenileme baÄŸlantÄ±sÄ±nÄ± gÃ¶ndermek iÃ§in e-posta adresinizi girin.
                 </p>
                 <div>
                   <label className="block text-sm font-medium mb-2">E-posta</label>
@@ -759,14 +815,14 @@ export function Account() {
                   />
                 </div>
                 <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
-                  Şifre Yenileme E-postası Gönder
+                  Åifre Yenileme E-postasÄ± GÃ¶nder
                 </button>
                 <button
                   type="button"
                   onClick={() => setAuthMode("login")}
                   className="w-full border border-gray-200 py-3 rounded-full text-sm hover:border-black transition-colors"
                 >
-                  Girişe Dön
+                  GiriÅŸe DÃ¶n
                 </button>
               </form>
             ) : (
@@ -808,7 +864,7 @@ export function Account() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-2">
-                        {authEmailExists ? "Şifre" : "Şifre Oluştur"}
+                        {authEmailExists ? "Åifre" : "Åifre OluÅŸtur"}
                       </label>
                       <input
                         type="password"
@@ -821,7 +877,7 @@ export function Account() {
                     {!authEmailExists && (
                       <div>
                         <label className="block text-sm font-medium mb-2">
-                          Cinsiyet <span className="text-xs text-gray-500 font-normal">(isteğe bağlı)</span>
+                          Cinsiyet <span className="text-xs text-gray-500 font-normal">(isteÄŸe baÄŸlÄ±)</span>
                         </label>
                         <div className="grid grid-cols-2 gap-3">
                           <button
@@ -831,7 +887,7 @@ export function Account() {
                               authGender === "kadin" ? "border-black bg-black text-white" : "border-gray-200"
                             }`}
                           >
-                            Kadın
+                            KadÄ±n
                           </button>
                           <button
                             type="button"
@@ -846,7 +902,7 @@ export function Account() {
                       </div>
                     )}
                     <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
-                      {authEmailExists ? "Giriş Yap" : "Üye Ol"}
+                      {authEmailExists ? "GiriÅŸ Yap" : "Ãœye Ol"}
                     </button>
                     <button
                       type="button"
@@ -858,7 +914,7 @@ export function Account() {
                       }}
                       className="w-full border border-gray-200 py-3 rounded-full text-sm hover:border-black transition-colors"
                     >
-                      Başka E-posta Kullan
+                      BaÅŸka E-posta Kullan
                     </button>
                     {authEmailExists && (
                       <button
@@ -869,7 +925,7 @@ export function Account() {
                         }}
                         className="w-full text-sm text-gray-600 hover:text-black transition-colors"
                       >
-                        Şifremi Unuttum
+                        Åifremi Unuttum
                       </button>
                     )}
                   </form>
@@ -902,10 +958,10 @@ export function Account() {
                       </button>
                       <h3 className="text-lg font-medium">{"E-posta Do\u011frulamas\u0131"}</h3>
                       <p className="text-sm text-gray-600">
-                        {authEmail} adresine gönderilen doğrulama kodunu girin.
+                        {authEmail} adresine gÃ¶nderilen doÄŸrulama kodunu girin.
                       </p>
                       {isVerificationCodeSending && (
-                        <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded">Doğrulama kodu gönderiliyor...</p>
+                        <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded">DoÄŸrulama kodu gÃ¶nderiliyor...</p>
                       )}
                       {errorMessage && (
                         <p className="text-sm text-red-600 bg-red-50 p-3 rounded">{errorMessage}</p>
@@ -1067,7 +1123,7 @@ export function Account() {
                         </div>
                         {order.status === "shipped" && (
                           <div className="mb-4 text-sm text-gray-600 space-y-1">
-                            {order.shippingCompany ? <p>Kargo Firması: {order.shippingCompany}</p> : null}
+                            {order.shippingCompany ? <p>Kargo FirmasÄ±: {order.shippingCompany}</p> : null}
                             {order.shippingTrackingNo ? (
                               <div className="flex items-center gap-2 flex-wrap">
                                 <p>Takip No: {order.shippingTrackingNo}</p>
@@ -1079,8 +1135,8 @@ export function Account() {
                                       ? "bg-black text-white border-black"
                                       : "border-gray-300 hover:border-black hover:text-black"
                                   }`}
-                                  aria-label="Takip numarasını kopyala"
-                                  title={copiedTrackingOrderId === order.id ? "Kopyalandı" : "Kopyala"}
+                                  aria-label="Takip numarasÄ±nÄ± kopyala"
+                                  title={copiedTrackingOrderId === order.id ? "KopyalandÄ±" : "Kopyala"}
                                 >
                                   <Copy className="w-3.5 h-3.5" />
                                 </button>
@@ -1199,15 +1255,21 @@ export function Account() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="block text-sm font-medium mb-2">{"\u0130l"}</label>
                       <select
                         required
                         value={addressForm.province}
-                        onChange={(e) =>
-                          setAddressForm({ ...addressForm, province: e.target.value, district: "" })
-                        }
+                        onChange={(e) => {
+                          setAddressForm({
+                            ...addressForm,
+                            province: e.target.value,
+                            district: "",
+                            neighborhood: "",
+                          });
+                          window.setTimeout(() => openNativeSelect(addressDistrictSelectRef.current), 0);
+                        }}
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
                       >
                         <option value="">{ "\u0130l se\u00e7in" }</option>
@@ -1224,7 +1286,11 @@ export function Account() {
                         required
                         disabled={!addressForm.province}
                         value={addressForm.district}
-                        onChange={(e) => setAddressForm({ ...addressForm, district: e.target.value })}
+                        onChange={(e) => {
+                          setAddressForm({ ...addressForm, district: e.target.value, neighborhood: "" });
+                          window.setTimeout(() => openNativeSelect(addressNeighborhoodSelectRef.current), 0);
+                        }}
+                        ref={addressDistrictSelectRef}
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black disabled:bg-gray-100 disabled:text-gray-500"
                       >
                         <option value="">{ "\u0130l\u00e7e se\u00e7in" }</option>
@@ -1235,26 +1301,57 @@ export function Account() {
                         ))}
                       </select>
                     </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Mahalle</label>
+                      <select
+                        required
+                        disabled={!addressForm.district}
+                        value={addressForm.neighborhood}
+                        onChange={(e) => setAddressForm({ ...addressForm, neighborhood: e.target.value })}
+                        ref={addressNeighborhoodSelectRef}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black disabled:bg-gray-100 disabled:text-gray-500"
+                      >
+                        <option value="">Mahalle seçin</option>
+                        {addressNeighborhoodOptions.map((neighborhood) => (
+                          <option key={neighborhood} value={neighborhood}>
+                            {neighborhood}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Telefon</label>
+                      <input
+                        type="tel"
+                        required
+                        value={addressForm.phone}
+                        onChange={(e) => setAddressForm({ ...addressForm, phone: e.target.value })}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Adres İsmi</label>
+                      <input
+                        type="text"
+                        required
+                        value={addressForm.street}
+                        onChange={(e) => setAddressForm({ ...addressForm, street: e.target.value })}
+                        placeholder="örn. ev adresim, iş adresim"
+                        className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                      />
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Telefon</label>
-                    <input
-                      type="tel"
-                      required
-                      value={addressForm.phone}
-                      onChange={(e) => setAddressForm({ ...addressForm, phone: e.target.value })}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Adres</label>
-                    <input
-                      type="text"
+                    <label className="block text-sm font-medium mb-2">Adres Detayı</label>
+                    <textarea
                       required
                       minLength={10}
-                      value={addressForm.street}
-                      onChange={(e) => setAddressForm({ ...addressForm, street: e.target.value })}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                      value={addressDetail}
+                      onChange={(e) => setAddressDetail(e.target.value)}
+                      rows={4}
+                      className="w-full resize-none bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
                     />
                   </div>
                   <label className="flex items-center gap-2 text-sm">
@@ -1277,7 +1374,9 @@ export function Account() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {user.addresses.map((address) => (
+                    {user.addresses.map((address) => {
+                      const parsedStreet = splitStreetParts(address.street);
+                      return (
                       <div key={address.id} className="bg-white rounded-lg p-6">
                         <div className="flex items-center justify-between mb-3">
                           {address.isDefault ? (
@@ -1298,9 +1397,12 @@ export function Account() {
                           {address.firstName} {address.lastName}
                         </p>
                         <p className="text-sm text-gray-500">{address.phone}</p>
-                        <p className="text-sm text-gray-500">{address.street}</p>
+                        <p className="text-sm text-gray-500">{parsedStreet.addressName}</p>
+                        {parsedStreet.addressDetail ? (
+                          <p className="text-sm text-gray-500">{parsedStreet.addressDetail}</p>
+                        ) : null}
                         <p className="text-sm text-gray-500">
-                          {address.district} / {address.province}
+                          {address.neighborhood}, {address.district} / {address.province}
                         </p>
                         <button
                           onClick={() => handleDeleteAddress(address.id)}
@@ -1329,17 +1431,20 @@ export function Account() {
                                 placeholder="Soyad"
                               />
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-3 gap-3">
                               <select
                                 required
                                 value={editAddressForm.province}
-                                onChange={(e) =>
+                                onChange={(e) => {
                                   setEditAddressForm({
                                     ...editAddressForm,
                                     province: e.target.value,
                                     district: "",
-                                  })
-                                }
+                                    neighborhood: "",
+                                  });
+                                  window.setTimeout(() => openNativeSelect(editDistrictSelectRef.current), 0);
+                                }}
+                                ref={editDistrictSelectRef}
                                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                               >
                                 <option value="">{ "\u0130l se\u00e7in" }</option>
@@ -1353,7 +1458,15 @@ export function Account() {
                                 required
                                 disabled={!editAddressForm.province}
                                 value={editAddressForm.district}
-                                onChange={(e) => setEditAddressForm({ ...editAddressForm, district: e.target.value })}
+                                onChange={(e) => {
+                                  setEditAddressForm({
+                                    ...editAddressForm,
+                                    district: e.target.value,
+                                    neighborhood: "",
+                                  });
+                                  window.setTimeout(() => openNativeSelect(editNeighborhoodSelectRef.current), 0);
+                                }}
+                                ref={editNeighborhoodSelectRef}
                                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black disabled:bg-gray-100 disabled:text-gray-500"
                               >
                                 <option value="">{ "\u0130l\u00e7e se\u00e7in" }</option>
@@ -1363,23 +1476,55 @@ export function Account() {
                                   </option>
                                 ))}
                               </select>
+                              <select
+                                required
+                                disabled={!editAddressForm.district}
+                                value={editAddressForm.neighborhood}
+                                onChange={(e) =>
+                                  setEditAddressForm({ ...editAddressForm, neighborhood: e.target.value })
+                                }
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black disabled:bg-gray-100 disabled:text-gray-500"
+                              >
+                                <option value="">Mahalle seçin</option>
+                                {editNeighborhoodOptions.map((neighborhood) => (
+                                  <option key={neighborhood} value={neighborhood}>
+                                    {neighborhood}
+                                  </option>
+                                ))}
+                              </select>
                             </div>
-                            <input
-                              type="tel"
-                              required
-                              value={editAddressForm.phone}
-                              onChange={(e) => setEditAddressForm({ ...editAddressForm, phone: e.target.value })}
-                              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                              placeholder="Telefon"
-                            />
-                            <input
-                              type="text"
+                            <div className="grid grid-cols-2 gap-3">
+                              <input
+                                type="tel"
+                                required
+                                value={editAddressForm.phone}
+                                onChange={(e) => setEditAddressForm({ ...editAddressForm, phone: e.target.value })}
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                                placeholder="Telefon"
+                              />
+                              <input
+                                type="text"
+                                required
+                                value={editAddressForm.street}
+                                onChange={(e) => setEditAddressForm({ ...editAddressForm, street: e.target.value })}
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                                placeholder="örn. ev adresim, iş adresim"
+                              />
+                            </div>
+                            <textarea
                               required
                               minLength={10}
-                              value={editAddressForm.street}
-                              onChange={(e) => setEditAddressForm({ ...editAddressForm, street: e.target.value })}
-                              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                              placeholder="Adres"
+                              value={editAddressDetail}
+                              onChange={(e) => setEditAddressDetail(e.target.value)}
+                              onInvalid={(e) => {
+                                e.currentTarget.setCustomValidity("Adres detayı en az 10 karakter olmalıdır.");
+                              }}
+                              onInput={(e) => {
+                                e.currentTarget.setCustomValidity("");
+                              }}
+                              rows={4}
+                              className="w-full resize-none bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                              placeholder="Adres Detayı"
                             />
                             <label className="flex items-center gap-2 text-sm">
                               <input
@@ -1404,7 +1549,7 @@ export function Account() {
                           </form>
                         )}
                       </div>
-                    ))}
+                    )})}
                   </div>
                 )}
               </div>
@@ -1415,9 +1560,9 @@ export function Account() {
                 <h2 className="text-xl font-medium mb-6">Favorilerim</h2>
                 {wishlistPreview.length === 0 ? (
                   <div className="bg-white rounded-lg p-6">
-                    <p className="text-sm text-gray-500 mb-3">Henüz favori ürününüz yok.</p>
+                    <p className="text-sm text-gray-500 mb-3">HenÃ¼z favori Ã¼rÃ¼nÃ¼nÃ¼z yok.</p>
                     <Link to="/shop" className="text-sm text-black hover:underline">
-                      Ürünleri Keşfet
+                      ÃœrÃ¼nleri KeÅŸfet
                     </Link>
                   </div>
                 ) : (
@@ -1454,3 +1599,8 @@ export function Account() {
     </div>
   );
 }
+
+
+
+
+

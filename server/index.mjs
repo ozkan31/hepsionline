@@ -688,6 +688,19 @@ async function ensureAppSettingsTable() {
   `);
 }
 
+async function ensureContactRequestsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS contact_requests (
+      id CHAR(36) PRIMARY KEY,
+      name VARCHAR(180) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      subject VARCHAR(255) NOT NULL,
+      message TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+}
+
 async function getSiteNameSetting() {
   await ensureAppSettingsTable();
   const [rows] = await pool.query(
@@ -774,7 +787,11 @@ app.post("/api/auth/flow/start", async (req, res) => {
   try {
     const email = String(req.body?.email ?? "").trim().toLowerCase();
     const password = String(req.body?.password ?? "");
+    const firstName = String(req.body?.firstName ?? "").trim();
+    const lastName = String(req.body?.lastName ?? "").trim();
     const gender = String(req.body?.gender ?? "").trim().toLowerCase();
+    const phone = String(req.body?.phone ?? "").trim();
+    const termsAccepted = Boolean(req.body?.termsAccepted);
     const normalizedGender = gender === "kadin" || gender === "erkek" ? gender : "";
 
     if (!email || !password) {
@@ -800,6 +817,14 @@ app.post("/api/auth/flow/start", async (req, res) => {
       return res.json({ mode: "login", token, user });
     }
 
+    if (!firstName || !lastName) {
+      return res.status(400).json({ message: "Ad ve soyad zorunludur." });
+    }
+
+    if (!termsAccepted) {
+      return res.status(400).json({ message: "Gizlilik Politikası ve Kullanım Koşulları onayı zorunludur." });
+    }
+
     if (!isSmtpConfigured) {
       return res.status(500).json({ message: "E-posta servisi henüz yapılandırılmamış." });
     }
@@ -811,10 +836,10 @@ app.post("/api/auth/flow/start", async (req, res) => {
     await pool.query(`DELETE FROM email_verification_codes WHERE email = ? OR expires_at < NOW()`, [email]);
     await pool.query(
       `
-      INSERT INTO email_verification_codes (id, email, password_hash, gender, code_hash, expires_at)
-      VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
+      INSERT INTO email_verification_codes (id, email, first_name, last_name, password_hash, gender, phone, code_hash, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
       `,
-      [crypto.randomUUID(), email, passwordHash, normalizedGender, codeHash]
+      [crypto.randomUUID(), email, firstName, lastName, passwordHash, normalizedGender, phone, codeHash]
     );
 
     await sendEmailVerificationCodeEmail({ to: email, code });
@@ -842,7 +867,7 @@ app.post("/api/auth/flow/verify", async (req, res) => {
     const codeHash = sha256(code);
     const [verifyRows] = await pool.query(
       `
-      SELECT id, email, password_hash, gender
+      SELECT id, email, first_name, last_name, password_hash, gender, phone
       FROM email_verification_codes
       WHERE email = ? AND code_hash = ? AND used_at IS NULL AND expires_at > NOW()
       LIMIT 1
@@ -859,8 +884,8 @@ app.post("/api/auth/flow/verify", async (req, res) => {
     let userId = existing.length > 0 ? existing[0].id : null;
 
     if (!userId) {
-      const localPart = email.split("@")[0] || "Uye";
-      const fallbackFirst = localPart.slice(0, 120) || "Uye";
+      const fallbackFirst = String(verifyRow.first_name ?? "").trim() || "Uye";
+      const fallbackLast = String(verifyRow.last_name ?? "").trim() || "Uye";
       await pool.query(
         `
         INSERT INTO users (id, first_name, last_name, email, phone, gender, password_hash)
@@ -869,9 +894,9 @@ app.post("/api/auth/flow/verify", async (req, res) => {
         [
           crypto.randomUUID(),
           fallbackFirst,
-          "Uye",
+          fallbackLast,
           email,
-          "",
+          String(verifyRow.phone ?? "").trim(),
           verifyRow.gender,
           verifyRow.password_hash,
         ]
@@ -1679,6 +1704,32 @@ app.post("/api/paytr/token", async (req, res) => {
   }
 });
 
+app.post("/api/contact", async (req, res) => {
+  try {
+    const name = String(req.body?.name ?? "").trim();
+    const email = String(req.body?.email ?? "").trim().toLowerCase();
+    const subject = String(req.body?.subject ?? "").trim();
+    const message = String(req.body?.message ?? "").trim();
+
+    if (!name || !email || !subject || !message) {
+      return res.status(400).json({ message: "Tüm alanlar zorunludur." });
+    }
+
+    await ensureContactRequestsTable();
+    await pool.query(
+      `
+      INSERT INTO contact_requests (id, name, email, subject, message)
+      VALUES (?, ?, ?, ?, ?)
+      `,
+      [crypto.randomUUID(), name, email, subject, message]
+    );
+
+    return res.json({ ok: true, message: "Mesajınız alındı." });
+  } catch (error) {
+    return res.status(500).json({ message: "İletişim talebi kaydedilemedi." });
+  }
+});
+
 app.post("/api/admin/login", async (req, res) => {
   const adminPairs = [
     {
@@ -1992,6 +2043,32 @@ app.get("/api/admin/products", requireAdminAuth, async (_req, res) => {
     }
   } catch (error) {
     return res.status(500).json({ message: "Admin products fetch failed." });
+  }
+});
+
+app.get("/api/admin/contact-requests", requireAdminAuth, async (_req, res) => {
+  try {
+    await ensureContactRequestsTable();
+    const [rows] = await pool.query(
+      `
+      SELECT id, name, email, subject, message, created_at
+      FROM contact_requests
+      ORDER BY created_at DESC
+      `
+    );
+
+    const requests = rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      subject: row.subject,
+      message: row.message,
+      createdAt: row.created_at,
+    }));
+
+    return res.json({ requests });
+  } catch (error) {
+    return res.status(500).json({ message: "Admin contact requests fetch failed." });
   }
 });
 

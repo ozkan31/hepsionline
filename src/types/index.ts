@@ -80,3 +80,12 @@ export interface AdminOrder extends Order {
   shippingTrackingNo?: string;
   customer: AdminOrderCustomer;
 }
+
+export interface AdminContactRequest {
+  id: string;
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+  createdAt: string;
+}

@@ -386,7 +386,7 @@ export function Checkout() {
 
                   {state.isAuthenticated && isAddressFormOpen && (
                     <form onSubmit={handleAddAddress} className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <input
                           type="text"
                           required
@@ -404,7 +404,7 @@ export function Checkout() {
                           className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                         />
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <select
                           required
                           value={newAddressForm.province}
@@ -460,7 +460,7 @@ export function Checkout() {
                           ))}
                         </select>
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <input
                           type="tel"
                           required
@@ -676,6 +676,7 @@ export function Checkout() {
     </div>
   );
 }
+
 
 
 

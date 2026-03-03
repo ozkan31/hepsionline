@@ -108,8 +108,11 @@ const createEmailVerificationCodesSql = `
 CREATE TABLE IF NOT EXISTS email_verification_codes (
   id CHAR(36) PRIMARY KEY,
   email VARCHAR(255) NOT NULL,
+  first_name VARCHAR(120) NOT NULL DEFAULT '',
+  last_name VARCHAR(120) NOT NULL DEFAULT '',
   password_hash VARCHAR(255) NOT NULL,
   gender VARCHAR(20) NOT NULL,
+  phone VARCHAR(40) NULL,
   code_hash CHAR(64) NOT NULL,
   expires_at DATETIME NOT NULL,
   used_at DATETIME NULL,
@@ -208,6 +211,17 @@ CREATE TABLE IF NOT EXISTS app_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
+const createContactRequestsSql = `
+CREATE TABLE IF NOT EXISTS contact_requests (
+  id CHAR(36) PRIMARY KEY,
+  name VARCHAR(180) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  subject VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
 async function migrate() {
   await pool.query(createCategoriesSql);
   await pool.query(createProductsSql);
@@ -221,6 +235,7 @@ async function migrate() {
   await pool.query(createUserOrdersSql);
   await pool.query(createUserOrderItemsSql);
   await pool.query(createAppSettingsSql);
+  await pool.query(createContactRequestsSql);
 
   // Backward-compatible migration for existing databases.
   try {
@@ -325,6 +340,27 @@ async function migrate() {
   }
   try {
     await pool.query(`ALTER TABLE users ADD COLUMN gender VARCHAR(20) NULL AFTER phone`);
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE email_verification_codes ADD COLUMN phone VARCHAR(40) NULL AFTER gender`);
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE email_verification_codes ADD COLUMN first_name VARCHAR(120) NOT NULL DEFAULT '' AFTER email`);
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE email_verification_codes ADD COLUMN last_name VARCHAR(120) NOT NULL DEFAULT '' AFTER first_name`);
   } catch (error) {
     if (error?.code !== "ER_DUP_FIELDNAME") {
       throw error;

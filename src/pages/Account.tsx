@@ -47,7 +47,11 @@ export function Account() {
 
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authFirstName, setAuthFirstName] = useState("");
+  const [authLastName, setAuthLastName] = useState("");
   const [authGender, setAuthGender] = useState<"kadin" | "erkek" | "">("");
+  const [authPhone, setAuthPhone] = useState("");
+  const [authTermsAccepted, setAuthTermsAccepted] = useState(false);
   const [authEmailExists, setAuthEmailExists] = useState<boolean | null>(null);
   const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
   const [isVerificationCodeSending, setIsVerificationCodeSending] = useState(false);
@@ -84,6 +88,14 @@ export function Account() {
   const addressNeighborhoodSelectRef = useRef<HTMLSelectElement | null>(null);
   const editDistrictSelectRef = useRef<HTMLSelectElement | null>(null);
   const editNeighborhoodSelectRef = useRef<HTMLSelectElement | null>(null);
+  const navigateAfterAuth = () => {
+    const redirectPath = new URLSearchParams(location.search).get("redirect");
+    if (redirectPath && redirectPath.startsWith("/")) {
+      navigate(redirectPath, { replace: true });
+      return;
+    }
+    navigate("/", { replace: true });
+  };
   const openNativeSelect = (element: HTMLSelectElement | null) => {
     if (!element) return;
     element.focus();
@@ -100,19 +112,19 @@ export function Account() {
   };
   const normalizeAuthMessage = (message: string) => {
     const input = String(message ?? "").trim();
-    if (!input) return "Ä°ÅŸlem baÅŸarÄ±sÄ±z.";
+    if (!input) return "İşlem başarısız.";
     const lower = input.toLowerCase();
 
-    if (lower.includes("google login failed")) return "Google ile giriÅŸ baÅŸarÄ±sÄ±z.";
-    if (lower.includes("google client id")) return "Google yapÄ±landÄ±rmasÄ± hatalÄ±.";
-    if (lower.includes("invalid google account")) return "GeÃ§ersiz Google hesabÄ±.";
-    if (lower.includes("google email is not verified")) return "Google e-posta hesabÄ± doÄŸrulanmamÄ±ÅŸ.";
+    if (lower.includes("google login failed")) return "Google ile giriş başarısız.";
+    if (lower.includes("google client id")) return "Google yapılandırması hatalı.";
+    if (lower.includes("invalid google account")) return "Geçersiz Google hesabı.";
+    if (lower.includes("google email is not verified")) return "Google e-posta hesabı doğrulanmamış.";
     if (lower.includes("token used too early")) return "Cihaz veya sunucu saati geri. Saati senkronize edip tekrar deneyin.";
-    if (lower.includes("token used too late") || lower.includes("expired")) return "Google oturum sÃ¼resi dolmuÅŸ. Tekrar deneyin.";
-    if (lower.includes("api request failed")) return "Ä°stek sÄ±rasÄ±nda bir hata oluÅŸtu.";
-    if (lower.includes("required")) return "Zorunlu alanlarÄ± doldurun.";
-    if (lower.includes("invalid")) return "Girilen bilgiler geÃ§ersiz.";
-    if (lower.includes("failed")) return "Ä°ÅŸlem baÅŸarÄ±sÄ±z.";
+    if (lower.includes("token used too late") || lower.includes("expired")) return "Google oturum süresi dolmuş. Tekrar deneyin.";
+    if (lower.includes("api request failed")) return "İstek sırasında bir hata oluştu.";
+    if (lower.includes("required")) return "Zorunlu alanları doldurun.";
+    if (lower.includes("invalid")) return "Girilen bilgiler geçersiz.";
+    if (lower.includes("failed")) return "İşlem başarısız.";
     return input;
   };
   const splitStreetParts = (street: string) => {
@@ -199,6 +211,12 @@ export function Account() {
   }, [location.search, state.isAuthenticated]);
 
   useEffect(() => {
+    if (!state.isAuthenticated || !state.user) return;
+    if (location.pathname !== "/giris") return;
+    navigateAfterAuth();
+  }, [state.isAuthenticated, state.user, location.pathname, location.search]);
+
+  useEffect(() => {
     if (authMode !== "login") {
       hasRenderedGoogleButtonRef.current = false;
     }
@@ -212,7 +230,7 @@ export function Account() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (params.get("reset") === "success") {
-      setSuccessMessage("Åifreniz baÅŸarÄ±yla deÄŸiÅŸtirildi.");
+      setSuccessMessage("Şifreniz başarıyla değiştirildi.");
     }
   }, [location.search]);
 
@@ -345,9 +363,9 @@ export function Account() {
         return `https://gonderitakip.ptt.gov.tr/Track/Verify?q=${no}`;
       case "DHL":
         return `https://www.dhl.com/tr-tr/home/tracking.html?tracking-id=${no}&submit=1`;
-      case "SÃ¼rat Kargo":
+      case "Sürat Kargo":
         return `https://www.suratkargo.com.tr/KargoTakip/?kargotakipno=${no}`;
-      case "YurtiÃ§i Kargo":
+      case "Yurtiçi Kargo":
         return `https://www.yurticikargo.com/tr/online-servisler/gonderi-sorgula?code=${no}`;
       case "Sen Kargo":
         return `https://www.google.com/search?q=${encodeURIComponent(`Sen Kargo takip ${trackingNo}`)}`;
@@ -364,7 +382,7 @@ export function Account() {
         setCopiedTrackingOrderId((prev) => (prev === orderId ? null : prev));
       }, 1200);
     } catch {
-      setErrorMessage("Takip numarasÄ± kopyalanamadÄ±.");
+      setErrorMessage("Takip numarası kopyalanamadı.");
     }
   };
 
@@ -376,7 +394,11 @@ export function Account() {
       const result = await checkAuthEmailStatus(authEmail);
       setAuthEmailExists(result.exists);
       setAuthPassword("");
+      setAuthFirstName("");
+      setAuthLastName("");
       setAuthGender("");
+      setAuthPhone("");
+      setAuthTermsAccepted(false);
       setSuccessMessage("");
     } catch (error) {
       setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "E-posta kontrol edilemedi.");
@@ -388,25 +410,37 @@ export function Account() {
     setErrorMessage("");
     setSuccessMessage("");
     const isRegisterAttempt = authEmailExists === false;
+    if (isRegisterAttempt && (!authFirstName.trim() || !authLastName.trim())) {
+      setErrorMessage("Ad ve soyad zorunludur.");
+      return;
+    }
+    if (isRegisterAttempt && !authTermsAccepted) {
+      setErrorMessage("Devam etmek için Gizlilik Politikası ve Kullanım Koşulları'nı onaylayın.");
+      return;
+    }
 
     if (isRegisterAttempt) {
       // Open modal immediately for faster UX while code is being sent in background.
       setIsVerificationModalOpen(true);
       setVerificationDigits(["", "", "", "", "", ""]);
       setIsVerificationCodeSending(true);
-      setSuccessMessage("DoÄŸrulama kodu gÃ¶nderiliyor...");
+      setSuccessMessage("Doğrulama kodu gönderiliyor...");
     }
 
     try {
       const result = await startAuthFlow({
         email: authEmail,
         password: authPassword,
+        firstName: isRegisterAttempt ? authFirstName.trim() : undefined,
+        lastName: isRegisterAttempt ? authLastName.trim() : undefined,
         gender: authEmailExists ? undefined : authGender || undefined,
+        phone: isRegisterAttempt ? authPhone.trim() : undefined,
+        termsAccepted: isRegisterAttempt ? authTermsAccepted : undefined,
       });
 
       if (result.mode === "login" && result.user) {
         dispatch({ type: "SET_USER", payload: result.user });
-        navigate("/");
+        navigateAfterAuth();
         return;
       }
 
@@ -420,7 +454,7 @@ export function Account() {
         setIsVerificationCodeSending(false);
         setIsVerificationModalOpen(false);
       }
-      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Ä°ÅŸlem baÅŸarÄ±sÄ±z.");
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "İşlem başarısız.");
     }
   };
 
@@ -439,7 +473,7 @@ export function Account() {
       });
       dispatch({ type: "SET_USER", payload: user });
       setIsVerificationModalOpen(false);
-      navigate("/");
+      navigateAfterAuth();
     } catch (error) {
       setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Do\u011frulama kodu hatal\u0131.");
     }
@@ -484,7 +518,7 @@ export function Account() {
       const result = await requestPasswordReset(forgotEmail);
       setSuccessMessage(result.message);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Åifre yenileme e-postasÄ± gÃ¶nderilemedi.");
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Şifre yenileme e-postası gönderilemedi.");
     }
   };
 
@@ -494,7 +528,7 @@ export function Account() {
     setSuccessMessage("");
     const token = resetTokenFromUrl;
     if (!token) {
-      setErrorMessage("Åifre yenileme baÄŸlantÄ±sÄ± geÃ§ersiz.");
+      setErrorMessage("Şifre yenileme bağlantısı geçersiz.");
       return;
     }
     try {
@@ -507,7 +541,7 @@ export function Account() {
       setAuthMode("login");
       navigate("/giris?mode=login&reset=success", { replace: true });
     } catch (error) {
-      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Åifre sÄ±fÄ±rlama baÅŸarÄ±sÄ±z.");
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Şifre sıfırlama başarısız.");
     }
   };
 
@@ -529,13 +563,13 @@ export function Account() {
           setResetTokenStatus("valid");
         } else {
           setResetTokenStatus("invalid");
-          setResetTokenError(result.message ?? "Åifre yenileme baÄŸlantÄ±sÄ± geÃ§ersiz veya sÃ¼resi dolmuÅŸ.");
+          setResetTokenError(result.message ?? "Şifre yenileme bağlantısı geçersiz veya süresi dolmuş.");
         }
       })
       .catch((error) => {
         if (!mounted) return;
         setResetTokenStatus("invalid");
-        setResetTokenError(error instanceof Error ? normalizeAuthMessage(error.message) : "Åifre yenileme baÄŸlantÄ±sÄ± doÄŸrulanamadÄ±.");
+        setResetTokenError(error instanceof Error ? normalizeAuthMessage(error.message) : "Şifre yenileme bağlantısı doğrulanamadı.");
       });
 
     return () => {
@@ -548,12 +582,9 @@ export function Account() {
     try {
       const user = await loginWithGoogle(credential);
       dispatch({ type: "SET_USER", payload: user });
-      const redirectPath = new URLSearchParams(location.search).get("redirect");
-      if (redirectPath && redirectPath.startsWith("/")) {
-        navigate(redirectPath);
-      }
+      navigateAfterAuth();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Google ile giriÅŸ baÅŸarÄ±sÄ±z.");
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Google ile giriş başarısız.");
     }
   };
 
@@ -585,7 +616,7 @@ export function Account() {
         callback: (response) => {
           const credential = String(response?.credential ?? "");
           if (!credential) {
-            setErrorMessage("Google kimlik doÄŸrulamasÄ± alÄ±namadÄ±.");
+            setErrorMessage("Google kimlik doğrulaması alınamadı.");
             return;
           }
           void handleGoogleLogin(credential);
@@ -758,25 +789,25 @@ export function Account() {
             )}
 
             {shouldEnterResetFlow && resetTokenStatus === "checking" ? (
-              <div className="text-sm text-gray-600 py-2">Åifre yenileme baÄŸlantÄ±sÄ± kontrol ediliyor...</div>
+              <div className="text-sm text-gray-600 py-2">Şifre yenileme bağlantısı kontrol ediliyor...</div>
             ) : shouldEnterResetFlow && resetTokenStatus === "invalid" ? (
               <div className="space-y-4">
                 <p className="text-sm text-red-600 bg-red-50 p-3 rounded">
-                  {resetTokenError || "Åifre yenileme baÄŸlantÄ±sÄ± geÃ§ersiz veya sÃ¼resi dolmuÅŸ."}
+                  {resetTokenError || "Şifre yenileme bağlantısı geçersiz veya süresi dolmuş."}
                 </p>
                 <button
                   type="button"
                   onClick={() => navigate("/giris?mode=login", { replace: true })}
                   className="w-full bg-black text-white py-3 rounded-full text-sm"
                 >
-                  GiriÅŸ Yap SayfasÄ±na DÃ¶n
+                  Giriş Yap Sayfasına Dön
                 </button>
               </div>
             ) : shouldEnterResetFlow && resetTokenStatus === "valid" ? (
               <form onSubmit={handleResetPassword} className="space-y-4">
-                <p className="text-sm text-gray-600">Yeni ÅŸifrenizi belirleyin.</p>
+                <p className="text-sm text-gray-600">Yeni şifrenizi belirleyin.</p>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Yeni Åifre</label>
+                  <label className="block text-sm font-medium mb-2">Yeni Şifre</label>
                   <input
                     type="password"
                     required
@@ -786,7 +817,7 @@ export function Account() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Yeni Åifre Tekrar</label>
+                  <label className="block text-sm font-medium mb-2">Yeni Şifre Tekrar</label>
                   <input
                     type="password"
                     required
@@ -796,13 +827,13 @@ export function Account() {
                   />
                 </div>
                 <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
-                  Åifreyi GÃ¼ncelle
+                  Şifreyi Güncelle
                 </button>
               </form>
             ) : authMode === "forgot" ? (
               <form onSubmit={handleForgotPassword} className="space-y-4">
                 <p className="text-sm text-gray-600">
-                  Åifre yenileme baÄŸlantÄ±sÄ±nÄ± gÃ¶ndermek iÃ§in e-posta adresinizi girin.
+                  Şifre yenileme bağlantısını göndermek için e-posta adresinizi girin.
                 </p>
                 <div>
                   <label className="block text-sm font-medium mb-2">E-posta</label>
@@ -815,14 +846,14 @@ export function Account() {
                   />
                 </div>
                 <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
-                  Åifre Yenileme E-postasÄ± GÃ¶nder
+                  Şifre Yenileme E-postası Gönder
                 </button>
                 <button
                   type="button"
                   onClick={() => setAuthMode("login")}
                   className="w-full border border-gray-200 py-3 rounded-full text-sm hover:border-black transition-colors"
                 >
-                  GiriÅŸe DÃ¶n
+                  Girişe Dön
                 </button>
               </form>
             ) : (
@@ -864,7 +895,7 @@ export function Account() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-2">
-                        {authEmailExists ? "Åifre" : "Åifre OluÅŸtur"}
+                        {authEmailExists ? "Şifre" : "Şifre Oluştur"}
                       </label>
                       <input
                         type="password"
@@ -876,8 +907,39 @@ export function Account() {
                     </div>
                     {!authEmailExists && (
                       <div>
+                        <div className="grid grid-cols-2 gap-3 mb-4">
+                          <div>
+                            <label className="block text-sm font-medium mb-2">Ad</label>
+                            <input
+                              type="text"
+                              required
+                              value={authFirstName}
+                              onChange={(e) => setAuthFirstName(e.target.value)}
+                              className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium mb-2">Soyad</label>
+                            <input
+                              type="text"
+                              required
+                              value={authLastName}
+                              onChange={(e) => setAuthLastName(e.target.value)}
+                              className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                            />
+                          </div>
+                        </div>
                         <label className="block text-sm font-medium mb-2">
-                          Cinsiyet <span className="text-xs text-gray-500 font-normal">(isteÄŸe baÄŸlÄ±)</span>
+                          Telefon <span className="text-xs text-gray-500 font-normal">(isteğe bağlı)</span>
+                        </label>
+                        <input
+                          type="tel"
+                          value={authPhone}
+                          onChange={(e) => setAuthPhone(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black mb-4"
+                        />
+                        <label className="block text-sm font-medium mb-2">
+                          Cinsiyet <span className="text-xs text-gray-500 font-normal">(isteğe bağlı)</span>
                         </label>
                         <div className="grid grid-cols-2 gap-3">
                           <button
@@ -887,7 +949,7 @@ export function Account() {
                               authGender === "kadin" ? "border-black bg-black text-white" : "border-gray-200"
                             }`}
                           >
-                            KadÄ±n
+                            Kadın
                           </button>
                           <button
                             type="button"
@@ -899,22 +961,45 @@ export function Account() {
                             Erkek
                           </button>
                         </div>
+                        <label className="flex items-start gap-2 mt-4 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={authTermsAccepted}
+                            onChange={(e) => setAuthTermsAccepted(e.target.checked)}
+                            required
+                            className="mt-1"
+                          />
+                          <span>
+                            <Link to="/gizlilik" className="underline hover:text-black">
+                              Gizlilik Politikası
+                            </Link>{" "}
+                            ve{" "}
+                            <Link to="/kullanim-kosullari" className="underline hover:text-black">
+                              Kullanım Koşulları
+                            </Link>{" "}
+                            metinlerini okudum, kabul ediyorum.
+                          </span>
+                        </label>
                       </div>
                     )}
                     <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
-                      {authEmailExists ? "GiriÅŸ Yap" : "Ãœye Ol"}
+                      {authEmailExists ? "Giriş Yap" : "Üye Ol"}
                     </button>
                     <button
                       type="button"
                       onClick={() => {
                         setAuthEmailExists(null);
                         setAuthPassword("");
+                        setAuthFirstName("");
+                        setAuthLastName("");
                         setAuthGender("");
+                        setAuthPhone("");
+                        setAuthTermsAccepted(false);
                         setSuccessMessage("");
                       }}
                       className="w-full border border-gray-200 py-3 rounded-full text-sm hover:border-black transition-colors"
                     >
-                      BaÅŸka E-posta Kullan
+                      Başka E-posta Kullan
                     </button>
                     {authEmailExists && (
                       <button
@@ -925,7 +1010,7 @@ export function Account() {
                         }}
                         className="w-full text-sm text-gray-600 hover:text-black transition-colors"
                       >
-                        Åifremi Unuttum
+                        Şifremi Unuttum
                       </button>
                     )}
                   </form>
@@ -958,10 +1043,10 @@ export function Account() {
                       </button>
                       <h3 className="text-lg font-medium">{"E-posta Do\u011frulamas\u0131"}</h3>
                       <p className="text-sm text-gray-600">
-                        {authEmail} adresine gÃ¶nderilen doÄŸrulama kodunu girin.
+                        {authEmail} adresine gönderilen doğrulama kodunu girin.
                       </p>
                       {isVerificationCodeSending && (
-                        <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded">DoÄŸrulama kodu gÃ¶nderiliyor...</p>
+                        <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded">Doğrulama kodu gönderiliyor...</p>
                       )}
                       {errorMessage && (
                         <p className="text-sm text-red-600 bg-red-50 p-3 rounded">{errorMessage}</p>
@@ -1123,7 +1208,7 @@ export function Account() {
                         </div>
                         {order.status === "shipped" && (
                           <div className="mb-4 text-sm text-gray-600 space-y-1">
-                            {order.shippingCompany ? <p>Kargo FirmasÄ±: {order.shippingCompany}</p> : null}
+                            {order.shippingCompany ? <p>Kargo Firması: {order.shippingCompany}</p> : null}
                             {order.shippingTrackingNo ? (
                               <div className="flex items-center gap-2 flex-wrap">
                                 <p>Takip No: {order.shippingTrackingNo}</p>
@@ -1135,8 +1220,8 @@ export function Account() {
                                       ? "bg-black text-white border-black"
                                       : "border-gray-300 hover:border-black hover:text-black"
                                   }`}
-                                  aria-label="Takip numarasÄ±nÄ± kopyala"
-                                  title={copiedTrackingOrderId === order.id ? "KopyalandÄ±" : "Kopyala"}
+                                  aria-label="Takip numarasını kopyala"
+                                  title={copiedTrackingOrderId === order.id ? "Kopyalandı" : "Kopyala"}
                                 >
                                   <Copy className="w-3.5 h-3.5" />
                                 </button>
@@ -1560,9 +1645,9 @@ export function Account() {
                 <h2 className="text-xl font-medium mb-6">Favorilerim</h2>
                 {wishlistPreview.length === 0 ? (
                   <div className="bg-white rounded-lg p-6">
-                    <p className="text-sm text-gray-500 mb-3">HenÃ¼z favori Ã¼rÃ¼nÃ¼nÃ¼z yok.</p>
+                    <p className="text-sm text-gray-500 mb-3">Henüz favori ürününüz yok.</p>
                     <Link to="/shop" className="text-sm text-black hover:underline">
-                      ÃœrÃ¼nleri KeÅŸfet
+                      Ürünleri Keşfet
                     </Link>
                   </div>
                 ) : (
@@ -1599,6 +1684,7 @@ export function Account() {
     </div>
   );
 }
+
 
 
 

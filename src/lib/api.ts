@@ -1,4 +1,4 @@
-import type { Address, AdminOrder, CartItem, Category, Order, Product, User } from "@/types";
+import type { Address, AdminContactRequest, AdminOrder, CartItem, Category, Order, Product, User } from "@/types";
 
 const AUTH_TOKEN_KEY = "parisMoveAuthToken";
 
@@ -68,6 +68,20 @@ export async function fetchPublicSettings(): Promise<{ siteName: string }> {
   return parseResponse<{ siteName: string }>(response);
 }
 
+export async function submitContactRequest(input: {
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+}): Promise<{ ok: boolean; message: string }> {
+  const response = await fetch("/api/contact", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return parseResponse<{ ok: boolean; message: string }>(response);
+}
+
 export async function registerUser(input: {
   firstName: string;
   lastName: string;
@@ -119,7 +133,11 @@ export async function checkAuthEmailStatus(email: string): Promise<{ exists: boo
 export async function startAuthFlow(input: {
   email: string;
   password: string;
+  firstName?: string;
+  lastName?: string;
   gender?: "kadin" | "erkek";
+  phone?: string;
+  termsAccepted?: boolean;
 }): Promise<{
   mode: "login" | "register";
   token?: string;
@@ -392,6 +410,14 @@ export async function fetchAdminProducts(token: string): Promise<Product[]> {
   });
   const data = await parseResponse<{ products: Product[] }>(response);
   return data.products;
+}
+
+export async function fetchAdminContactRequests(token: string): Promise<AdminContactRequest[]> {
+  const response = await fetch("/api/admin/contact-requests", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await parseResponse<{ requests: AdminContactRequest[] }>(response);
+  return data.requests;
 }
 
 export async function updateAdminProduct(

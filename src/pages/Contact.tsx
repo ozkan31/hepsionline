@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Mail, Phone, MapPin, Send } from 'lucide-react';
+import { submitContactRequest } from '@/lib/api';
 
 export function Contact() {
   const [formData, setFormData] = useState({
@@ -9,32 +10,47 @@ export function Contact() {
     message: '',
   });
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage("");
+    setSuccessMessage("");
     setIsSubmitted(true);
-    setTimeout(() => {
-      setIsSubmitted(false);
+    try {
+      await submitContactRequest(formData);
       setFormData({ name: '', email: '', subject: '', message: '' });
-    }, 3000);
+      setSuccessMessage("Mesajınız başarıyla gönderildi.");
+      setTimeout(() => {
+        setIsSubmitted(false);
+        setSuccessMessage("");
+      }, 2000);
+    } catch (error) {
+      setIsSubmitted(false);
+      setErrorMessage(error instanceof Error ? error.message : "Mesaj gönderilemedi.");
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#F8F7F4] pt-20 md:pt-24 pb-20">
       <div className="w-full px-4 md:px-8">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-3xl md:text-4xl font-light mb-4">
-            İletişime Geçin
-          </h1>
+          <h1 className="text-3xl md:text-4xl font-light mb-4">İletişime Geçin</h1>
           <p className="text-gray-600 mb-12 max-w-xl">
-            Sizden haber almayı çok isteriz. Ürünlerimiz hakkında sorularınız, sipariş 
-            yardımı veya sadece merhaba demek için bize ulaşabilirsiniz.
+            Sizden haber almayı çok isteriz. Ürünlerimiz hakkında sorularınız, sipariş yardımı veya sadece merhaba
+            demek için bize ulaşabilirsiniz.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-            {/* Contact Form */}
             <div>
               <form onSubmit={handleSubmit} className="space-y-4">
+                {successMessage && (
+                  <p className="text-sm text-green-700 bg-green-50 rounded p-3">{successMessage}</p>
+                )}
+                {errorMessage && (
+                  <p className="text-sm text-red-600 bg-red-50 rounded p-3">{errorMessage}</p>
+                )}
                 <div>
                   <label className="block text-sm font-medium mb-2">Ad Soyad</label>
                   <input
@@ -92,28 +108,27 @@ export function Contact() {
               </form>
             </div>
 
-            {/* Contact Info */}
             <div className="md:pl-8">
               <div className="space-y-8">
                 <div>
                   <h3 className="text-lg font-medium mb-4">E-posta</h3>
-                  <a 
-                    href="mailto:info@parismove.com.tr"
+                  <a
+                    href="mailto:destek@stilbagsfashion.com"
                     className="flex items-center gap-3 text-gray-600 hover:text-black transition-colors"
                   >
                     <Mail className="w-5 h-5" />
-                    info@parismove.com.tr
+                    destek@stilbagsfashion.com
                   </a>
                 </div>
 
                 <div>
                   <h3 className="text-lg font-medium mb-4">Telefon</h3>
-                  <a 
-                    href="tel:+902121234567"
+                  <a
+                    href="tel:+905369536886"
                     className="flex items-center gap-3 text-gray-600 hover:text-black transition-colors"
                   >
                     <Phone className="w-5 h-5" />
-                    +90 212 123 45 67
+                    0536 953 68 86
                   </a>
                 </div>
 
@@ -122,8 +137,8 @@ export function Contact() {
                   <div className="flex items-start gap-3 text-gray-600">
                     <MapPin className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <div>
-                      <p>Nişantaşı Mah. Abdi İpekçi Cad. No: 45</p>
-                      <p>Şişli / İstanbul</p>
+                      <p>Kuletepe Mahallesi 4858. Sokak No: 8</p>
+                      <p>Hatay / Reyhanlı</p>
                     </div>
                   </div>
                 </div>
@@ -131,9 +146,7 @@ export function Contact() {
                 <div className="pt-8 border-t border-gray-200">
                   <h3 className="text-lg font-medium mb-4">Müşteri Hizmetleri Saatleri</h3>
                   <div className="space-y-2 text-gray-600">
-                    <p>Pazartesi - Cuma: 09:00 - 18:00</p>
-                    <p>Cumartesi: 10:00 - 16:00</p>
-                    <p>Pazar: Kapalı</p>
+                    <p>7/24 10:00 - 18:00</p>
                   </div>
                 </div>
               </div>

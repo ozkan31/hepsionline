@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+﻿import { useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
@@ -41,22 +41,22 @@ export function About() {
 
         <div className="space-y-8 text-base md:text-lg text-gray-600 leading-relaxed">
           <p className="animate-in">
-            Paris Move, zarafetin konforla buluştuğu bir inançtan doğdu. Paris'in kalbinde kurulan 
-            markamız, sizinle birlikte hareket eden çantalar yaratıyor - kalabalık şehir sokaklarında, 
+            Stilbags& fashion, zarafetin konforla buluştuğu bir inançtan doğdu. Paris'in kalbinde kurulan
+            markamız, sizinle birlikte hareket eden çantalar yaratıyor - kalabalık şehir sokaklarında,
             sessiz kafe köşelerinde ve aradaki her anınızda.
           </p>
 
           <div className="py-8 animate-in">
             <img 
               src="/banner1.jpg" 
-              alt="Paris Move" 
+              alt="Stilbags& fashion" 
               className="w-full h-[40vh] md:h-[50vh] object-cover rounded-lg"
             />
           </div>
 
           <p className="animate-in">
-            Her Paris Move çantası modern kadın düşünülerek özenle tasarlanır. Sadeliğin gücüne 
-            inanıyoruz - temiz çizgiler, kaliteli malzemeler ve kusursuz işçilik. Çantalarımız 
+            Her Stilbags& fashion çantası modern kadın düşünülerek özenle tasarlanır. Sadeliğin gücüne
+            inanıyoruz - temiz çizgiler, kaliteli malzemeler ve kusursuz işçilik. Çantalarımız
             sadece aksesuar değil, günlük yolculuğunuzun yoldaşlarıdır.
           </p>
 
@@ -65,13 +65,13 @@ export function About() {
           </h2>
 
           <p className="animate-in">
-            Mükemmelliğe olan bağlılığımızı paylaşan yetenekli zanaatkârlarla çalışıyoruz. Her dikiş, 
-            her dikiş hattı, her detay özenle düşünülüyor. Avrupa'nın dört bir yanından güvenilir 
+            Mükemmelliğe olan bağlılığımızı paylaşan yetenekli zanaatkârlarla çalışıyoruz. Her dikiş,
+            her dikiş hattı, her detay özenle düşünülüyor. Avrupa'nın dört bir yanından güvenilir
             tedarikçilerden sadece en kaliteli deri ve malzemeleri kullanıyoruz.
           </p>
 
           <p className="animate-in">
-            Tasarım felsefemiz Paris zarafetine kök salıyor - abartısız, kendinden emin ve zamansız. 
+            Tasarım felsefemiz Paris zarafetine kök salıyor - abartısız, kendinden emin ve zamansız.
             Mevsimleri ve trendleri aşan parçalar yaratıyoruz, zamanla daha da güzelleşen çantalar.
           </p>
 
@@ -80,29 +80,21 @@ export function About() {
           </h2>
 
           <p className="animate-in">
-            İster yoğun bir iş günü, ister yeni bir şehir keşfi, ister keyifli bir hafta sonu olsun, 
-            Paris Move yanınızda olmak için tasarlandı - hafif, konforlu ve şık.
+            İster yoğun bir iş günü, ister yeni bir şehir keşfi, ister keyifli bir hafta sonu olsun,
+            Stilbags& fashion yanınızda olmak için tasarlandı - hafif, konforlu ve şık.
           </p>
 
           <p className="animate-in">
-            Hikayemizin bir parçası olduğunuz için teşekkür ederiz. Koleksiyonu keşfetmenizi ve 
+            Hikayemizin bir parçası olduğunuz için teşekkür ederiz. Koleksiyonu keşfetmenizi ve
             mükemmel yoldaşınızı bulmanızı dileriz.
           </p>
         </div>
 
         <div className="mt-16 pt-16 border-t border-gray-200 animate-in">
-          <div className="grid grid-cols-3 gap-8 text-center">
+          <div className="grid grid-cols-1 gap-8 text-center">
             <div>
-              <p className="text-3xl md:text-4xl font-light text-gray-900 mb-2">2018</p>
+              <p className="text-3xl md:text-4xl font-light text-gray-900 mb-2">2026</p>
               <p className="text-sm text-gray-500">Kuruluş</p>
-            </div>
-            <div>
-              <p className="text-3xl md:text-4xl font-light text-gray-900 mb-2">50K+</p>
-              <p className="text-sm text-gray-500">Mutlu Müşteri</p>
-            </div>
-            <div>
-              <p className="text-3xl md:text-4xl font-light text-gray-900 mb-2">12</p>
-              <p className="text-sm text-gray-500">Ülkeye Gönderim</p>
             </div>
           </div>
         </div>
@@ -110,3 +102,4 @@ export function About() {
     </div>
   );
 }
+

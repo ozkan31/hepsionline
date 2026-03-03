@@ -106,33 +106,13 @@ export function Footer() {
               <ul className="space-y-3">
                 <li>
                   <a 
-                    href="https://instagram.com"
+                    href="https://www.instagram.com/stilbagsfashion?igsh=ZWtrZ2RuYjQ2eWZ2"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-white/80 hover:text-white transition-colors flex items-center gap-2"
                   >
                     <Instagram className="w-4 h-4" />
                     Instagram
-                  </a>
-                </li>
-                <li>
-                  <a 
-                    href="https://facebook.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-white/80 hover:text-white transition-colors"
-                  >
-                    Facebook
-                  </a>
-                </li>
-                <li>
-                  <a 
-                    href="https://pinterest.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-white/80 hover:text-white transition-colors"
-                  >
-                    Pinterest
                   </a>
                 </li>
               </ul>
@@ -143,14 +123,14 @@ export function Footer() {
               <h4 className="text-xs uppercase tracking-wider text-white/50 mb-4">İletişim</h4>
               <ul className="space-y-3">
                 <li className="text-sm text-white/80">
-                  info@parismove.com.tr
+                  destek@stilbagsfashion.com
                 </li>
                 <li className="text-sm text-white/80">
-                  +90 212 123 45 67
+                  0536 953 68 86
                 </li>
                 <li className="text-sm text-white/80">
-                  Nişantaşı Mah.<br />
-                  Şişli / İstanbul
+                  Kuletepe Mahallesi 4858. Sokak No: 8<br />
+                  Hatay / Reyhanlı
                 </li>
               </ul>
             </div>

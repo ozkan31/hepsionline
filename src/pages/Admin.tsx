@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   createAdminProduct,
   adminLogin,
+  fetchAdminContactRequests,
   fetchAdminSettings,
   adminValidate,
   fetchAdminOrders,
@@ -11,10 +12,10 @@ import {
   updateAdminOrderStatus,
   updateAdminProduct,
 } from "@/lib/api";
-import type { AdminOrder, Product } from "@/types";
+import type { AdminContactRequest, AdminOrder, Product } from "@/types";
 
 const ADMIN_TOKEN_KEY = "parisMoveAdminToken";
-type AdminSection = "orders" | "products" | "users" | "settings";
+type AdminSection = "orders" | "products" | "users" | "contactRequests" | "settings";
 type OrderStatusDraft = {
   status: "processing" | "shipped" | "delivered";
   shippingCompany: string;
@@ -74,6 +75,9 @@ export function Admin() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState("");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [contactRequests, setContactRequests] = useState<AdminContactRequest[]>([]);
+  const [contactRequestsLoading, setContactRequestsLoading] = useState(false);
+  const [contactRequestsError, setContactRequestsError] = useState("");
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   useEffect(() => {
@@ -176,6 +180,27 @@ export function Admin() {
     };
   }, [activeSection, isAuthenticated]);
 
+  useEffect(() => {
+    if (!isAuthenticated || activeSection !== "contactRequests") return;
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) return;
+
+    const loadContactRequests = async () => {
+      setContactRequestsLoading(true);
+      setContactRequestsError("");
+      try {
+        const data = await fetchAdminContactRequests(token);
+        setContactRequests(data);
+      } catch (err) {
+        setContactRequestsError(err instanceof Error ? err.message : "İletişim talepleri alınamadı.");
+      } finally {
+        setContactRequestsLoading(false);
+      }
+    };
+
+    loadContactRequests();
+  }, [activeSection, isAuthenticated]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -214,6 +239,9 @@ export function Admin() {
     setSettingsLoading(false);
     setSettingsMessage("");
     setIsSavingSettings(false);
+    setContactRequests([]);
+    setContactRequestsLoading(false);
+    setContactRequestsError("");
     setIsMobileNavOpen(false);
   };
 
@@ -741,6 +769,14 @@ export function Admin() {
               Kullanıcılar
             </button>
             <button
+              onClick={() => handleSectionChange("contactRequests")}
+              className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
+                activeSection === "contactRequests" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
+              }`}
+            >
+              İletişim Talepleri
+            </button>
+            <button
               onClick={() => handleSectionChange("settings")}
               className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
                 activeSection === "settings" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
@@ -807,6 +843,14 @@ export function Admin() {
                     }`}
                   >
                     Kullanıcılar
+                  </button>
+                  <button
+                    onClick={() => handleSectionChange("contactRequests")}
+                    className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
+                      activeSection === "contactRequests" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
+                    }`}
+                  >
+                    İletişim Talepleri
                   </button>
                   <button
                     onClick={() => handleSectionChange("settings")}
@@ -1047,6 +1091,36 @@ export function Admin() {
             <div>
               <h2 className="text-2xl font-light mb-2">Kullanıcılar</h2>
               <p className="text-sm text-gray-500">Kullanıcı listesi ve yönetimi eklenecek.</p>
+            </div>
+          )}
+
+          {activeSection === "contactRequests" && (
+            <div>
+              <h2 className="text-2xl font-light mb-2">İletişim Talepleri</h2>
+              <p className="text-sm text-gray-500 mb-5">İletişim formundan gelen talepler burada listelenir.</p>
+              {contactRequestsLoading && <p className="text-sm text-gray-500">Talepler yükleniyor...</p>}
+              {contactRequestsError && (
+                <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2 mb-4">{contactRequestsError}</p>
+              )}
+              {!contactRequestsLoading && !contactRequestsError && contactRequests.length === 0 && (
+                <p className="text-sm text-gray-500">Henüz iletişim talebi bulunmuyor.</p>
+              )}
+
+              <div className="space-y-3">
+                {contactRequests.map((request) => (
+                  <div key={request.id} className="border border-[#E7E2D8] rounded-lg bg-white p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{request.name}</p>
+                        <p className="text-sm text-gray-600">{request.email}</p>
+                      </div>
+                      <p className="text-xs text-gray-500">{formatOrderDateTime(request.createdAt)}</p>
+                    </div>
+                    <p className="text-sm font-medium text-black">Konu: {request.subject}</p>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{request.message}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

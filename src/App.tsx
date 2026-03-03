@@ -12,6 +12,15 @@ import { Checkout } from '@/pages/Checkout';
 import { Admin } from '@/pages/Admin';
 import { About } from '@/pages/About';
 import { Contact } from '@/pages/Contact';
+import {
+  CargoInfoPage,
+  CareerPage,
+  FaqPage,
+  PrivacyPolicyPage,
+  ReturnPolicyPage,
+  SustainabilityPage,
+  TermsPage,
+} from '@/pages/InfoPages';
 import { Footer } from '@/components/Footer';
 import './App.css';
 
@@ -71,6 +80,13 @@ function AppLayout() {
             <Route path="/hakkimizda" element={<About />} />
             <Route path="/iletisim" element={<Contact />} />
             <Route path="/urunler" element={<Shop />} />
+            <Route path="/kargo" element={<CargoInfoPage />} />
+            <Route path="/iade" element={<ReturnPolicyPage />} />
+            <Route path="/sss" element={<FaqPage />} />
+            <Route path="/surdurulebilirlik" element={<SustainabilityPage />} />
+            <Route path="/kariyer" element={<CareerPage />} />
+            <Route path="/gizlilik" element={<PrivacyPolicyPage />} />
+            <Route path="/kullanim-kosullari" element={<TermsPage />} />
           </Routes>
         )}
       </main>

@@ -42,7 +42,7 @@ export function Wishlist() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6 max-w-6xl mx-auto">
           {state.wishlist.map((product) => (
             <div key={product.id} className="group">
-              <div className="relative aspect-[3/4] overflow-hidden rounded-lg bg-gray-100 mb-3">
+              <div className="relative aspect-square overflow-hidden rounded-lg bg-gray-100 mb-3">
                 <Link to={`/product/${product.id}`}>
                   <img 
                     src={product.image} 

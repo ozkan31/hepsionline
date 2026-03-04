@@ -112,7 +112,7 @@ export function ShopSection() {
           {bestsellers.map((product) => (
             <div key={product.id} className="product-card group">
               <Link to={`/product/${product.id}`} className="block">
-                <div className="relative aspect-[4/5] overflow-hidden rounded-md bg-warm-grey/10 mb-4">
+                <div className="relative aspect-square overflow-hidden rounded-md bg-warm-grey/10 mb-4">
                   <img 
                     src={product.image} 
                     alt={product.name}

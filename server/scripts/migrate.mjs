@@ -436,6 +436,20 @@ async function migrate() {
       throw error;
     }
   }
+  try {
+    await pool.query(`ALTER TABLE email_verification_codes DROP INDEX uq_email_verification_code_hash`);
+  } catch (error) {
+    if (error?.code !== "ER_CANT_DROP_FIELD_OR_KEY" && error?.code !== "ER_DROP_INDEX_FK") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(`CREATE INDEX idx_email_verification_code_hash ON email_verification_codes (code_hash)`);
+  } catch (error) {
+    if (error?.code !== "ER_DUP_KEYNAME") {
+      throw error;
+    }
+  }
   await pool.query(
     `
     INSERT INTO app_settings (setting_key, setting_value)

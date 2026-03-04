@@ -932,18 +932,29 @@ app.post("/api/auth/flow/start", async (req, res) => {
       return res.status(500).json({ message: "E-posta servisi henüz yapılandırılmamış." });
     }
 
-    const code = String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
-    const codeHash = sha256(code);
     const passwordHash = await bcrypt.hash(password, 10);
 
     await pool.query(`DELETE FROM email_verification_codes WHERE email = ? OR expires_at < NOW()`, [email]);
-    await pool.query(
-      `
-      INSERT INTO email_verification_codes (id, email, first_name, last_name, password_hash, gender, phone, code_hash, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
-      `,
-      [crypto.randomUUID(), email, firstName, lastName, passwordHash, normalizedGender, phone, codeHash]
-    );
+    let code = "";
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      code = String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
+      const codeHash = sha256(code);
+      try {
+        await pool.query(
+          `
+          INSERT INTO email_verification_codes (id, email, first_name, last_name, password_hash, gender, phone, code_hash, expires_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
+          `,
+          [crypto.randomUUID(), email, firstName, lastName, passwordHash, normalizedGender, phone, codeHash]
+        );
+        break;
+      } catch (insertError) {
+        if (insertError?.code === "ER_DUP_ENTRY" && attempt < 7) {
+          continue;
+        }
+        throw insertError;
+      }
+    }
 
     try {
       await sendEmailVerificationCodeEmail({ to: email, code });
@@ -963,8 +974,15 @@ app.post("/api/auth/flow/start", async (req, res) => {
       message: "Doğrulama kodu e-posta adresinize gönderildi.",
     });
   } catch (error) {
+    console.error("Auth flow start failed:", error?.code, error?.message || error);
     if (error?.code === "ER_NO_SUCH_TABLE") {
       return res.status(500).json({ message: "Auth akışı için DB migration gerekli. npm run db:migrate çalıştırın." });
+    }
+    if (error?.code === "ER_BAD_FIELD_ERROR") {
+      return res.status(500).json({ message: "Auth akışı için DB sütunları eksik. npm run db:migrate çalıştırın." });
+    }
+    if (error?.code === "ER_DUP_ENTRY") {
+      return res.status(500).json({ message: "Doğrulama kodu üretilirken çakışma oluştu. Lütfen tekrar deneyin." });
     }
     return res.status(500).json({ message: "İşlem başarısız." });
   }

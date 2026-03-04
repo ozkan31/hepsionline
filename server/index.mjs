@@ -135,6 +135,29 @@ function toPublicUrl(baseUrl, rawValue) {
   return `${baseUrl}/${value.replace(/^\/+/, "")}`;
 }
 
+function normalizeMediaPath(rawValue) {
+  const value = String(rawValue ?? "").trim();
+  if (!value) return "";
+  if (/^(https?:)?\/\//i.test(value)) return value;
+  if (/^(data:|blob:)/i.test(value)) return value;
+  return value.startsWith("/") ? value : `/${value}`;
+}
+
+function normalizeProductMedia(product) {
+  if (!product || typeof product !== "object") return product;
+  const rawImages = Array.isArray(product.images) ? product.images : [];
+  const normalizedImages = rawImages
+    .map((image) => normalizeMediaPath(image))
+    .filter(Boolean);
+  const normalizedImage = normalizeMediaPath(product.image);
+  const fallbackImage = normalizedImages[0] || normalizedImage;
+  return {
+    ...product,
+    image: fallbackImage,
+    images: normalizedImages.length > 0 ? normalizedImages : fallbackImage ? [fallbackImage] : [],
+  };
+}
+
 function dataUrlToEmailAttachment(rawValue, cidBase) {
   const value = String(rawValue ?? "").trim();
   const match = value.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
@@ -449,12 +472,14 @@ function mapProductRow(row) {
   if (images.length === 0 && row.image) {
     images = [row.image];
   }
+  const normalizedImages = images.map((image) => normalizeMediaPath(image)).filter(Boolean);
+  const normalizedSingleImage = normalizeMediaPath(row.image);
   return {
     id: String(row.id),
     name: row.name,
     price: Number(row.price),
-    image: images[0] ?? row.image,
-    images,
+    image: normalizedImages[0] ?? normalizedSingleImage,
+    images: normalizedImages,
     category: row.category_id,
     description: row.description,
     features: JSON.parse(row.features_json ?? "[]"),
@@ -612,7 +637,7 @@ async function getUserOrders(userId) {
     const list = itemsByOrderId.get(row.order_id) ?? [];
     let product;
     try {
-      product = JSON.parse(row.product_json);
+      product = normalizeProductMedia(JSON.parse(row.product_json));
     } catch {
       continue;
     }
@@ -2148,7 +2173,7 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
     for (const row of itemRows) {
       const list = itemsByOrderId.get(row.order_id) ?? [];
       try {
-        const product = JSON.parse(row.product_json);
+        const product = normalizeProductMedia(JSON.parse(row.product_json));
         list.push({
           product,
           quantity: Number(row.quantity),

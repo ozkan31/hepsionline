@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   createAdminProduct,
   adminLogin,
+  deleteAdminProduct,
   fetchAdminContactRequests,
   fetchAdminSettings,
   fetchAdminUsers,
@@ -663,9 +664,8 @@ export function Admin() {
     const token = localStorage.getItem(ADMIN_TOKEN_KEY);
     if (!token) return;
 
-    const numericPrice = Number(productEditor.price);
-    if (!Number.isFinite(numericPrice)) {
-      setProductSaveMessage("Fiyat geçerli bir sayı olmalı.");
+    if (!productEditor.name.trim()) {
+      setProductSaveMessage("Ürün ismi zorunlu.");
       return;
     }
     const primaryImage = productEditor.images.find((image) => image.url.trim().length > 0)?.url?.trim() ?? "";
@@ -673,6 +673,7 @@ export function Admin() {
       setProductSaveMessage("Kaydetmek için en az bir görsel zorunlu.");
       return;
     }
+    const numericPrice = Number(productEditor.price);
 
     const features = productEditor.features.map((item) => item.trim()).filter((item) => item.length > 0);
     const colors = productEditor.colors.map((item) => item.trim()).filter((item) => item.length > 0);
@@ -683,7 +684,7 @@ export function Admin() {
       const payload = {
         id: productEditor.id.trim() || undefined,
         name: productEditor.name.trim(),
-        price: numericPrice,
+        price: Number.isFinite(numericPrice) ? numericPrice : 0,
         image: primaryImage,
         images: productEditor.images.map((image) => image.url).filter((url) => url.trim().length > 0),
         category: productEditor.category.trim(),
@@ -732,6 +733,24 @@ export function Admin() {
       );
     } finally {
       setIsSavingProduct(false);
+    }
+  };
+
+  const handleDeleteProduct = async (product: Product) => {
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) return;
+    const confirmText = `"${product.name}" ürününü silmek istediğinize emin misiniz?`;
+    if (!window.confirm(confirmText)) return;
+
+    setProductsError("");
+    try {
+      await deleteAdminProduct(token, product.id);
+      setProducts((prev) => prev.filter((item) => item.id !== product.id));
+      if (editingProductId === product.id || (productEditor && productEditor.id === product.id)) {
+        closeProductEditor();
+      }
+    } catch (err) {
+      setProductsError(err instanceof Error ? err.message : "Ürün silinemedi.");
     }
   };
 
@@ -1121,13 +1140,22 @@ export function Admin() {
                       <p className="font-medium truncate">{product.name}</p>
                       <p className="text-sm text-gray-500">{product.price.toLocaleString("tr-TR")} TL</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => openProductEditor(product)}
-                      className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
-                    >
-                      Düzenle
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openProductEditor(product)}
+                        className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
+                      >
+                        Düzenle
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProduct(product)}
+                        className="border border-red-600 text-red-600 px-4 py-2 rounded-full text-sm hover:bg-red-600 hover:text-white transition-colors"
+                      >
+                        Sil
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

@@ -877,6 +877,18 @@ async function generateUniqueProductId() {
   return `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 }
 
+async function getDefaultCategoryId() {
+  const [rows] = await pool.query(
+    `
+    SELECT id
+    FROM categories
+    ORDER BY id ASC
+    LIMIT 1
+    `
+  );
+  return rows.length > 0 ? String(rows[0].id ?? "").trim() : "";
+}
+
 function splitFullName(name) {
   const normalized = String(name ?? "").trim().replace(/\s+/g, " ");
   if (!normalized) {
@@ -2373,7 +2385,7 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
   try {
     const requestedId = String(req.body?.id ?? "").trim();
     const name = String(req.body?.name ?? "").trim();
-    const category = String(req.body?.category ?? "").trim();
+    const requestedCategory = String(req.body?.category ?? "").trim();
     const description = String(req.body?.description ?? "").trim();
     const image = String(req.body?.image ?? "").trim();
     const images = Array.isArray(req.body?.images) ? req.body.images : [];
@@ -2384,8 +2396,8 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
     const isNew = Boolean(req.body?.isNew);
     const isBestseller = Boolean(req.body?.isBestseller);
 
-    if (!name || !category || !description || !Number.isFinite(price)) {
-      return res.status(400).json({ message: "Tum urun alanlari zorunludur." });
+    if (!name) {
+      return res.status(400).json({ message: "Urun ismi zorunludur." });
     }
 
     const normalizedImages = images
@@ -2406,6 +2418,11 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
     const normalizedTags = tags
       .map((item) => String(item ?? "").trim())
       .filter((item) => item.length > 0);
+    const category = requestedCategory || (await getDefaultCategoryId());
+    if (!category) {
+      return res.status(400).json({ message: "Kayitli kategori bulunamadi." });
+    }
+    const normalizedPrice = Number.isFinite(price) ? Math.round(price) : 0;
 
     const productId = requestedId || (await generateUniqueProductId());
 
@@ -2419,7 +2436,7 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
       [
         productId,
         name,
-        Math.round(price),
+        normalizedPrice,
         primaryImage,
         JSON.stringify(normalizedImages.length > 0 ? normalizedImages : [primaryImage]),
         category,
@@ -2464,9 +2481,9 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
 app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
   try {
     const productId = String(req.params.id ?? "").trim();
-    const name = String(req.body?.name ?? "").trim();
-    const category = String(req.body?.category ?? "").trim();
-    const description = String(req.body?.description ?? "").trim();
+    const requestedName = String(req.body?.name ?? "").trim();
+    const requestedCategory = String(req.body?.category ?? "").trim();
+    const requestedDescription = String(req.body?.description ?? "").trim();
     const image = String(req.body?.image ?? "").trim();
     const images = Array.isArray(req.body?.images) ? req.body.images : [];
     const price = Number(req.body?.price);
@@ -2476,9 +2493,35 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     const isNew = Boolean(req.body?.isNew);
     const isBestseller = Boolean(req.body?.isBestseller);
 
-    if (!productId || !name || !category || !description || !Number.isFinite(price)) {
-      return res.status(400).json({ message: "Tum urun alanlari zorunludur." });
+    if (!productId) {
+      return res.status(400).json({ message: "Gecersiz urun." });
     }
+    const [existingRows] = await pool.query(
+      `
+      SELECT id, name, price, category_id, description
+      FROM products
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [productId]
+    );
+    if (existingRows.length === 0) {
+      return res.status(404).json({ message: "ÃœrÃ¼n bulunamadÄ±." });
+    }
+    const existing = existingRows[0];
+
+    const name = requestedName || String(existing.name ?? "").trim();
+    if (!name) {
+      return res.status(400).json({ message: "Urun ismi zorunludur." });
+    }
+    const category =
+      requestedCategory || String(existing.category_id ?? "").trim() || (await getDefaultCategoryId());
+    if (!category) {
+      return res.status(400).json({ message: "Kayitli kategori bulunamadi." });
+    }
+    const description = requestedDescription || String(existing.description ?? "").trim();
+    const normalizedPrice = Number.isFinite(price) ? Math.round(price) : Number(existing.price ?? 0);
+
     const normalizedImages = images
       .map((item) => String(item ?? "").trim())
       .filter((item) => item.length > 0)
@@ -2517,7 +2560,7 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
       `,
       [
         name,
-        Math.round(price),
+        normalizedPrice,
         primaryImage,
         JSON.stringify(normalizedImages.length > 0 ? normalizedImages : [primaryImage]),
         category,
@@ -2646,6 +2689,31 @@ app.get("/api/products/:id", async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ message: "Failed to fetch product." });
+  }
+});
+
+app.delete("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
+  try {
+    const productId = String(req.params.id ?? "").trim();
+    if (!productId) {
+      return res.status(400).json({ message: "Gecersiz urun." });
+    }
+
+    const [result] = await pool.query(
+      `
+      DELETE FROM products
+      WHERE id = ?
+      `,
+      [productId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "ÃœrÃ¼n bulunamadÄ±." });
+    }
+
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ message: "Admin product delete failed." });
   }
 });
 

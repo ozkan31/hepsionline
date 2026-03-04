@@ -485,3 +485,13 @@ export async function createAdminProduct(
   const data = await parseResponse<{ product: Product }>(response);
   return data.product;
 }
+
+export async function deleteAdminProduct(token: string, productId: string): Promise<void> {
+  const response = await fetch(`/api/admin/products/${productId}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  await parseResponse<{ ok: boolean }>(response);
+}

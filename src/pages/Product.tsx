@@ -289,7 +289,7 @@ export function Product() {
           <div>
             <div
               ref={imageViewportRef}
-              className="relative aspect-square rounded-lg overflow-hidden bg-gray-100"
+              className="relative aspect-[3/4] rounded-lg overflow-hidden bg-gray-100"
               onTouchStart={handleImageTouchStart}
               onTouchMove={handleImageTouchMove}
               onTouchEnd={handleImageTouchEnd}
@@ -511,7 +511,7 @@ export function Product() {
                   to={`/product/${related.id}`}
                   className="group"
                 >
-                  <div className="aspect-square overflow-hidden rounded-lg bg-gray-100 mb-3">
+                  <div className="aspect-[3/4] overflow-hidden rounded-lg bg-gray-100 mb-3">
                     <img 
                       src={related.image} 
                       alt={related.name}

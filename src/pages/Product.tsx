@@ -289,7 +289,8 @@ export function Product() {
           <div>
             <div
               ref={imageViewportRef}
-              className="relative aspect-[3/4] rounded-lg overflow-hidden bg-gray-100"
+              className="relative rounded-lg overflow-hidden bg-gray-100 mx-auto"
+              style={{ width: "min(577px, 100%)", height: "min(667.39px, calc(100vw - 2rem))" }}
               onTouchStart={handleImageTouchStart}
               onTouchMove={handleImageTouchMove}
               onTouchEnd={handleImageTouchEnd}

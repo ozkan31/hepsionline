@@ -78,7 +78,7 @@ function AppLayout() {
   const isAdminRoute = pathname === "/akalin1453" || isHashAdminRoute;
 
   return (
-    <div className="relative min-h-screen bg-[#F8F7F4]">
+    <div className="relative min-h-screen bg-[#F8F7F4] overflow-x-hidden">
       {!isAdminRoute ? <Header /> : null}
       <main className="min-h-screen">
         {isHashAdminRoute ? (

@@ -21,7 +21,7 @@ export function Footer() {
   }, []);
 
   return (
-    <footer className="bg-black text-white py-12 md:py-16">
+    <footer className="w-full bg-black text-white py-12 md:py-16 overflow-x-hidden">
       <div className="w-full px-4 md:px-8">
         <div className="max-w-6xl mx-auto">
           {/* Newsletter */}
@@ -122,7 +122,7 @@ export function Footer() {
             <div>
               <h4 className="text-xs uppercase tracking-wider text-white/50 mb-4">İletişim</h4>
               <ul className="space-y-3">
-                <li className="text-sm text-white/80">
+                <li className="text-sm text-white/80 break-all">
                   destek@stilbagsfashion.com
                 </li>
                 <li className="text-sm text-white/80">

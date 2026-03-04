@@ -326,6 +326,7 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
   const safeOrderTotal = Number(order?.total ?? 0).toLocaleString("tr-TR");
   const receiverName = `${deliveryAddress?.firstName ?? ""} ${deliveryAddress?.lastName ?? ""}`.trim();
   const safeReceiverName = escapeHtml(receiverName || `${firstName || "M\u00fc\u015fterimiz"}`);
+  const safeAddressName = escapeHtml(String(deliveryAddress?.addressName ?? "").trim() || "-");
   const deliveryAddressText = buildDeliveryAddressText(deliveryAddress);
   const safeDeliveryAddress = escapeHtml(
     deliveryAddressText || "-"
@@ -385,6 +386,7 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
       <p style="margin:0 0 4px;"><strong>Tarih:</strong> ${safeOrderDate}</p>
       <p style="margin:0 0 4px;"><strong>Teslim Alacak Ki\u015fi:</strong> ${safeReceiverName}</p>
       <p style="margin:0 0 4px;"><strong>Telefon:</strong> ${safeDeliveryPhone}</p>
+      <p style="margin:0 0 4px;"><strong>Adres Başlığı:</strong> ${safeAddressName}</p>
       <p style="margin:0 0 16px;"><strong>Teslimat Adresi:</strong> ${safeDeliveryAddress}</p>
       <table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
         <tbody>
@@ -417,6 +419,7 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
     `Tarih: ${formatOrderDateForEmail(order?.date ?? "")}`,
     `Teslim Alacak Ki\u015fi: ${receiverName || firstName || "M\u00fc\u015fterimiz"}`,
     `Telefon: ${String(deliveryAddress?.phone ?? "").trim() || "-"}`,
+    `Adres Başlığı: ${String(deliveryAddress?.addressName ?? "").trim() || "-"}`,
     `Teslimat Adresi: ${deliveryAddressText || "-"}`,
     "",
     "\u00dcr\u00fcnler:",
@@ -1676,6 +1679,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
   const orderTotal = Number(total);
   const orderItems = Array.isArray(items) ? items : [];
   const shipping = shippingAddress && typeof shippingAddress === "object" ? shippingAddress : {};
+  const shippingAddressName = String(shipping.addressName ?? "").trim();
   const shippingFirstName = String(shipping.firstName ?? "").trim();
   const shippingLastName = String(shipping.lastName ?? "").trim();
   const shippingPhone = String(shipping.phone ?? "").trim();
@@ -1767,6 +1771,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
       const deliveryAddress =
         shippingStreet || shippingPhone
           ? {
+              addressName: shippingAddressName,
               firstName: shippingFirstName || req.authUser.firstName,
               lastName: shippingLastName || req.authUser.lastName,
               phone: shippingPhone || req.authUser.phone || "",
@@ -1775,7 +1780,17 @@ app.post("/api/orders", requireAuth, async (req, res) => {
               district: shippingDistrict,
               neighborhood: shippingNeighborhood,
             }
-          : req.authUser.addresses.find((address) => address.isDefault) ?? req.authUser.addresses[0] ?? null;
+          : (() => {
+              const fallbackAddress =
+                req.authUser.addresses.find((address) => address.isDefault) ?? req.authUser.addresses[0] ?? null;
+              if (!fallbackAddress) return null;
+              const fallbackStreet = String(fallbackAddress.street ?? "");
+              const [addressName] = fallbackStreet.split("|||");
+              return {
+                ...fallbackAddress,
+                addressName: String(addressName ?? "").trim(),
+              };
+            })();
       sendOrderConfirmationEmail(req, {
         to: req.authUser.email,
         firstName: req.authUser.firstName,

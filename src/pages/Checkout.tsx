@@ -80,6 +80,7 @@ export function Checkout() {
   const total = cartTotal + shippingCost;
 
   const [shippingInfo, setShippingInfo] = useState({
+    addressName: "",
     firstName: "",
     lastName: "",
     email: state.user?.email ?? "",
@@ -165,14 +166,64 @@ export function Checkout() {
           items: [...state.cart],
           total,
           status: "processing" as const,
+          // Prefer current shipping form data; if redirect wiped state, recover from selected/default address.
           shippingAddress: {
-            firstName: shippingInfo.firstName,
-            lastName: shippingInfo.lastName,
-            phone: shippingInfo.phone,
-            street: shippingInfo.street,
-            province: shippingInfo.province,
-            district: shippingInfo.district,
-            neighborhood: shippingInfo.neighborhood,
+            addressName:
+              shippingInfo.addressName ||
+              (() => {
+                const fallbackAddress =
+                  selectedAddress ?? savedAddresses.find((address) => address.isDefault) ?? savedAddresses[0] ?? null;
+                if (!fallbackAddress) return "";
+                return splitStreetParts(fallbackAddress.street).addressName;
+              })(),
+            firstName:
+              shippingInfo.firstName ||
+              selectedAddress?.firstName ||
+              savedAddresses.find((address) => address.isDefault)?.firstName ||
+              savedAddresses[0]?.firstName ||
+              state.user?.firstName ||
+              "",
+            lastName:
+              shippingInfo.lastName ||
+              selectedAddress?.lastName ||
+              savedAddresses.find((address) => address.isDefault)?.lastName ||
+              savedAddresses[0]?.lastName ||
+              state.user?.lastName ||
+              "",
+            phone:
+              shippingInfo.phone ||
+              selectedAddress?.phone ||
+              savedAddresses.find((address) => address.isDefault)?.phone ||
+              savedAddresses[0]?.phone ||
+              state.user?.phone ||
+              "",
+            street:
+              shippingInfo.street ||
+              (() => {
+                const fallbackAddress =
+                  selectedAddress ?? savedAddresses.find((address) => address.isDefault) ?? savedAddresses[0] ?? null;
+                if (!fallbackAddress) return "";
+                const parsed = splitStreetParts(fallbackAddress.street);
+                return parsed.addressDetail || parsed.addressName;
+              })(),
+            province:
+              shippingInfo.province ||
+              selectedAddress?.province ||
+              savedAddresses.find((address) => address.isDefault)?.province ||
+              savedAddresses[0]?.province ||
+              "",
+            district:
+              shippingInfo.district ||
+              selectedAddress?.district ||
+              savedAddresses.find((address) => address.isDefault)?.district ||
+              savedAddresses[0]?.district ||
+              "",
+            neighborhood:
+              shippingInfo.neighborhood ||
+              selectedAddress?.neighborhood ||
+              savedAddresses.find((address) => address.isDefault)?.neighborhood ||
+              savedAddresses[0]?.neighborhood ||
+              "",
           },
         };
         createOrder(orderDraft)
@@ -207,7 +258,7 @@ export function Checkout() {
     }
 
     processedPathRef.current = "";
-  }, [dispatch, isPaymentFailPath, isPaymentSuccessPath, location.pathname, state.cart, state.orders, total]);
+  }, [dispatch, isPaymentFailPath, isPaymentSuccessPath, location.pathname, savedAddresses, selectedAddress, shippingInfo, state.cart, state.orders, state.user, total]);
 
   if (state.cart.length === 0 && !isPaymentSuccessPath && step !== "confirmation") {
     return (
@@ -233,6 +284,7 @@ export function Checkout() {
     }
     const parsedStreet = splitStreetParts(selectedAddress.street);
     setShippingInfo({
+      addressName: parsedStreet.addressName,
       firstName: selectedAddress.firstName,
       lastName: selectedAddress.lastName,
       email: state.user?.email ?? "",

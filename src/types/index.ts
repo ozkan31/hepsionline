@@ -36,6 +36,7 @@ export interface Order {
   shippingCompany?: string;
   shippingTrackingNo?: string;
   shippingAddress?: {
+    addressName?: string;
     firstName: string;
     lastName: string;
     phone: string;

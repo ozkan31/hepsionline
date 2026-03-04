@@ -424,7 +424,6 @@ export function Account() {
       setIsVerificationModalOpen(true);
       setVerificationDigits(["", "", "", "", "", ""]);
       setIsVerificationCodeSending(true);
-      setSuccessMessage("Doğrulama kodu gönderiliyor...");
     }
 
     try {
@@ -889,7 +888,12 @@ export function Account() {
                         type="email"
                         required
                         value={authEmail}
-                        readOnly
+                        readOnly={authEmailExists === true}
+                        onChange={(e) => {
+                          if (authEmailExists === false) {
+                            setAuthEmail(e.target.value);
+                          }
+                        }}
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
                       />
                     </div>
@@ -1045,9 +1049,6 @@ export function Account() {
                       <p className="text-sm text-gray-600">
                         {authEmail} adresine gönderilen doğrulama kodunu girin.
                       </p>
-                      {isVerificationCodeSending && (
-                        <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded">Doğrulama kodu gönderiliyor...</p>
-                      )}
                       {errorMessage && (
                         <p className="text-sm text-red-600 bg-red-50 p-3 rounded">{errorMessage}</p>
                       )}

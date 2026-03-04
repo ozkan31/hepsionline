@@ -189,20 +189,39 @@ export function Admin() {
     const token = localStorage.getItem(ADMIN_TOKEN_KEY);
     if (!token) return;
 
+    let mounted = true;
     const loadUsers = async () => {
-      setUsersLoading(true);
-      setUsersError("");
+      if (mounted) {
+        setUsersLoading(true);
+        setUsersError("");
+      }
       try {
         const data = await fetchAdminUsers(token);
+        if (!mounted) return;
         setUsers(data);
       } catch (err) {
+        if (!mounted) return;
         setUsersError(err instanceof Error ? err.message : "Kullanıcılar alınamadı.");
       } finally {
-        setUsersLoading(false);
+        if (mounted) setUsersLoading(false);
       }
     };
 
-    loadUsers();
+    const handleFocus = () => {
+      void loadUsers();
+    };
+
+    void loadUsers();
+    const interval = window.setInterval(() => {
+      void loadUsers();
+    }, 10000);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, [activeSection, isAuthenticated]);
 
   useEffect(() => {

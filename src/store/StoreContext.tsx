@@ -34,6 +34,34 @@ const initialState: StoreState = {
   isAuthenticated: false,
 };
 
+function normalizeMediaPath(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (/^(https?:)?\/\//i.test(raw)) return raw;
+  if (/^(data:|blob:)/i.test(raw)) return raw;
+  return raw.startsWith('/') ? raw : `/${raw}`;
+}
+
+function normalizeProductMedia(product: Product): Product {
+  const images = Array.isArray(product.images) ? product.images.map(normalizeMediaPath).filter(Boolean) : [];
+  const image = normalizeMediaPath(product.image);
+  const cover = images[0] || image;
+  return {
+    ...product,
+    image: cover,
+    images: images.length > 0 ? images : cover ? [cover] : [],
+  };
+}
+
+function normalizeOrderMedia(order: Order): Order {
+  return {
+    ...order,
+    items: Array.isArray(order.items)
+      ? order.items.map((item) => ({ ...item, product: normalizeProductMedia(item.product) }))
+      : [],
+  };
+}
+
 function sanitizeCartItems(items: unknown): CartItem[] {
   if (!Array.isArray(items)) return [];
 
@@ -54,6 +82,7 @@ function sanitizeCartItems(items: unknown): CartItem[] {
       const cartItem = item as CartItem;
       return {
         ...cartItem,
+        product: normalizeProductMedia(cartItem.product),
         quantity: Number.isInteger(Number(cartItem.quantity)) && Number(cartItem.quantity) > 0 ? Number(cartItem.quantity) : 1,
       };
     });
@@ -98,7 +127,7 @@ function storeReducer(state: StoreState, action: StoreAction): StoreState {
           ),
         };
       }
-      return { ...state, cart: [...state.cart, action.payload] };
+      return { ...state, cart: [...state.cart, { ...action.payload, product: normalizeProductMedia(action.payload.product) }] };
     }
     case 'REMOVE_FROM_CART':
       return {
@@ -129,12 +158,12 @@ function storeReducer(state: StoreState, action: StoreAction): StoreState {
     case 'SET_WISHLIST':
       return {
         ...state,
-        wishlist: action.payload,
+        wishlist: (Array.isArray(action.payload) ? action.payload : []).map(normalizeProductMedia),
       };
     case 'SET_ORDERS':
       return {
         ...state,
-        orders: action.payload,
+        orders: (Array.isArray(action.payload) ? action.payload : []).map(normalizeOrderMedia),
       };
     case 'SET_USER':
       return {
@@ -145,7 +174,7 @@ function storeReducer(state: StoreState, action: StoreAction): StoreState {
     case 'ADD_ORDER':
       return {
         ...state,
-        orders: [...state.orders, action.payload],
+        orders: [...state.orders, normalizeOrderMedia(action.payload)],
       };
     case 'ADD_ADDRESS':
       if (!state.user) return state;
@@ -203,8 +232,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           ...initialState,
           ...parsed,
           cart: sanitizeCartItems(parsed?.cart),
-          wishlist: Array.isArray(parsed?.wishlist) ? parsed.wishlist : [],
-          orders: Array.isArray(parsed?.orders) ? parsed.orders : [],
+          wishlist: Array.isArray(parsed?.wishlist) ? parsed.wishlist.map(normalizeProductMedia) : [],
+          orders: Array.isArray(parsed?.orders) ? parsed.orders.map(normalizeOrderMedia) : [],
           user: parsed?.user ?? null,
           isAuthenticated: Boolean(parsed?.isAuthenticated && parsed?.user),
         };

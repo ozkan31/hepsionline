@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { StoreProvider } from '@/store/StoreContext';
 import { Header } from '@/components/Header';
@@ -108,6 +108,7 @@ function AppLayout() {
             <Route path="/kariyer" element={<CareerPage />} />
             <Route path="/gizlilik" element={<PrivacyPolicyPage />} />
             <Route path="/kullanim-kosullari" element={<TermsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}
       </main>

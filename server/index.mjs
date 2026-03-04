@@ -4,6 +4,9 @@ import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import nodemailer from "nodemailer";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { OAuth2Client } from "google-auth-library";
 import { pool } from "./db.mjs";
 
@@ -13,6 +16,10 @@ const app = express();
 const port = Number(process.env.API_PORT || 3001);
 const adminSessions = new Map();
 const DEFAULT_SITE_NAME = "Paris move";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distDir = path.resolve(__dirname, "../dist");
+const distIndexHtml = path.join(distDir, "index.html");
 
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
@@ -2527,6 +2534,13 @@ app.get("/api/products/:id", async (req, res) => {
     return res.status(500).json({ message: "Failed to fetch product." });
   }
 });
+
+if (fs.existsSync(distIndexHtml)) {
+  app.use(express.static(distDir));
+  app.get(/^\/(?!api\/).*/, (_req, res) => {
+    res.sendFile(distIndexHtml);
+  });
+}
 
 app.listen(port, () => {
   console.log(`API server running on http://localhost:${port}`);

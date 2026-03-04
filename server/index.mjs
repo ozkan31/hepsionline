@@ -1768,29 +1768,33 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     const createdOrder = orders.find((order) => order.id === orderId);
 
     if (createdOrder && isOrderSmtpConfigured) {
-      const deliveryAddress =
-        shippingStreet || shippingPhone
-          ? {
-              addressName: shippingAddressName,
-              firstName: shippingFirstName || req.authUser.firstName,
-              lastName: shippingLastName || req.authUser.lastName,
-              phone: shippingPhone || req.authUser.phone || "",
-              street: shippingStreet,
-              province: shippingProvince,
-              district: shippingDistrict,
-              neighborhood: shippingNeighborhood,
-            }
-          : (() => {
-              const fallbackAddress =
-                req.authUser.addresses.find((address) => address.isDefault) ?? req.authUser.addresses[0] ?? null;
-              if (!fallbackAddress) return null;
-              const fallbackStreet = String(fallbackAddress.street ?? "");
-              const [addressName] = fallbackStreet.split("|||");
-              return {
-                ...fallbackAddress,
-                addressName: String(addressName ?? "").trim(),
-              };
-            })();
+      const fallbackAddress =
+        req.authUser.addresses.find((address) => address.isDefault) ?? req.authUser.addresses[0] ?? null;
+      const fallbackStreet = String(fallbackAddress?.street ?? "");
+      const [fallbackAddressName, fallbackAddressDetail] = fallbackStreet.split("|||");
+      const normalizedFallbackAddress = fallbackAddress
+        ? {
+            ...fallbackAddress,
+            addressName: String(fallbackAddressName ?? "").trim(),
+            street: String(fallbackAddressDetail ?? "").trim() || String(fallbackAddressName ?? "").trim(),
+          }
+        : null;
+
+      const hasShippingAddressSnapshot = Boolean(
+        shippingAddressName || shippingStreet || shippingProvince || shippingDistrict || shippingNeighborhood
+      );
+      const deliveryAddress = hasShippingAddressSnapshot
+        ? {
+            addressName: shippingAddressName || normalizedFallbackAddress?.addressName || "",
+            firstName: shippingFirstName || normalizedFallbackAddress?.firstName || req.authUser.firstName,
+            lastName: shippingLastName || normalizedFallbackAddress?.lastName || req.authUser.lastName,
+            phone: shippingPhone || normalizedFallbackAddress?.phone || req.authUser.phone || "",
+            street: shippingStreet || normalizedFallbackAddress?.street || "",
+            province: shippingProvince || normalizedFallbackAddress?.province || "",
+            district: shippingDistrict || normalizedFallbackAddress?.district || "",
+            neighborhood: shippingNeighborhood || normalizedFallbackAddress?.neighborhood || "",
+          }
+        : normalizedFallbackAddress;
       sendOrderConfirmationEmail(req, {
         to: req.authUser.email,
         firstName: req.authUser.firstName,

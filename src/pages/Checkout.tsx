@@ -260,22 +260,6 @@ export function Checkout() {
     processedPathRef.current = "";
   }, [dispatch, isPaymentFailPath, isPaymentSuccessPath, location.pathname, savedAddresses, selectedAddress, shippingInfo, state.cart, state.orders, state.user, total]);
 
-  if (state.cart.length === 0 && !isPaymentSuccessPath && step !== "confirmation") {
-    return (
-      <div className="min-h-screen bg-[#F8F7F4] flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-lg text-gray-500 mb-4">{"Sepetiniz bo\u015f"}</p>
-          <button
-            onClick={() => navigate("/shop")}
-            className="bg-black text-white px-6 py-2 rounded-full"
-          >
-            {"Al\u0131\u015fveri\u015fe Ba\u015fla"}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const handleSavedAddressContinue = () => {
     if (!selectedAddress) return;
     if (!distanceSaleAccepted) {
@@ -389,6 +373,22 @@ export function Checkout() {
   }, [isPaymentFailPath, isPaymentSuccessPath, step, shippingInfo, state.cart, total]);
 
   const confirmationEmail = shippingInfo.email || state.user?.email || "";
+
+  if (state.cart.length === 0 && !isPaymentSuccessPath && step !== "confirmation") {
+    return (
+      <div className="min-h-screen bg-[#F8F7F4] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg text-gray-500 mb-4">{"Sepetiniz bo\u015f"}</p>
+          <button
+            onClick={() => navigate("/shop")}
+            className="bg-black text-white px-6 py-2 rounded-full"
+          >
+            {"Al\u0131\u015fveri\u015fe Ba\u015fla"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8F7F4] pt-20 md:pt-24 pb-20">

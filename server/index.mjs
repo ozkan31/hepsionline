@@ -566,10 +566,12 @@ async function getUserCartItems(userId) {
       p.name,
       p.price,
       p.image,
+      p.images_json,
       p.category_id,
       p.description,
       p.features_json,
       p.colors_json,
+      p.tags_json,
       p.is_new,
       p.is_bestseller
     FROM user_cart_items c
@@ -591,10 +593,12 @@ async function getUserWishlistItems(userId) {
       p.name,
       p.price,
       p.image,
+      p.images_json,
       p.category_id,
       p.description,
       p.features_json,
       p.colors_json,
+      p.tags_json,
       p.is_new,
       p.is_bestseller
     FROM user_wishlist_items w

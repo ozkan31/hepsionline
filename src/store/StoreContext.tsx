@@ -34,15 +34,42 @@ const initialState: StoreState = {
   isAuthenticated: false,
 };
 
+function sanitizeCartItems(items: unknown): CartItem[] {
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .filter((item) => {
+      if (!item || typeof item !== 'object') return false;
+      const cartItem = item as Partial<CartItem>;
+      const product = cartItem.product as Product | undefined;
+      return Boolean(
+        product &&
+          typeof product.id === 'string' &&
+          product.id.trim() &&
+          typeof product.name === 'string' &&
+          Number.isFinite(Number(product.price))
+      );
+    })
+    .map((item) => {
+      const cartItem = item as CartItem;
+      return {
+        ...cartItem,
+        quantity: Number.isInteger(Number(cartItem.quantity)) && Number(cartItem.quantity) > 0 ? Number(cartItem.quantity) : 1,
+      };
+    });
+}
+
 function mergeCartItems(localItems: CartItem[], serverItems: CartItem[]): CartItem[] {
+  const safeLocalItems = sanitizeCartItems(localItems);
+  const safeServerItems = sanitizeCartItems(serverItems);
   const merged = new Map<string, CartItem>();
   const toKey = (item: CartItem) => `${item.product.id}::${item.color ?? ''}`;
 
-  for (const item of serverItems) {
+  for (const item of safeServerItems) {
     merged.set(toKey(item), { ...item });
   }
 
-  for (const item of localItems) {
+  for (const item of safeLocalItems) {
     const key = toKey(item);
     const existing = merged.get(key);
     if (!existing) {
@@ -141,7 +168,7 @@ function storeReducer(state: StoreState, action: StoreAction): StoreState {
     case 'SET_CART':
       return {
         ...state,
-        cart: action.payload,
+        cart: sanitizeCartItems(action.payload),
       };
     case 'LOAD_STATE':
       return action.payload;
@@ -172,11 +199,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (savedState) {
       try {
         const parsed = JSON.parse(savedState);
+        const sanitizedState: StoreState = {
+          ...initialState,
+          ...parsed,
+          cart: sanitizeCartItems(parsed?.cart),
+          wishlist: Array.isArray(parsed?.wishlist) ? parsed.wishlist : [],
+          orders: Array.isArray(parsed?.orders) ? parsed.orders : [],
+          user: parsed?.user ?? null,
+          isAuthenticated: Boolean(parsed?.isAuthenticated && parsed?.user),
+        };
         shouldMergeLocalCartOnNextAuthSyncRef.current =
-          !Boolean(parsed?.isAuthenticated) &&
-          Array.isArray(parsed?.cart) &&
-          parsed.cart.length > 0;
-        dispatch({ type: 'LOAD_STATE', payload: parsed });
+          !Boolean(sanitizedState?.isAuthenticated) &&
+          Array.isArray(sanitizedState?.cart) &&
+          sanitizedState.cart.length > 0;
+        dispatch({ type: 'LOAD_STATE', payload: sanitizedState });
       } catch (e) {
         console.error('Failed to load store state:', e);
       }
@@ -275,7 +311,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     sync();
   }, [state.wishlist, state.isAuthenticated, state.user?.id, isHydrated, isWishlistSyncReady]);
 
-  const cartTotal = state.cart.reduce(
+  const cartTotal = sanitizeCartItems(state.cart).reduce(
     (total, item) => total + item.product.price * item.quantity,
     0
   );

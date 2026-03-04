@@ -1317,9 +1317,14 @@ export function Admin() {
                 <label className="block text-sm font-medium mb-1">Fiyat (TL)</label>
                 <input
                   type="number"
+                  min={0}
+                  step={1}
                   value={productEditor.price}
+                  onWheel={(e) => e.currentTarget.blur()}
                   onChange={(e) =>
-                    setProductEditor((prev) => (prev ? { ...prev, price: e.target.value } : prev))
+                    setProductEditor((prev) =>
+                      prev ? { ...prev, price: e.target.value.replace(/[^\d]/g, "") } : prev
+                    )
                   }
                   className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                 />

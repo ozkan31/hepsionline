@@ -893,6 +893,18 @@ async function getDefaultCategoryId() {
   return rows.length > 0 ? String(rows[0].id ?? "").trim() : "";
 }
 
+function parseAdminPriceInput(value, fallback = 0) {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(",", ".");
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return Number.isFinite(Number(fallback)) ? Math.max(0, Math.trunc(Number(fallback))) : 0;
+  }
+  return Math.max(0, Math.trunc(parsed));
+}
+
 function splitFullName(name) {
   const normalized = String(name ?? "").trim().replace(/\s+/g, " ");
   if (!normalized) {
@@ -2393,7 +2405,7 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
     const description = String(req.body?.description ?? "").trim();
     const image = String(req.body?.image ?? "").trim();
     const images = Array.isArray(req.body?.images) ? req.body.images : [];
-    const price = Number(req.body?.price);
+    const price = parseAdminPriceInput(req.body?.price, 0);
     const features = Array.isArray(req.body?.features) ? req.body.features : [];
     const colors = Array.isArray(req.body?.colors) ? req.body.colors : [];
     const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
@@ -2426,7 +2438,7 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
     if (!category) {
       return res.status(400).json({ message: "Kayitli kategori bulunamadi." });
     }
-    const normalizedPrice = Number.isFinite(price) ? Math.round(price) : 0;
+    const normalizedPrice = price;
 
     const productId = requestedId || (await generateUniqueProductId());
 
@@ -2490,7 +2502,6 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     const requestedDescription = String(req.body?.description ?? "").trim();
     const image = String(req.body?.image ?? "").trim();
     const images = Array.isArray(req.body?.images) ? req.body.images : [];
-    const price = Number(req.body?.price);
     const features = Array.isArray(req.body?.features) ? req.body.features : [];
     const colors = Array.isArray(req.body?.colors) ? req.body.colors : [];
     const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
@@ -2523,8 +2534,9 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     if (!category) {
       return res.status(400).json({ message: "Kayitli kategori bulunamadi." });
     }
+    const price = parseAdminPriceInput(req.body?.price, Number(existing.price ?? 0));
     const description = requestedDescription || String(existing.description ?? "").trim();
-    const normalizedPrice = Number.isFinite(price) ? Math.round(price) : Number(existing.price ?? 0);
+    const normalizedPrice = price;
 
     const normalizedImages = images
       .map((item) => String(item ?? "").trim())

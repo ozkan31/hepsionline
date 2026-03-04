@@ -7,7 +7,7 @@
     "dev": "vite",
     "dev:full": "concurrently \"npm run api\" \"npm run dev\"",
     "api": "node server/index.mjs",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node ./scripts/verify-assets.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "db:test": "node scripts/test-mysql.mjs",

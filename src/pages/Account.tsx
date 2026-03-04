@@ -128,16 +128,36 @@ export function Account() {
     if (lower.includes("failed")) return "İşlem başarısız.";
     return input;
   };
+  const normalizeAddressPart = (value: string) => String(value ?? "").trim().replace(/\s+/g, " ");
+  const sameAddressPart = (left: string, right: string) =>
+    normalizeAddressPart(left).toLocaleLowerCase("tr-TR") ===
+    normalizeAddressPart(right).toLocaleLowerCase("tr-TR");
   const splitStreetParts = (street: string) => {
     const input = String(street ?? "");
     const [namePart, ...detailParts] = input.split("|||");
-    return {
-      addressName: (namePart ?? "").trim(),
-      addressDetail: detailParts.join("|||").trim(),
-    };
+    let addressName = normalizeAddressPart(namePart ?? "");
+    let addressDetail = normalizeAddressPart(detailParts.join("|||"));
+
+    if (!addressName && addressDetail) {
+      addressName = addressDetail;
+      addressDetail = "";
+    }
+    if (addressName && addressDetail && sameAddressPart(addressName, addressDetail)) {
+      addressDetail = "";
+    }
+
+    return { addressName, addressDetail };
   };
-  const combineStreetParts = (addressName: string, detail: string) =>
-    `${String(addressName ?? "").trim()}|||${String(detail ?? "").trim()}`;
+  const combineStreetParts = (addressName: string, detail: string) => {
+    const normalizedName = normalizeAddressPart(addressName);
+    const normalizedDetail = normalizeAddressPart(detail);
+    if (!normalizedName && !normalizedDetail) return "";
+    if (!normalizedName) return normalizedDetail;
+    if (!normalizedDetail || sameAddressPart(normalizedName, normalizedDetail)) {
+      return normalizedName;
+    }
+    return `${normalizedName}|||${normalizedDetail}`;
+  };
 
   useEffect(() => {
     const loadSession = async () => {
@@ -452,7 +472,8 @@ export function Account() {
     } catch (error) {
       if (isRegisterAttempt) {
         setIsVerificationCodeSending(false);
-        setIsVerificationModalOpen(false);
+        // Keep verification modal open so the user sees the error in-place.
+        setIsVerificationModalOpen(true);
       }
       setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "İşlem başarısız.");
     }
@@ -1420,6 +1441,7 @@ export function Account() {
                       <input
                         type="tel"
                         required
+                        autoComplete="tel"
                         value={addressForm.phone}
                         onChange={(e) => setAddressForm({ ...addressForm, phone: e.target.value })}
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -1430,6 +1452,7 @@ export function Account() {
                       <input
                         type="text"
                         required
+                        autoComplete="off"
                         value={addressForm.street}
                         onChange={(e) => setAddressForm({ ...addressForm, street: e.target.value })}
                         placeholder="örn. ev adresim, iş adresim"
@@ -1442,6 +1465,7 @@ export function Account() {
                     <textarea
                       required
                       minLength={10}
+                      autoComplete="street-address"
                       value={addressDetail}
                       onChange={(e) => setAddressDetail(e.target.value)}
                       rows={4}
@@ -1591,6 +1615,7 @@ export function Account() {
                               <input
                                 type="tel"
                                 required
+                                autoComplete="tel"
                                 value={editAddressForm.phone}
                                 onChange={(e) => setEditAddressForm({ ...editAddressForm, phone: e.target.value })}
                                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
@@ -1599,6 +1624,7 @@ export function Account() {
                               <input
                                 type="text"
                                 required
+                                autoComplete="off"
                                 value={editAddressForm.street}
                                 onChange={(e) => setEditAddressForm({ ...editAddressForm, street: e.target.value })}
                                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
@@ -1608,6 +1634,7 @@ export function Account() {
                             <textarea
                               required
                               minLength={10}
+                              autoComplete="street-address"
                               value={editAddressDetail}
                               onChange={(e) => setEditAddressDetail(e.target.value)}
                               onInvalid={(e) => {

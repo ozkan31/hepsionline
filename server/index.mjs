@@ -135,6 +135,41 @@ function toPublicUrl(baseUrl, rawValue) {
   return `${baseUrl}/${value.replace(/^\/+/, "")}`;
 }
 
+function dataUrlToEmailAttachment(rawValue, cidBase) {
+  const value = String(rawValue ?? "").trim();
+  const match = value.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
+
+  const mimeType = match[1].toLowerCase();
+  const base64Payload = match[2];
+  const extensionMap = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "image/svg+xml": "svg",
+    "image/avif": "avif",
+    "image/bmp": "bmp",
+  };
+  const extension = extensionMap[mimeType] ?? "img";
+  const cid = `${cidBase}@stilbagsfashion`;
+
+  try {
+    return {
+      src: `cid:${cid}`,
+      attachment: {
+        filename: `product-${cidBase}.${extension}`,
+        content: Buffer.from(base64Payload, "base64"),
+        cid,
+        contentType: mimeType,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 function buildDeliveryAddressText(deliveryAddress) {
   const rawStreet = String(deliveryAddress?.street ?? "").trim();
   const street = rawStreet.includes("|||")
@@ -297,9 +332,10 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
   );
   const safeDeliveryPhone = escapeHtml(String(deliveryAddress?.phone ?? "").trim() || "-");
   const items = Array.isArray(order?.items) ? order.items : [];
+  const mailAttachments = [];
 
   const itemsHtml = items
-    .map((item) => {
+    .map((item, itemIndex) => {
       const product = item?.product ?? {};
       const productId = String(product?.id ?? "").trim();
       const productUrl = productId
@@ -311,7 +347,11 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
       const totalPrice = (unitPrice * quantity).toLocaleString("tr-TR");
       const imageList = Array.isArray(product?.images) ? product.images : [];
       const rawImage = String(imageList[0] ?? product?.image ?? "").trim();
-      const image = toPublicUrl(baseUrl, rawImage);
+      const dataAttachment = dataUrlToEmailAttachment(rawImage, `${safeOrderId || "order"}-${itemIndex}`);
+      if (dataAttachment?.attachment) {
+        mailAttachments.push(dataAttachment.attachment);
+      }
+      const image = dataAttachment?.src ?? toPublicUrl(baseUrl, rawImage);
       const color = String(item?.color ?? "").trim();
 
       return `
@@ -391,6 +431,7 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
     subject: `Sipari\u015finiz Al\u0131nd\u0131 - #${order?.id ?? ""}`,
     text,
     html,
+    attachments: mailAttachments,
   });
 }
 
@@ -904,7 +945,18 @@ app.post("/api/auth/flow/start", async (req, res) => {
       [crypto.randomUUID(), email, firstName, lastName, passwordHash, normalizedGender, phone, codeHash]
     );
 
-    await sendEmailVerificationCodeEmail({ to: email, code });
+    try {
+      await sendEmailVerificationCodeEmail({ to: email, code });
+    } catch (mailError) {
+      await pool.query(`DELETE FROM email_verification_codes WHERE email = ?`, [email]);
+      const lowerMailError = String(mailError?.message ?? "").toLowerCase();
+      if (lowerMailError.includes("smtp") || lowerMailError.includes("auth")) {
+        return res.status(500).json({
+          message: "Doğrulama kodu gönderilemedi. E-posta sunucu ayarlarını kontrol edin.",
+        });
+      }
+      return res.status(500).json({ message: "Doğrulama kodu gönderilemedi. Lütfen tekrar deneyin." });
+    }
     return res.json({
       mode: "register",
       requiresVerification: true,

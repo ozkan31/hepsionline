@@ -31,16 +31,36 @@ export function Checkout() {
 
   const generateOrderId = () =>
     String(Math.floor(1000000000 + Math.random() * 9000000000));
+  const normalizeAddressPart = (value: string) => String(value ?? "").trim().replace(/\s+/g, " ");
+  const sameAddressPart = (left: string, right: string) =>
+    normalizeAddressPart(left).toLocaleLowerCase("tr-TR") ===
+    normalizeAddressPart(right).toLocaleLowerCase("tr-TR");
   const splitStreetParts = (street: string) => {
     const input = String(street ?? "");
     const [namePart, ...detailParts] = input.split("|||");
-    return {
-      addressName: (namePart ?? "").trim(),
-      addressDetail: detailParts.join("|||").trim(),
-    };
+    let addressName = normalizeAddressPart(namePart ?? "");
+    let addressDetail = normalizeAddressPart(detailParts.join("|||"));
+
+    if (!addressName && addressDetail) {
+      addressName = addressDetail;
+      addressDetail = "";
+    }
+    if (addressName && addressDetail && sameAddressPart(addressName, addressDetail)) {
+      addressDetail = "";
+    }
+
+    return { addressName, addressDetail };
   };
-  const combineStreetParts = (addressName: string, detail: string) =>
-    `${String(addressName ?? "").trim()}|||${String(detail ?? "").trim()}`;
+  const combineStreetParts = (addressName: string, detail: string) => {
+    const normalizedName = normalizeAddressPart(addressName);
+    const normalizedDetail = normalizeAddressPart(detail);
+    if (!normalizedName && !normalizedDetail) return "";
+    if (!normalizedName) return normalizedDetail;
+    if (!normalizedDetail || sameAddressPart(normalizedName, normalizedDetail)) {
+      return normalizedName;
+    }
+    return `${normalizedName}|||${normalizedDetail}`;
+  };
   const openNativeSelect = (element: HTMLSelectElement | null) => {
     if (!element) return;
     element.focus();
@@ -479,6 +499,7 @@ export function Checkout() {
                         <input
                           type="tel"
                           required
+                          autoComplete="tel"
                           placeholder="Telefon"
                           value={newAddressForm.phone}
                           onChange={(e) => setNewAddressForm({ ...newAddressForm, phone: e.target.value })}
@@ -487,6 +508,7 @@ export function Checkout() {
                         <input
                           type="text"
                           required
+                          autoComplete="off"
                           placeholder="örn. ev adresim, iş adresim"
                           value={newAddressForm.street}
                           onChange={(e) => setNewAddressForm({ ...newAddressForm, street: e.target.value })}
@@ -496,6 +518,7 @@ export function Checkout() {
                       <textarea
                         required
                         minLength={10}
+                        autoComplete="street-address"
                         placeholder="Adres Detayı"
                         value={newAddressDetail}
                         onChange={(e) => setNewAddressDetail(e.target.value)}

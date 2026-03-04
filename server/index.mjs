@@ -118,6 +118,16 @@ function buildPublicBaseUrl(req) {
   return `${req.protocol}://${req.get("host")}`;
 }
 
+function toPublicUrl(baseUrl, rawValue) {
+  const value = String(rawValue ?? "").trim();
+  if (!value) return "";
+  if (/^data:/i.test(value)) return value;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith("//")) return `https:${value}`;
+  if (value.startsWith("/")) return `${baseUrl}${value}`;
+  return `${baseUrl}/${value.replace(/^\/+/, "")}`;
+}
+
 function escapeHtml(input) {
   return String(input ?? "")
     .replaceAll("&", "&amp;")
@@ -233,8 +243,15 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
   const deliveryDistrict = String(deliveryAddress?.district ?? "").trim();
   const deliveryProvince = String(deliveryAddress?.province ?? "").trim();
   const deliveryStreet = String(deliveryAddress?.street ?? "").trim();
-  const deliveryAddressText = [deliveryStreet, deliveryNeighborhood, `${deliveryDistrict} / ${deliveryProvince}`]
-    .filter((part) => part && part !== "/")
+  const deliveryAddressText = [
+    deliveryStreet,
+    deliveryNeighborhood,
+    deliveryDistrict && deliveryProvince
+      ? `${deliveryDistrict} / ${deliveryProvince}`
+      : deliveryDistrict || deliveryProvince,
+  ]
+    .map((part) => String(part ?? "").trim())
+    .filter((part) => part)
     .join(", ");
   const safeDeliveryAddress = escapeHtml(
     deliveryAddressText || "-"
@@ -246,12 +263,16 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
     .map((item) => {
       const product = item?.product ?? {};
       const productId = String(product?.id ?? "").trim();
-      const productUrl = productId ? `${baseUrl}/product/${encodeURIComponent(productId)}` : baseUrl;
+      const productUrl = productId
+        ? `${baseUrl}/#/product/${encodeURIComponent(productId)}`
+        : baseUrl;
       const productName = escapeHtml(product?.name ?? "Urun");
       const quantity = Number(item?.quantity ?? 1);
       const unitPrice = Number(product?.price ?? 0);
       const totalPrice = (unitPrice * quantity).toLocaleString("tr-TR");
-      const image = String(product?.image ?? "").trim();
+      const imageList = Array.isArray(product?.images) ? product.images : [];
+      const rawImage = String(imageList[0] ?? product?.image ?? "").trim();
+      const image = toPublicUrl(baseUrl, rawImage);
       const color = String(item?.color ?? "").trim();
 
       return `
@@ -304,7 +325,9 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
       const unitPrice = Number(product?.price ?? 0);
       const totalPrice = (unitPrice * quantity).toLocaleString("tr-TR");
       const productId = String(product?.id ?? "").trim();
-      const productUrl = productId ? `${baseUrl}/product/${productId}` : baseUrl;
+      const productUrl = productId
+        ? `${baseUrl}/#/product/${encodeURIComponent(productId)}`
+        : baseUrl;
       return `- ${productName} x${quantity} (${totalPrice} TL) ${productUrl}`;
     })
     .join("\n");
@@ -880,12 +903,18 @@ app.post("/api/auth/flow/verify", async (req, res) => {
     }
 
     const verifyRow = verifyRows[0];
-    const [existing] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
+    const [existing] = await pool.query(
+      `SELECT id, first_name, last_name, phone FROM users WHERE email = ? LIMIT 1`,
+      [email]
+    );
     let userId = existing.length > 0 ? existing[0].id : null;
+    const verifiedFirstName = String(verifyRow.first_name ?? "").trim();
+    const verifiedLastName = String(verifyRow.last_name ?? "").trim();
+    const verifiedPhone = String(verifyRow.phone ?? "").trim();
 
     if (!userId) {
-      const fallbackFirst = String(verifyRow.first_name ?? "").trim() || "Uye";
-      const fallbackLast = String(verifyRow.last_name ?? "").trim() || "Uye";
+      const fallbackFirst = verifiedFirstName || "Uye";
+      const fallbackLast = verifiedLastName || "Uye";
       await pool.query(
         `
         INSERT INTO users (id, first_name, last_name, email, phone, gender, password_hash)
@@ -896,13 +925,31 @@ app.post("/api/auth/flow/verify", async (req, res) => {
           fallbackFirst,
           fallbackLast,
           email,
-          String(verifyRow.phone ?? "").trim(),
+          verifiedPhone,
           verifyRow.gender,
           verifyRow.password_hash,
         ]
       );
       const [fresh] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
       userId = fresh[0].id;
+    } else if (verifiedFirstName && verifiedLastName) {
+      const currentFirstName = String(existing[0].first_name ?? "").trim();
+      const currentLastName = String(existing[0].last_name ?? "").trim();
+      const currentPhone = String(existing[0].phone ?? "").trim();
+      if (
+        currentFirstName !== verifiedFirstName ||
+        currentLastName !== verifiedLastName ||
+        (verifiedPhone && currentPhone !== verifiedPhone)
+      ) {
+        await pool.query(
+          `
+          UPDATE users
+          SET first_name = ?, last_name = ?, phone = ?
+          WHERE id = ?
+          `,
+          [verifiedFirstName, verifiedLastName, verifiedPhone || currentPhone, userId]
+        );
+      }
     }
 
     await pool.query(`UPDATE email_verification_codes SET used_at = NOW() WHERE id = ?`, [verifyRow.id]);
@@ -1513,12 +1560,20 @@ app.get("/api/orders", requireAuth, async (req, res) => {
 });
 
 app.post("/api/orders", requireAuth, async (req, res) => {
-  const { id, date, status, total, items } = req.body ?? {};
+  const { id, date, status, total, items, shippingAddress } = req.body ?? {};
   const orderId = String(id ?? "").trim();
   const orderDate = String(date ?? "").trim();
   const orderStatus = String(status ?? "processing").trim();
   const orderTotal = Number(total);
   const orderItems = Array.isArray(items) ? items : [];
+  const shipping = shippingAddress && typeof shippingAddress === "object" ? shippingAddress : {};
+  const shippingFirstName = String(shipping.firstName ?? "").trim();
+  const shippingLastName = String(shipping.lastName ?? "").trim();
+  const shippingPhone = String(shipping.phone ?? "").trim();
+  const shippingStreet = String(shipping.street ?? "").trim();
+  const shippingProvince = String(shipping.province ?? "").trim();
+  const shippingDistrict = String(shipping.district ?? "").trim();
+  const shippingNeighborhood = String(shipping.neighborhood ?? "").trim();
 
   if (!orderId || !orderDate || !Number.isFinite(orderTotal) || orderItems.length === 0) {
     return res.status(400).json({ message: "Invalid order payload." });
@@ -1541,13 +1596,43 @@ app.post("/api/orders", requireAuth, async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    await connection.query(
-      `
-      INSERT INTO user_orders (id, user_id, order_date, total, status)
-      VALUES (?, ?, ?, ?, ?)
-      `,
-      [orderId, req.authUser.id, orderDate, Math.round(orderTotal), orderStatus]
-    );
+    try {
+      await connection.query(
+        `
+        INSERT INTO user_orders (
+          id, user_id, order_date, total, status,
+          shipping_first_name, shipping_last_name, shipping_phone, shipping_street, shipping_province, shipping_district, shipping_neighborhood
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          orderId,
+          req.authUser.id,
+          orderDate,
+          Math.round(orderTotal),
+          orderStatus,
+          shippingFirstName,
+          shippingLastName,
+          shippingPhone,
+          shippingStreet,
+          shippingProvince,
+          shippingDistrict,
+          shippingNeighborhood,
+        ]
+      );
+    } catch (error) {
+      // Backward compatible for DBs not yet migrated with shipping snapshot fields.
+      if (error?.code !== "ER_BAD_FIELD_ERROR") {
+        throw error;
+      }
+      await connection.query(
+        `
+        INSERT INTO user_orders (id, user_id, order_date, total, status)
+        VALUES (?, ?, ?, ?, ?)
+        `,
+        [orderId, req.authUser.id, orderDate, Math.round(orderTotal), orderStatus]
+      );
+    }
 
     const valuesSql = normalizedItems.map(() => "(?, ?, ?, ?, ?)").join(", ");
     const params = normalizedItems.flatMap((item) => [
@@ -1570,7 +1655,18 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     const createdOrder = orders.find((order) => order.id === orderId);
 
     if (createdOrder && isOrderSmtpConfigured) {
-      const deliveryAddress = req.authUser.addresses.find((address) => address.isDefault) ?? req.authUser.addresses[0] ?? null;
+      const deliveryAddress =
+        shippingStreet || shippingPhone
+          ? {
+              firstName: shippingFirstName || req.authUser.firstName,
+              lastName: shippingLastName || req.authUser.lastName,
+              phone: shippingPhone || req.authUser.phone || "",
+              street: shippingStreet,
+              province: shippingProvince,
+              district: shippingDistrict,
+              neighborhood: shippingNeighborhood,
+            }
+          : req.authUser.addresses.find((address) => address.isDefault) ?? req.authUser.addresses[0] ?? null;
       sendOrderConfirmationEmail(req, {
         to: req.authUser.email,
         firstName: req.authUser.firstName,
@@ -1834,6 +1930,13 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
           o.status,
           o.shipping_company,
           o.shipping_tracking_no,
+          o.shipping_first_name,
+          o.shipping_last_name,
+          o.shipping_phone,
+          o.shipping_street,
+          o.shipping_province,
+          o.shipping_district,
+          o.shipping_neighborhood,
           o.created_at,
           u.first_name,
           u.last_name,
@@ -1930,7 +2033,23 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
     }
 
     const orders = orderRows.map((row) => {
-      const address = addressByUserId.get(row.user_id) ?? null;
+      const shippingAddressFromOrder =
+        String(row.shipping_street ?? "").trim() ||
+        String(row.shipping_district ?? "").trim() ||
+        String(row.shipping_province ?? "").trim() ||
+        String(row.shipping_neighborhood ?? "").trim()
+          ? {
+              firstName: String(row.shipping_first_name ?? "").trim() || row.first_name,
+              lastName: String(row.shipping_last_name ?? "").trim() || row.last_name,
+              phone: String(row.shipping_phone ?? "").trim() || row.phone || "",
+              street: String(row.shipping_street ?? "").trim(),
+              province: String(row.shipping_province ?? "").trim(),
+              district: String(row.shipping_district ?? "").trim(),
+              neighborhood: String(row.shipping_neighborhood ?? "").trim(),
+            }
+          : null;
+      const address = shippingAddressFromOrder ?? addressByUserId.get(row.user_id) ?? null;
+      const customerPhone = (shippingAddressFromOrder?.phone || row.phone || "").trim();
       return {
         id: row.id,
         date: row.created_at ?? row.order_date,
@@ -1940,10 +2059,10 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
         shippingCompany: row.shipping_company ?? "",
         shippingTrackingNo: row.shipping_tracking_no ?? "",
         customer: {
-          firstName: row.first_name,
-          lastName: row.last_name,
+          firstName: shippingAddressFromOrder?.firstName ?? row.first_name,
+          lastName: shippingAddressFromOrder?.lastName ?? row.last_name,
           email: row.email,
-          phone: row.phone ?? "",
+          phone: customerPhone,
           address,
         },
       };

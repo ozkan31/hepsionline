@@ -979,7 +979,7 @@ export function Admin() {
                             <p>
                               Adres:{" "}
                               {order.customer.address
-                                ? `${order.customer.address.street}, ${order.customer.address.district}/${order.customer.address.province}`
+                                ? `${order.customer.address.street}, ${order.customer.address.neighborhood}, ${order.customer.address.district}/${order.customer.address.province}`
                                 : "-"}
                             </p>
                             {order.status === "shipped" && order.shippingCompany && (

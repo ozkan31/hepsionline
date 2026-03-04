@@ -145,6 +145,15 @@ export function Checkout() {
           items: [...state.cart],
           total,
           status: "processing" as const,
+          shippingAddress: {
+            firstName: shippingInfo.firstName,
+            lastName: shippingInfo.lastName,
+            phone: shippingInfo.phone,
+            street: shippingInfo.street,
+            province: shippingInfo.province,
+            district: shippingInfo.district,
+            neighborhood: shippingInfo.neighborhood,
+          },
         };
         createOrder(orderDraft)
           .then((createdOrder) => {

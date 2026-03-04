@@ -176,6 +176,13 @@ CREATE TABLE IF NOT EXISTS user_orders (
   status VARCHAR(20) NOT NULL,
   shipping_company VARCHAR(120) NULL,
   shipping_tracking_no VARCHAR(120) NULL,
+  shipping_first_name VARCHAR(120) NULL,
+  shipping_last_name VARCHAR(120) NULL,
+  shipping_phone VARCHAR(40) NULL,
+  shipping_street VARCHAR(255) NULL,
+  shipping_province VARCHAR(120) NULL,
+  shipping_district VARCHAR(120) NULL,
+  shipping_neighborhood VARCHAR(120) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_user_orders_user
@@ -340,6 +347,69 @@ async function migrate() {
   }
   try {
     await pool.query(`ALTER TABLE users ADD COLUMN gender VARCHAR(20) NULL AFTER phone`);
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE user_orders ADD COLUMN shipping_first_name VARCHAR(120) NULL AFTER shipping_tracking_no`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE user_orders ADD COLUMN shipping_last_name VARCHAR(120) NULL AFTER shipping_first_name`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE user_orders ADD COLUMN shipping_phone VARCHAR(40) NULL AFTER shipping_last_name`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE user_orders ADD COLUMN shipping_street VARCHAR(255) NULL AFTER shipping_phone`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE user_orders ADD COLUMN shipping_province VARCHAR(120) NULL AFTER shipping_street`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE user_orders ADD COLUMN shipping_district VARCHAR(120) NULL AFTER shipping_province`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE user_orders ADD COLUMN shipping_neighborhood VARCHAR(120) NULL AFTER shipping_district`
+    );
   } catch (error) {
     if (error?.code !== "ER_DUP_FIELDNAME") {
       throw error;

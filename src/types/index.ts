@@ -35,6 +35,15 @@ export interface Order {
   status: 'processing' | 'shipped' | 'delivered';
   shippingCompany?: string;
   shippingTrackingNo?: string;
+  shippingAddress?: {
+    firstName: string;
+    lastName: string;
+    phone: string;
+    street: string;
+    province: string;
+    district: string;
+    neighborhood: string;
+  };
 }
 
 export interface User {

@@ -62,6 +62,7 @@ export function Account() {
     confirmPassword: "",
   });
   const [successMessage, setSuccessMessage] = useState("");
+  const [profileSuccessMessage, setProfileSuccessMessage] = useState("");
   const [resetTokenStatus, setResetTokenStatus] = useState<"idle" | "checking" | "valid" | "invalid">("idle");
   const [resetTokenError, setResetTokenError] = useState("");
 
@@ -685,9 +686,11 @@ export function Account() {
   const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
+    setProfileSuccessMessage("");
     try {
       const user = await updateProfile(profileForm);
       dispatch({ type: "SET_USER", payload: user });
+      setProfileSuccessMessage("Profil bilgileriniz başarıyla güncellendi.");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Profil g\u00fcncellenemedi.");
     }
@@ -1254,6 +1257,11 @@ export function Account() {
             {activeTab === "profile" && (
               <div>
                 <h2 className="text-xl font-medium mb-6">Profil Bilgileri</h2>
+                {profileSuccessMessage && (
+                  <div className="mb-4 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3">
+                    {profileSuccessMessage}
+                  </div>
+                )}
                 <form onSubmit={handleProfileSave} className="bg-white rounded-lg p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>

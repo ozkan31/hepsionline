@@ -1,4 +1,4 @@
-import type { Address, AdminContactRequest, AdminOrder, CartItem, Category, Order, Product, User } from "@/types";
+import type { Address, AdminContactRequest, AdminOrder, AdminUserSummary, CartItem, Category, Order, Product, User } from "@/types";
 
 const AUTH_TOKEN_KEY = "parisMoveAuthToken";
 
@@ -418,6 +418,14 @@ export async function fetchAdminContactRequests(token: string): Promise<AdminCon
   });
   const data = await parseResponse<{ requests: AdminContactRequest[] }>(response);
   return data.requests;
+}
+
+export async function fetchAdminUsers(token: string): Promise<AdminUserSummary[]> {
+  const response = await fetch("/api/admin/users", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await parseResponse<{ users: AdminUserSummary[] }>(response);
+  return data.users;
 }
 
 export async function updateAdminProduct(

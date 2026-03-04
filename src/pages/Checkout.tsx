@@ -17,6 +17,8 @@ export function Checkout() {
   const [isAddressFormOpen, setIsAddressFormOpen] = useState(false);
   const [isSavingAddress, setIsSavingAddress] = useState(false);
   const [addressError, setAddressError] = useState("");
+  const [distanceSaleAccepted, setDistanceSaleAccepted] = useState(false);
+  const [isDistanceSaleModalOpen, setIsDistanceSaleModalOpen] = useState(false);
   const [newAddressDetail, setNewAddressDetail] = useState("");
   const [locationMap, setLocationMap] = useState<Record<string, Record<string, string[]>>>({});
   const [paytrIframeUrl, setPaytrIframeUrl] = useState("");
@@ -196,6 +198,10 @@ export function Checkout() {
 
   const handleSavedAddressContinue = () => {
     if (!selectedAddress) return;
+    if (!distanceSaleAccepted) {
+      setAddressError("Ödemeye geçmek için Mesafeli Satış Sözleşmesi'ni onaylamalısınız.");
+      return;
+    }
     const parsedStreet = splitStreetParts(selectedAddress.street);
     setShippingInfo({
       firstName: selectedAddress.firstName,
@@ -539,14 +545,120 @@ export function Checkout() {
                       </button>
                     )})}
                   </div>
+                  <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+                    <label className="flex items-start gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={distanceSaleAccepted}
+                        onChange={(e) => {
+                          setDistanceSaleAccepted(e.target.checked);
+                          if (e.target.checked) {
+                            setAddressError("");
+                          }
+                        }}
+                        className="mt-1"
+                      />
+                      <span>
+                        <button
+                          type="button"
+                          onClick={() => setIsDistanceSaleModalOpen(true)}
+                          className="underline hover:text-black"
+                        >
+                          Mesafeli Satış Sözleşmesi
+                        </button>{" "}
+                        metnini okudum, onaylıyorum.
+                      </span>
+                    </label>
+                  </div>
                   <button
                     type="button"
                     onClick={handleSavedAddressContinue}
-                    disabled={!state.isAuthenticated || !selectedAddressId}
+                    disabled={!state.isAuthenticated || !selectedAddressId || !distanceSaleAccepted}
                     className="w-full bg-black text-white py-4 rounded-full font-medium text-sm hover:bg-gray-800 mt-6 disabled:opacity-50"
                   >
                     {"\u00d6demeye Ge\u00e7"}
                   </button>
+                </div>
+              </div>
+            )}
+
+            {isDistanceSaleModalOpen && (
+              <div
+                className="fixed inset-0 z-[110] bg-black/40 p-4 flex items-center justify-center"
+                onClick={() => setIsDistanceSaleModalOpen(false)}
+              >
+                <div
+                  className="w-full max-w-3xl max-h-[85vh] overflow-y-auto bg-white rounded-lg border border-gray-200 p-5 md:p-6"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-medium">Mesafeli Satış Sözleşmesi</h3>
+                    <button
+                      type="button"
+                      onClick={() => setIsDistanceSaleModalOpen(false)}
+                      className="border border-black text-black px-3 py-1 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
+                    >
+                      Kapat
+                    </button>
+                  </div>
+                  <div className="space-y-4 text-sm text-gray-700 leading-6">
+                    <p><strong>MESAFELİ SATIŞ SÖZLEŞMESİ</strong></p>
+                    <p>
+                      <strong>1. Taraflar</strong><br />
+                      İşbu Mesafeli Satış Sözleşmesi (“Sözleşme”), www.stilbagsfashion.com internet sitesi üzerinden satış yapan
+                      StilBags&amp;fashion ile site üzerinden ürün satın alan ALICI arasında elektronik ortamda kurulmuştur.
+                      ALICI, sipariş oluşturduğu anda işbu sözleşmenin tüm şartlarını okuduğunu, anladığını ve kabul ettiğini beyan eder.
+                    </p>
+                    <p>
+                      <strong>2. Konu</strong><br />
+                      Bu sözleşmenin konusu, ALICI’nın SATICI’ya ait www.stilbagsfashion.com internet sitesi üzerinden elektronik ortamda
+                      sipariş verdiği ürünlerin satışı ve teslimine ilişkin tarafların hak ve yükümlülüklerinin belirlenmesidir.
+                    </p>
+                    <p>
+                      <strong>3. Ürün Bilgileri</strong><br />
+                      Satışı yapılan ürünler başlıca aşağıdaki kategorilerden oluşmaktadır: Kadın çantaları, cüzdanlar, moda aksesuarları,
+                      çanta ve aksesuar kategorisine ait diğer ürünler. Ürünlerin temel özellikleri, satış fiyatı ve kampanyalar ürün
+                      sayfasında belirtildiği şekilde geçerlidir. Tüm fiyatlara KDV dahildir.
+                    </p>
+                    <p>
+                      <strong>4. Ödeme Yöntemi</strong><br />
+                      Ödemeler PayTR ödeme altyapısı aracılığıyla kredi kartı ve banka kartı ile yapılmaktadır.
+                      ALICI, ödeme işlemini tamamladığında sipariş kesinleşmiş sayılır.
+                    </p>
+                    <p>
+                      <strong>5. Teslimat ve Kargo</strong><br />
+                      Sipariş edilen ürünler Türkiye genelinde gönderilmektedir. Siparişler 1-3 iş günü içinde kargoya verilir.
+                      Teslimatlar anlaşmalı kargo firmaları aracılığıyla yapılmaktadır. Kargo süresi teslimat adresine bağlı olarak
+                      değişiklik gösterebilir. SATICI, mücbir sebepler veya lojistik gecikmelerden kaynaklı teslimat süresi değişikliklerinde
+                      sorumlu tutulamaz.
+                    </p>
+                    <p>
+                      <strong>6. Fatura</strong><br />
+                      Satın alınan ürünler için e-Arşiv fatura düzenlenir. Fatura, sipariş sırasında belirtilen e-posta adresine dijital
+                      olarak gönderilir.
+                    </p>
+                    <p>
+                      <strong>7. Cayma Hakkı</strong><br />
+                      ALICI, satın aldığı ürünü teslim aldığı tarihten itibaren 14 gün içinde cayma hakkını kullanabilir. Cayma hakkının
+                      kullanılabilmesi için ürünün kullanılmamış olması, tekrar satılabilir durumda olması ve orijinal ambalajının zarar
+                      görmemiş olması gerekmektedir.
+                    </p>
+                    <p>
+                      <strong>8. İade ve Değişim</strong><br />
+                      ALICI, cayma hakkını kullandığında ürün iadesi gerçekleştirebilir. İade kargo ücreti ALICI tarafından karşılanır.
+                      İade edilen ürünler kontrol edildikten sonra ücret iadesi yapılır. Ürünlerde değişim işlemi yapılabilmektedir.
+                    </p>
+                    <p>
+                      <strong>9. Genel Hükümler</strong><br />
+                      ALICI, www.stilbagsfashion.com internet sitesinde sözleşme konusu ürünün temel nitelikleri, satış fiyatı, ödeme ve
+                      teslimat bilgileri hakkında bilgi sahibi olduğunu ve elektronik ortamda gerekli onayı verdiğini kabul eder. Taraflar,
+                      işbu sözleşmeden doğabilecek uyuşmazlıklarda Türkiye Cumhuriyeti yasalarının geçerli olduğunu kabul eder.
+                    </p>
+                    <p>
+                      <strong>10. Yürürlük</strong><br />
+                      ALICI, www.stilbagsfashion.com üzerinden sipariş verdiğinde işbu sözleşmenin tüm şartlarını kabul etmiş sayılır.
+                    </p>
+                  </div>
                 </div>
               </div>
             )}

@@ -2072,6 +2072,31 @@ app.get("/api/admin/contact-requests", requireAdminAuth, async (_req, res) => {
   }
 });
 
+app.get("/api/admin/users", requireAdminAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT id, first_name, last_name, email, phone, created_at
+      FROM users
+      ORDER BY created_at DESC
+      `
+    );
+
+    const users = rows.map((row) => ({
+      id: row.id,
+      firstName: row.first_name,
+      lastName: row.last_name,
+      email: row.email,
+      phone: row.phone ?? "",
+      createdAt: row.created_at,
+    }));
+
+    return res.json({ users });
+  } catch (error) {
+    return res.status(500).json({ message: "Admin users fetch failed." });
+  }
+});
+
 app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
   try {
     const requestedId = String(req.body?.id ?? "").trim();

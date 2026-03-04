@@ -5,6 +5,7 @@ import {
   adminLogin,
   fetchAdminContactRequests,
   fetchAdminSettings,
+  fetchAdminUsers,
   adminValidate,
   fetchAdminOrders,
   fetchAdminProducts,
@@ -12,7 +13,7 @@ import {
   updateAdminOrderStatus,
   updateAdminProduct,
 } from "@/lib/api";
-import type { AdminContactRequest, AdminOrder, Product } from "@/types";
+import type { AdminContactRequest, AdminOrder, AdminUserSummary, Product } from "@/types";
 
 const ADMIN_TOKEN_KEY = "parisMoveAdminToken";
 type AdminSection = "orders" | "products" | "users" | "contactRequests" | "settings";
@@ -75,6 +76,9 @@ export function Admin() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState("");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [users, setUsers] = useState<AdminUserSummary[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState("");
   const [contactRequests, setContactRequests] = useState<AdminContactRequest[]>([]);
   const [contactRequestsLoading, setContactRequestsLoading] = useState(false);
   const [contactRequestsError, setContactRequestsError] = useState("");
@@ -181,6 +185,27 @@ export function Admin() {
   }, [activeSection, isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated || activeSection !== "users") return;
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) return;
+
+    const loadUsers = async () => {
+      setUsersLoading(true);
+      setUsersError("");
+      try {
+        const data = await fetchAdminUsers(token);
+        setUsers(data);
+      } catch (err) {
+        setUsersError(err instanceof Error ? err.message : "Kullanıcılar alınamadı.");
+      } finally {
+        setUsersLoading(false);
+      }
+    };
+
+    loadUsers();
+  }, [activeSection, isAuthenticated]);
+
+  useEffect(() => {
     if (!isAuthenticated || activeSection !== "contactRequests") return;
     const token = localStorage.getItem(ADMIN_TOKEN_KEY);
     if (!token) return;
@@ -239,6 +264,9 @@ export function Admin() {
     setSettingsLoading(false);
     setSettingsMessage("");
     setIsSavingSettings(false);
+    setUsers([]);
+    setUsersLoading(false);
+    setUsersError("");
     setContactRequests([]);
     setContactRequestsLoading(false);
     setContactRequestsError("");
@@ -1090,7 +1118,32 @@ export function Admin() {
           {activeSection === "users" && (
             <div>
               <h2 className="text-2xl font-light mb-2">Kullanıcılar</h2>
-              <p className="text-sm text-gray-500">Kullanıcı listesi ve yönetimi eklenecek.</p>
+              <p className="text-sm text-gray-500 mb-5">Veritabanındaki kullanıcılar listeleniyor.</p>
+              {usersLoading && <p className="text-sm text-gray-500">Kullanıcılar yükleniyor...</p>}
+              {usersError && (
+                <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2 mb-4">{usersError}</p>
+              )}
+              {!usersLoading && !usersError && users.length === 0 && (
+                <p className="text-sm text-gray-500">Henüz kullanıcı bulunmuyor.</p>
+              )}
+              <div className="space-y-3">
+                {users.map((user) => (
+                  <div key={user.id} className="border border-[#E7E2D8] rounded-lg bg-white p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                      <div className="space-y-1">
+                        <p className="font-medium">
+                          {user.firstName} {user.lastName}
+                        </p>
+                        <p className="text-sm text-gray-600">E-posta: {user.email}</p>
+                        <p className="text-sm text-gray-600">Telefon: {user.phone || "-"}</p>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Kayıt: {formatOrderDateTime(user.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

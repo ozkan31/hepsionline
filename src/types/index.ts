@@ -89,3 +89,12 @@ export interface AdminContactRequest {
   message: string;
   createdAt: string;
 }
+
+export interface AdminUserSummary {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  createdAt: string;
+}

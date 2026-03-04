@@ -128,6 +128,51 @@ function toPublicUrl(baseUrl, rawValue) {
   return `${baseUrl}/${value.replace(/^\/+/, "")}`;
 }
 
+function buildDeliveryAddressText(deliveryAddress) {
+  const rawStreet = String(deliveryAddress?.street ?? "").trim();
+  const street = rawStreet.includes("|||")
+    ? rawStreet
+        .split("|||")
+        .map((part) => String(part ?? "").trim())
+        .filter(Boolean)
+        .join(", ")
+    : rawStreet;
+  const neighborhood = String(deliveryAddress?.neighborhood ?? "").trim();
+  const district = String(deliveryAddress?.district ?? "").trim();
+  const province = String(deliveryAddress?.province ?? "").trim();
+
+  const streetLower = street.toLocaleLowerCase("tr-TR");
+  const includesNeighborhood = neighborhood
+    ? streetLower.includes(neighborhood.toLocaleLowerCase("tr-TR"))
+    : false;
+  const includesDistrict = district
+    ? streetLower.includes(district.toLocaleLowerCase("tr-TR"))
+    : false;
+  const includesProvince = province
+    ? streetLower.includes(province.toLocaleLowerCase("tr-TR"))
+    : false;
+
+  const districtProvince =
+    district && province ? `${district} / ${province}` : district || province;
+  const parts = [
+    street,
+    !includesNeighborhood ? neighborhood : "",
+    !includesDistrict && !includesProvince ? districtProvince : "",
+  ]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean);
+
+  const seen = new Set();
+  const deduped = parts.filter((part) => {
+    const key = part.toLocaleLowerCase("tr-TR");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return deduped.join(", ");
+}
+
 function escapeHtml(input) {
   return String(input ?? "")
     .replaceAll("&", "&amp;")
@@ -239,20 +284,7 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
   const safeOrderTotal = Number(order?.total ?? 0).toLocaleString("tr-TR");
   const receiverName = `${deliveryAddress?.firstName ?? ""} ${deliveryAddress?.lastName ?? ""}`.trim();
   const safeReceiverName = escapeHtml(receiverName || `${firstName || "M\u00fc\u015fterimiz"}`);
-  const deliveryNeighborhood = String(deliveryAddress?.neighborhood ?? "").trim();
-  const deliveryDistrict = String(deliveryAddress?.district ?? "").trim();
-  const deliveryProvince = String(deliveryAddress?.province ?? "").trim();
-  const deliveryStreet = String(deliveryAddress?.street ?? "").trim();
-  const deliveryAddressText = [
-    deliveryStreet,
-    deliveryNeighborhood,
-    deliveryDistrict && deliveryProvince
-      ? `${deliveryDistrict} / ${deliveryProvince}`
-      : deliveryDistrict || deliveryProvince,
-  ]
-    .map((part) => String(part ?? "").trim())
-    .filter((part) => part)
-    .join(", ");
+  const deliveryAddressText = buildDeliveryAddressText(deliveryAddress);
   const safeDeliveryAddress = escapeHtml(
     deliveryAddressText || "-"
   );
@@ -264,7 +296,7 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
       const product = item?.product ?? {};
       const productId = String(product?.id ?? "").trim();
       const productUrl = productId
-        ? `${baseUrl}/#/product/${encodeURIComponent(productId)}`
+        ? `${baseUrl}/?product=${encodeURIComponent(productId)}`
         : baseUrl;
       const productName = escapeHtml(product?.name ?? "Urun");
       const quantity = Number(item?.quantity ?? 1);
@@ -326,7 +358,7 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
       const totalPrice = (unitPrice * quantity).toLocaleString("tr-TR");
       const productId = String(product?.id ?? "").trim();
       const productUrl = productId
-        ? `${baseUrl}/#/product/${encodeURIComponent(productId)}`
+        ? `${baseUrl}/?product=${encodeURIComponent(productId)}`
         : baseUrl;
       return `- ${productName} x${quantity} (${totalPrice} TL) ${productUrl}`;
     })

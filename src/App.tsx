@@ -51,6 +51,27 @@ function HashRouteNormalizer() {
   return null;
 }
 
+function ProductQueryNormalizer() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const productId = String(params.get("product") ?? "").trim();
+    if (!productId) return;
+
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.delete("product");
+    const remainingQuery = nextParams.toString();
+    navigate(
+      `/product/${encodeURIComponent(productId)}${remainingQuery ? `?${remainingQuery}` : ""}`,
+      { replace: true }
+    );
+  }, [location.search, navigate]);
+
+  return null;
+}
+
 function AppLayout() {
   const { pathname, hash } = useLocation();
   const isHashAdminRoute = hash === "#/akalin1453";
@@ -101,6 +122,7 @@ function App() {
       <Router>
         <ScrollToTop />
         <HashRouteNormalizer />
+        <ProductQueryNormalizer />
         <AppLayout />
       </Router>
     </StoreProvider>

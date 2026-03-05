@@ -5,6 +5,7 @@ import {
   adminLogin,
   deleteAdminProduct,
   fetchAdminContactRequests,
+  fetchAdminProductById,
   fetchAdminSettings,
   fetchAdminUsers,
   adminValidate,
@@ -13,6 +14,7 @@ import {
   updateAdminSettings,
   updateAdminOrderStatus,
   updateAdminProduct,
+  uploadAdminProductImages,
 } from "@/lib/api";
 import type { AdminContactRequest, AdminOrder, AdminUserSummary, Product } from "@/types";
 
@@ -142,20 +144,45 @@ export function Admin() {
     const token = localStorage.getItem(ADMIN_TOKEN_KEY);
     if (!token) return;
 
+    let mounted = true;
     const loadProducts = async () => {
       setProductsLoading(true);
       setProductsError("");
+      setProducts([]);
       try {
-        const data = await fetchAdminProducts(token);
-        setProducts(data);
+        let hasMore = true;
+        let offset = 0;
+        const limit = 24;
+
+        while (hasMore && mounted) {
+          const data = await fetchAdminProducts(token, { limit, offset });
+          const chunk = Array.isArray(data.products) ? data.products : [];
+
+          for (const item of chunk) {
+            if (!mounted) break;
+            setProducts((prev) => [...prev, item]);
+            // Render products progressively instead of all at once.
+            await new Promise((resolve) => window.setTimeout(resolve, 25));
+          }
+
+          hasMore = Boolean(data.hasMore);
+          offset =
+            typeof data.nextOffset === "number" && Number.isFinite(data.nextOffset)
+              ? data.nextOffset
+              : offset + chunk.length;
+        }
       } catch (err) {
+        if (!mounted) return;
         setProductsError(err instanceof Error ? err.message : "Ürünler alınamadı.");
       } finally {
-        setProductsLoading(false);
+        if (mounted) setProductsLoading(false);
       }
     };
 
-    loadProducts();
+    void loadProducts();
+    return () => {
+      mounted = false;
+    };
   }, [activeSection, isAuthenticated]);
 
   useEffect(() => {
@@ -396,45 +423,52 @@ export function Admin() {
     }
   };
 
-  const openProductEditor = (product: Product) => {
-    const normalizedFeatures = Array.isArray(product.features)
-      ? product.features
-      : product.features != null
-      ? [String(product.features)]
-      : [];
-    const normalizedColors = Array.isArray(product.colors)
-      ? product.colors
-      : product.colors != null
-      ? [String(product.colors)]
-      : [];
-
+  const openProductEditor = async (product: Product) => {
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) return;
     if (productEditor) {
       clearLocalImagePreviews(productEditor.images);
     }
     setIsCreatingProduct(false);
     setEditingProductId(product.id);
-    const existingImages = Array.isArray(product.images) && product.images.length > 0
-      ? product.images
-      : String(product.image ?? "").trim()
-      ? [String(product.image ?? "").trim()]
-      : [];
-    setProductEditor({
-      id: product.id,
-      name: String(product.name ?? ""),
-      price: String(product.price ?? ""),
-      images: existingImages.map((url, index) => ({ id: `existing-${product.id}-${index}`, url, isLocal: false })),
-      category: String(product.category ?? ""),
-      description: String(product.description ?? ""),
-      features: normalizedFeatures,
-      colors: normalizedColors,
-      tags: Array.isArray(product.tags) ? product.tags : [],
-      isNew: Boolean(product.isNew),
-      isBestseller: Boolean(product.isBestseller),
-    });
-    setNewFeatureName("");
-    setNewColorName("");
-    setNewTagName("");
-    setProductSaveMessage("");
+    setProductSaveMessage("Ürün detayları yükleniyor...");
+    try {
+      const detailed = await fetchAdminProductById(token, product.id);
+      const normalizedFeatures = Array.isArray(detailed.features)
+        ? detailed.features
+        : detailed.features != null
+        ? [String(detailed.features)]
+        : [];
+      const normalizedColors = Array.isArray(detailed.colors)
+        ? detailed.colors
+        : detailed.colors != null
+        ? [String(detailed.colors)]
+        : [];
+      const existingImages = Array.isArray(detailed.images) && detailed.images.length > 0
+        ? detailed.images
+        : String(detailed.image ?? "").trim()
+        ? [String(detailed.image ?? "").trim()]
+        : [];
+      setProductEditor({
+        id: detailed.id,
+        name: String(detailed.name ?? ""),
+        price: String(detailed.price ?? ""),
+        images: existingImages.map((url, index) => ({ id: `existing-${detailed.id}-${index}`, url, isLocal: false })),
+        category: String(detailed.category ?? ""),
+        description: String(detailed.description ?? ""),
+        features: normalizedFeatures,
+        colors: normalizedColors,
+        tags: Array.isArray(detailed.tags) ? detailed.tags : [],
+        isNew: Boolean(detailed.isNew),
+        isBestseller: Boolean(detailed.isBestseller),
+      });
+      setNewFeatureName("");
+      setNewColorName("");
+      setNewTagName("");
+      setProductSaveMessage("");
+    } catch (error) {
+      setProductSaveMessage(error instanceof Error ? error.message : "Ürün detayları alınamadı.");
+    }
   };
 
   const openCreateProductEditor = () => {
@@ -479,7 +513,7 @@ export function Admin() {
     imagePickerRef.current?.click();
   };
 
-  const handleImageFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.currentTarget;
     const files = Array.from(input.files ?? []);
     // Reset immediately so picking same file again still triggers onChange.
@@ -502,34 +536,29 @@ export function Admin() {
       setProductSaveMessage("Lütfen geçerli bir görsel dosyası seçin.");
       return;
     }
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) {
+      setProductSaveMessage("Admin oturumu bulunamadı.");
+      return;
+    }
 
-    Promise.all(
-      accepted.map(
-        (file) =>
-          new Promise<{ id: string; url: string; isLocal: boolean }>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () =>
-              resolve({
-                id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-                url: String(reader.result ?? ""),
-                isLocal: true,
-              });
-            reader.onerror = () => reject(new Error("file_read_failed"));
-            reader.readAsDataURL(file);
-          })
-      )
-    )
-      .then((selected) => {
-        setProductEditor((prev) => (prev ? { ...prev, images: [...prev.images, ...selected] } : prev));
-        if (files.length > remaining) {
-          setProductSaveMessage(`En fazla ${MAX_PRODUCT_IMAGES} görsel ekleyebilirsiniz.`);
-        } else {
-          setProductSaveMessage("");
-        }
-      })
-      .catch(() => {
-        setProductSaveMessage("Görseller okunamadı.");
-      });
+    setProductSaveMessage("Görseller yükleniyor...");
+    try {
+      const uploadedUrls = await uploadAdminProductImages(token, accepted);
+      const selected = uploadedUrls.map((url, index) => ({
+        id: `uploaded-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+        url,
+        isLocal: false,
+      }));
+      setProductEditor((prev) => (prev ? { ...prev, images: [...prev.images, ...selected] } : prev));
+      if (files.length > remaining) {
+        setProductSaveMessage(`En fazla ${MAX_PRODUCT_IMAGES} görsel ekleyebilirsiniz.`);
+      } else {
+        setProductSaveMessage("");
+      }
+    } catch (error) {
+      setProductSaveMessage(error instanceof Error ? error.message : "Görseller yüklenemedi.");
+    }
   };
 
   const handleRemoveImage = (imageId: string) => {
@@ -1143,7 +1172,7 @@ export function Admin() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => openProductEditor(product)}
+                        onClick={() => void openProductEditor(product)}
                         className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
                       >
                         Düzenle

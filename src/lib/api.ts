@@ -413,12 +413,37 @@ export async function updateAdminOrderStatus(
   await parseResponse<{ ok: boolean; status: string }>(response);
 }
 
-export async function fetchAdminProducts(token: string): Promise<Product[]> {
-  const response = await fetch("/api/admin/products", {
+export async function fetchAdminProducts(
+  token: string,
+  params?: { limit?: number; offset?: number }
+): Promise<{ products: Product[]; hasMore: boolean; nextOffset: number; total: number }> {
+  const query = new URLSearchParams();
+  if (typeof params?.limit === "number" && Number.isFinite(params.limit)) {
+    query.set("limit", String(Math.max(1, Math.trunc(params.limit))));
+  }
+  if (typeof params?.offset === "number" && Number.isFinite(params.offset)) {
+    query.set("offset", String(Math.max(0, Math.trunc(params.offset))));
+  }
+
+  const response = await fetch(`/api/admin/products${query.toString() ? `?${query.toString()}` : ""}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const data = await parseResponse<{ products: Product[] }>(response);
-  return data.products;
+  const data = await parseResponse<{
+    products: Product[];
+    hasMore?: boolean;
+    nextOffset?: number;
+    total?: number;
+  }>(response);
+  const products = Array.isArray(data.products) ? data.products : [];
+  return {
+    products,
+    hasMore: Boolean(data.hasMore),
+    nextOffset:
+      typeof data.nextOffset === "number" && Number.isFinite(data.nextOffset)
+        ? data.nextOffset
+        : products.length,
+    total: typeof data.total === "number" && Number.isFinite(data.total) ? data.total : products.length,
+  };
 }
 
 export async function fetchAdminContactRequests(token: string): Promise<AdminContactRequest[]> {
@@ -466,6 +491,14 @@ export async function updateAdminProduct(
   return data.product;
 }
 
+export async function fetchAdminProductById(token: string, productId: string): Promise<Product> {
+  const response = await fetch(`/api/admin/products/${productId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await parseResponse<{ product: Product }>(response);
+  return data.product;
+}
+
 export async function createAdminProduct(
   token: string,
   input: {
@@ -503,4 +536,19 @@ export async function deleteAdminProduct(token: string, productId: string): Prom
     },
   });
   await parseResponse<{ ok: boolean }>(response);
+}
+
+export async function uploadAdminProductImages(token: string, files: File[]): Promise<string[]> {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("images", file));
+
+  const response = await fetch("/api/admin/upload-images", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+  const data = await parseResponse<{ urls: string[] }>(response);
+  return Array.isArray(data.urls) ? data.urls : [];
 }

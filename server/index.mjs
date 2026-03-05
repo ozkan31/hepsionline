@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import nodemailer from "nodemailer";
+import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,9 +21,48 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distDir = path.resolve(__dirname, "../dist");
 const distIndexHtml = path.join(distDir, "index.html");
+const uploadsDir = path.resolve(__dirname, "../uploads");
+
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
+app.use("/uploads", express.static(uploadsDir, { maxAge: "365d", immutable: true }));
+
+const allowedUploadMimeTypes = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+  "image/bmp",
+  "image/svg+xml",
+]);
+const uploadStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
+    const safeExt = ext.length <= 10 ? ext : ".jpg";
+    cb(null, `${Date.now()}-${crypto.randomUUID()}${safeExt}`);
+  },
+});
+const adminImageUpload = multer({
+  storage: uploadStorage,
+  limits: { fileSize: 12 * 1024 * 1024, files: 15 },
+  fileFilter: (_req, file, cb) => {
+    const mime = String(file.mimetype || "").toLowerCase();
+    if (allowedUploadMimeTypes.has(mime)) {
+      cb(null, true);
+      return;
+    }
+    cb(new Error("INVALID_IMAGE_TYPE"));
+  },
+});
 
 const SESSION_DAYS = 30;
 const PASSWORD_RESET_TTL_MINUTES = 30;
@@ -516,6 +556,24 @@ function mapProductListRow(row) {
     features: [],
     colors: parseArrayJson(row.colors_json).map((item) => String(item ?? "")).filter(Boolean),
     tags: parseArrayJson(row.tags_json).map((item) => String(item ?? "")).filter(Boolean),
+    isNew: Boolean(row.is_new),
+    isBestseller: Boolean(row.is_bestseller),
+  };
+}
+
+function mapAdminProductListRow(row) {
+  const proxyImage = buildProductImageProxyPath(row.id, 0);
+  return {
+    id: String(row.id),
+    name: row.name,
+    price: Number(row.price),
+    image: proxyImage,
+    images: [proxyImage],
+    category: row.category_id,
+    description: "",
+    features: [],
+    colors: [],
+    tags: [],
     isNew: Boolean(row.is_new),
     isBestseller: Boolean(row.is_bestseller),
   };
@@ -2385,15 +2443,34 @@ app.patch("/api/admin/orders/:id/status", requireAdminAuth, async (req, res) => 
 
 app.get("/api/admin/products", requireAdminAuth, async (_req, res) => {
   try {
+    const parsedLimit = Number(_req.query?.limit);
+    const parsedOffset = Number(_req.query?.offset);
+    const safeLimit = Number.isInteger(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 60) : 24;
+    const safeOffset = Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
+
+    const [countRows] = await pool.query(`SELECT COUNT(*) AS total FROM products`);
+    const total = Number(countRows?.[0]?.total ?? 0);
+
     try {
       const [rows] = await pool.query(
         `
-        SELECT id, name, price, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
+        SELECT id, name, price, category_id, is_new, is_bestseller
         FROM products
         ORDER BY id ASC
+        LIMIT ?
+        OFFSET ?
         `
+        ,
+        [safeLimit, safeOffset]
       );
-      return res.json({ products: rows.map(mapProductRow) });
+      const products = rows.map(mapAdminProductListRow);
+      const nextOffset = safeOffset + products.length;
+      return res.json({
+        products,
+        total,
+        hasMore: nextOffset < total,
+        nextOffset,
+      });
     } catch (error) {
       // Backward compatible for DBs without tags_json column.
       if (error?.code !== "ER_BAD_FIELD_ERROR") {
@@ -2401,12 +2478,23 @@ app.get("/api/admin/products", requireAdminAuth, async (_req, res) => {
       }
       const [rows] = await pool.query(
         `
-        SELECT id, name, price, image, images_json, category_id, description, features_json, colors_json, is_new, is_bestseller
+        SELECT id, name, price, category_id, is_new, is_bestseller
         FROM products
         ORDER BY id ASC
+        LIMIT ?
+        OFFSET ?
         `
+        ,
+        [safeLimit, safeOffset]
       );
-      return res.json({ products: rows.map(mapProductRow) });
+      const products = rows.map(mapAdminProductListRow);
+      const nextOffset = safeOffset + products.length;
+      return res.json({
+        products,
+        total,
+        hasMore: nextOffset < total,
+        nextOffset,
+      });
     }
   } catch (error) {
     return res.status(500).json({ message: "Admin products fetch failed." });
@@ -2462,6 +2550,31 @@ app.get("/api/admin/users", requireAdminAuth, async (_req, res) => {
   } catch (error) {
     return res.status(500).json({ message: "Admin users fetch failed." });
   }
+});
+
+app.post("/api/admin/upload-images", requireAdminAuth, (req, res) => {
+  adminImageUpload.array("images", 15)(req, res, (error) => {
+    if (error) {
+      if (error?.message === "INVALID_IMAGE_TYPE") {
+        return res.status(400).json({ message: "Sadece görsel dosyaları yüklenebilir." });
+      }
+      if (error?.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ message: "Her görsel en fazla 12MB olabilir." });
+      }
+      if (error?.code === "LIMIT_FILE_COUNT") {
+        return res.status(400).json({ message: "En fazla 15 görsel yükleyebilirsiniz." });
+      }
+      return res.status(400).json({ message: "Görsel yükleme başarısız." });
+    }
+
+    const files = Array.isArray(req.files) ? req.files : [];
+    if (files.length === 0) {
+      return res.status(400).json({ message: "Yüklenecek görsel bulunamadı." });
+    }
+
+    const urls = files.map((file) => `/uploads/${file.filename}`);
+    return res.json({ urls });
+  });
 });
 
 app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
@@ -2558,6 +2671,33 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
       return res.status(409).json({ message: "Bu ürün ID zaten kullanılıyor." });
     }
     return res.status(500).json({ message: "Admin product create failed." });
+  }
+});
+
+app.get("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
+  try {
+    const productId = String(req.params.id ?? "").trim();
+    if (!productId) {
+      return res.status(400).json({ message: "Geçersiz ürün." });
+    }
+
+    const [rows] = await pool.query(
+      `
+      SELECT id, name, price, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
+      FROM products
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [productId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Ürün bulunamadı." });
+    }
+
+    return res.json({ product: mapProductRow(rows[0]) });
+  } catch (error) {
+    return res.status(500).json({ message: "Admin product fetch failed." });
   }
 });
 

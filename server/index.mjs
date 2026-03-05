@@ -482,12 +482,79 @@ function mapProductRow(row) {
     images: normalizedImages,
     category: row.category_id,
     description: row.description,
-    features: JSON.parse(row.features_json ?? "[]"),
-    colors: JSON.parse(row.colors_json ?? "[]"),
-    tags: JSON.parse(row.tags_json ?? "[]"),
+    features: parseArrayJson(row.features_json),
+    colors: parseArrayJson(row.colors_json),
+    tags: parseArrayJson(row.tags_json),
     isNew: Boolean(row.is_new),
     isBestseller: Boolean(row.is_bestseller),
   };
+}
+
+function parseArrayJson(value) {
+  try {
+    const parsed = JSON.parse(value ?? "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function buildProductImageProxyPath(productId, imageIndex = 0) {
+  return `/api/products/${encodeURIComponent(String(productId))}/image/${Math.max(0, Number(imageIndex) || 0)}`;
+}
+
+function mapProductListRow(row) {
+  const cover = buildProductImageProxyPath(row.id, 0);
+  return {
+    id: String(row.id),
+    name: row.name,
+    price: Number(row.price),
+    image: cover,
+    images: [cover],
+    category: row.category_id,
+    description: String(row.description ?? ""),
+    features: [],
+    colors: parseArrayJson(row.colors_json).map((item) => String(item ?? "")).filter(Boolean),
+    tags: parseArrayJson(row.tags_json).map((item) => String(item ?? "")).filter(Boolean),
+    isNew: Boolean(row.is_new),
+    isBestseller: Boolean(row.is_bestseller),
+  };
+}
+
+function parseProductImageSources(row) {
+  const parsed = parseArrayJson(row.images_json)
+    .map((item) => normalizeMediaPath(item))
+    .filter(Boolean);
+  const cover = normalizeMediaPath(row.image);
+  if (parsed.length > 0) return parsed;
+  return cover ? [cover] : [];
+}
+
+function sendImageSourceResponse(res, source) {
+  const normalized = String(source ?? "").trim();
+  if (!normalized) {
+    return res.status(404).json({ message: "Image not found." });
+  }
+
+  const dataMatch = normalized.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (dataMatch) {
+    const mimeType = dataMatch[1];
+    const payload = dataMatch[2];
+    try {
+      const buffer = Buffer.from(payload, "base64");
+      res.setHeader("Content-Type", mimeType);
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      return res.send(buffer);
+    } catch {
+      return res.status(400).json({ message: "Invalid image payload." });
+    }
+  }
+
+  if (/^https?:\/\//i.test(normalized)) {
+    return res.redirect(302, normalized);
+  }
+
+  return res.redirect(302, normalized.startsWith("/") ? normalized : `/${normalized}`);
 }
 
 function mapAddressRow(row) {
@@ -2521,7 +2588,7 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
       [productId]
     );
     if (existingRows.length === 0) {
-      return res.status(404).json({ message: "ÃœrÃ¼n bulunamadÄ±." });
+      return res.status(404).json({ message: "Ürün bulunamadı." });
     }
     const existing = existingRows[0];
 
@@ -2633,7 +2700,7 @@ app.get("/api/categories", async (_req, res) => {
 
 app.get("/api/products", async (req, res) => {
   try {
-    const { search, category, sort } = req.query;
+    const { search, category, sort, limit } = req.query;
 
     const where = [];
     const params = [];
@@ -2645,8 +2712,13 @@ app.get("/api/products", async (req, res) => {
     }
 
     if (typeof category === "string" && category.trim() !== "") {
-      where.push("category_id = ?");
-      params.push(category.trim());
+      const normalizedCategory = category.trim();
+      if (normalizedCategory === "new") {
+        where.push("is_new = TRUE");
+      } else {
+        where.push("category_id = ?");
+        params.push(normalizedCategory);
+      }
     }
 
     let orderBy = "id ASC";
@@ -2654,15 +2726,20 @@ app.get("/api/products", async (req, res) => {
     if (sort === "price-high") orderBy = "price DESC";
     if (sort === "newest") orderBy = "is_new DESC, id DESC";
 
+    const parsedLimit = Number(limit);
+    const safeLimit = Number.isInteger(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 120) : 60;
+
     const sql = `
-      SELECT id, name, price, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
+      SELECT id, name, price, image, category_id, description, colors_json, tags_json, is_new, is_bestseller
       FROM products
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
       ORDER BY ${orderBy}
+      LIMIT ?
     `;
+    params.push(safeLimit);
 
     const [rows] = await pool.query(sql, params);
-    res.json(rows.map(mapProductRow));
+    res.json(rows.map(mapProductListRow));
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch products." });
   }
@@ -2672,7 +2749,7 @@ app.get("/api/products/:id", async (req, res) => {
   try {
     const [rows] = await pool.query(
       `
-      SELECT id, name, price, image, images_json, category_id, description, features_json, colors_json, is_new, is_bestseller
+      SELECT id, name, price, image, category_id, description, features_json, colors_json, is_new, is_bestseller
       , tags_json
       FROM products
       WHERE id = ?
@@ -2685,12 +2762,17 @@ app.get("/api/products/:id", async (req, res) => {
       return res.status(404).json({ message: "Product not found." });
     }
 
-    const product = mapProductRow(rows[0]);
+    const baseProduct = mapProductRow(rows[0]);
+    const cover = buildProductImageProxyPath(baseProduct.id, 0);
+    const product = {
+      ...baseProduct,
+      image: cover,
+      images: [cover],
+    };
 
     const [relatedRows] = await pool.query(
       `
-      SELECT id, name, price, image, images_json, category_id, description, features_json, colors_json, is_new, is_bestseller
-      , tags_json
+      SELECT id, name, price, image, category_id, description, colors_json, tags_json, is_new, is_bestseller
       FROM products
       WHERE category_id = ? AND id <> ?
       ORDER BY id ASC
@@ -2701,10 +2783,56 @@ app.get("/api/products/:id", async (req, res) => {
 
     return res.json({
       product,
-      relatedProducts: relatedRows.map(mapProductRow),
+      relatedProducts: relatedRows.map(mapProductListRow),
     });
   } catch (error) {
     return res.status(500).json({ message: "Failed to fetch product." });
+  }
+});
+
+app.get("/api/products/:id/media", async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT id, image, images_json
+      FROM products
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [req.params.id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Product not found." });
+    }
+    const sources = parseProductImageSources(rows[0]);
+    const images = (sources.length > 0 ? sources : [rows[0].image])
+      .map((_, index) => buildProductImageProxyPath(rows[0].id, index));
+    return res.json({ images });
+  } catch (error) {
+    return res.status(500).json({ message: "Failed to fetch product media." });
+  }
+});
+
+app.get("/api/products/:id/image/:index", async (req, res) => {
+  try {
+    const imageIndex = Math.max(0, Number(req.params.index) || 0);
+    const [rows] = await pool.query(
+      `
+      SELECT id, image, images_json
+      FROM products
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [req.params.id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Product not found." });
+    }
+    const sources = parseProductImageSources(rows[0]);
+    const selected = sources[imageIndex] ?? sources[0] ?? rows[0].image;
+    return sendImageSourceResponse(res, selected);
+  } catch (error) {
+    return res.status(500).json({ message: "Failed to fetch product image." });
   }
 });
 
@@ -2724,7 +2852,7 @@ app.delete("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ message: "ÃœrÃ¼n bulunamadÄ±." });
+      return res.status(404).json({ message: "Ürün bulunamadı." });
     }
 
     return res.json({ ok: true });

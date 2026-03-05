@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Heart, Minus, Plus, ArrowLeft, Check, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
 import type { Product as ProductType } from '@/types';
-import { fetchProductDetail } from '@/lib/api';
+import { fetchProductDetail, fetchProductMedia } from '@/lib/api';
 
 export function Product() {
   const { id } = useParams<{ id: string }>();
@@ -39,6 +39,19 @@ export function Product() {
         if (!isMounted) return;
         setProduct(data.product);
         setRelatedProducts(data.relatedProducts);
+        fetchProductMedia(id)
+          .then((media) => {
+            if (!isMounted) return;
+            const normalized = Array.isArray(media.images)
+              ? media.images.map((item) => String(item ?? "").trim()).filter(Boolean)
+              : [];
+            if (normalized.length === 0) return;
+            setProduct((prev) => (prev ? { ...prev, images: normalized, image: normalized[0] } : prev));
+          })
+          .catch((error) => {
+            if (!isMounted) return;
+            console.error('Failed to fetch product media:', error);
+          });
       } catch (error) {
         if (!isMounted) return;
         console.error('Failed to fetch product detail:', error);

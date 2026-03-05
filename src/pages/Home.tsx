@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Heart, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
 import type { Product, Category } from '@/types';
-import { fetchProducts, fetchCategories } from '@/lib/api';
+import { fetchProducts } from '@/lib/api';
 
 const banners = [
   { id: 1, image: '/banner1.jpg', title: 'Yeni Sezon', subtitle: 'Zarif ve şık çantalar', cta: 'Keşfet', link: '/shop' },
@@ -11,15 +11,38 @@ const banners = [
   { id: 3, image: '/banner3.jpg', title: 'Şıklık ve Konfor', subtitle: 'Tarzınızı yansıtın', cta: 'Alışverişe Başla', link: '/shop' }
 ];
 
+const HOME_CATEGORIES: Category[] = [
+  { id: 'crossbody', name: 'Çapraz Çantalar', image: '/cat_crossbody.jpg', description: 'Günlük kullanıma uygun şık çapraz çantalar' },
+  { id: 'mini', name: 'Mini Çantalar', image: '/cat_mini.jpg', description: 'Kompakt ve zarif mini çantalar' },
+  { id: 'shoulder', name: 'Omuz Çantaları', image: '/cat_shoulder.jpg', description: 'Elegant omuz çantaları' },
+  { id: 'new', name: 'Yeni Gelenler', image: '/cat_new.jpg', description: 'En yeni koleksiyonumuz' }
+];
+
+const normalizeTurkishText = (value: string) =>
+  String(value ?? '')
+    .replaceAll('Ã¼', 'ü')
+    .replaceAll('Ãœ', 'Ü')
+    .replaceAll('Ã¶', 'ö')
+    .replaceAll('Ã–', 'Ö')
+    .replaceAll('Ã§', 'ç')
+    .replaceAll('Ã‡', 'Ç')
+    .replaceAll('ÄŸ', 'ğ')
+    .replaceAll('Äž', 'Ğ')
+    .replaceAll('ÅŸ', 'ş')
+    .replaceAll('Åž', 'Ş')
+    .replaceAll('Ä±', 'ı')
+    .replaceAll('Ä°', 'İ')
+    .replaceAll('Â', '');
+
 export function Home() {
   const [currentBanner, setCurrentBanner] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [visibleProducts, setVisibleProducts] = useState<Product[]>([]);
+  const [categories] = useState<Category[]>(HOME_CATEGORIES);
   const { dispatch, state } = useStore();
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
 
-  // Auto-slide banner
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentBanner((prev) => (prev + 1) % banners.length);
@@ -32,14 +55,9 @@ export function Home() {
 
     const loadData = async () => {
       try {
-        const [productsData, categoriesData] = await Promise.all([
-          fetchProducts(),
-          fetchCategories(),
-        ]);
-
+        const productsData = await fetchProducts({ limit: 24 });
         if (!isMounted) return;
         setProducts(productsData);
-        setCategories(categoriesData);
       } catch (error) {
         console.error('Failed to fetch homepage data:', error);
       }
@@ -51,10 +69,27 @@ export function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    setVisibleProducts([]);
+    if (products.length === 0) return;
+
+    let index = 0;
+    const timer = window.setInterval(() => {
+      index += 1;
+      setVisibleProducts(products.slice(0, index));
+      if (index >= products.length) {
+        window.clearInterval(timer);
+      }
+    }, 90);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [products]);
+
   const nextBanner = () => setCurrentBanner((prev) => (prev + 1) % banners.length);
   const prevBanner = () => setCurrentBanner((prev) => (prev - 1 + banners.length) % banners.length);
 
-  // Touch handlers for mobile swipe
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
   };
@@ -97,14 +132,13 @@ export function Home() {
     }
     const fallback: string[] = [];
     if (product.isNew) fallback.push('Yeni');
-    if (product.isBestseller) fallback.push('\u00C7ok Satan');
+    if (product.isBestseller) fallback.push('Çok Satan');
     return fallback;
   };
 
   return (
     <main className="min-h-screen bg-[#F8F7F4]">
-      {/* Slider Banner */}
-      <section 
+      <section
         className="relative w-full h-[60vh] md:h-[70vh] lg:h-[80vh] overflow-hidden"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
@@ -116,8 +150,8 @@ export function Home() {
               index === currentBanner ? 'opacity-100' : 'opacity-0'
             }`}
           >
-            <img 
-              src={banner.image} 
+            <img
+              src={banner.image}
               alt={banner.title}
               className="w-full h-full object-cover"
             />
@@ -127,7 +161,7 @@ export function Home() {
                 {banner.title}
               </h2>
               <p className="text-lg md:text-xl mb-8 drop-shadow-md">{banner.subtitle}</p>
-              <Link 
+              <Link
                 to={banner.link}
                 className="bg-white text-black px-8 py-3 rounded-full font-medium hover:bg-black hover:text-white transition-colors"
               >
@@ -136,22 +170,20 @@ export function Home() {
             </div>
           </div>
         ))}
-        
-        {/* Navigation Arrows */}
-        <button 
+
+        <button
           onClick={prevBanner}
           className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 rounded-full flex items-center justify-center hover:bg-white transition-colors"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
-        <button 
+        <button
           onClick={nextBanner}
           className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 rounded-full flex items-center justify-center hover:bg-white transition-colors"
         >
           <ChevronRight className="w-5 h-5" />
         </button>
-        
-        {/* Dots */}
+
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2">
           {banners.map((_, index) => (
             <button
@@ -165,18 +197,17 @@ export function Home() {
         </div>
       </section>
 
-      {/* Categories */}
       <section className="py-12 md:py-16 px-4 md:px-8">
         <h2 className="text-2xl md:text-3xl font-light text-center mb-10">Kategoriler</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-6xl mx-auto">
           {categories.map((cat) => (
-            <Link 
+            <Link
               key={cat.id}
               to={`/shop?category=${cat.id}`}
               className="group relative aspect-[4/3] rounded-lg overflow-hidden"
             >
-              <img 
-                src={cat.image} 
+              <img
+                src={cat.image}
                 alt={cat.name}
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
               />
@@ -189,7 +220,6 @@ export function Home() {
         </div>
       </section>
 
-      {/* Products Grid - 2 columns */}
       <section className="py-12 md:py-16 px-4 md:px-8">
         <div className="max-w-4xl mx-auto">
           <div className="flex justify-between items-center mb-10">
@@ -198,29 +228,27 @@ export function Home() {
               Tümünü Gör
             </Link>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-4 md:gap-6">
-            {products.map((product) => (
+            {visibleProducts.map((product) => (
               <div key={product.id} className="group">
                 <div className="relative aspect-[3/4] overflow-hidden rounded-lg bg-gray-100 mb-3">
                   <Link to={`/product/${product.id}`}>
-                    <img 
-                      src={product.image} 
-                      alt={product.name}
+                    <img
+                      src={product.image}
+                      alt={normalizeTurkishText(product.name)}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
                   </Link>
-                  
-                  {/* Badges */}
+
                   <div className="absolute top-2 left-2 flex flex-col gap-1">
                     {getProductTags(product).map((tag) => (
                       <span key={`${product.id}-${tag}`} className="bg-black text-white text-xs px-2 py-1 rounded">
-                        {tag}
+                        {normalizeTurkishText(tag)}
                       </span>
                     ))}
                   </div>
 
-                  {/* Wishlist Button */}
                   <button
                     onClick={() => addToWishlist(product)}
                     className={`absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
@@ -231,8 +259,7 @@ export function Home() {
                   >
                     <Heart className={`w-4 h-4 ${isInWishlist(product.id) ? 'fill-current' : ''}`} />
                   </button>
-                  
-                  {/* Quick Add Button */}
+
                   <button
                     onClick={() => addToCart(product)}
                     className="absolute bottom-0 left-0 right-0 bg-black text-white py-3 text-sm font-medium translate-y-full group-hover:translate-y-0 transition-transform"
@@ -243,10 +270,10 @@ export function Home() {
                     </span>
                   </button>
                 </div>
-                
+
                 <Link to={`/product/${product.id}`}>
                   <h3 className="text-sm md:text-base font-medium text-gray-900 mb-1 line-clamp-1">
-                    {product.name}
+                    {normalizeTurkishText(product.name)}
                   </h3>
                   <p className="text-sm text-gray-600">{product.price.toLocaleString('tr-TR')} TL</p>
                 </Link>

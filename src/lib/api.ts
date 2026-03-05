@@ -45,11 +45,15 @@ export async function fetchProducts(params?: {
   search?: string;
   category?: string;
   sort?: string;
+  limit?: number;
 }): Promise<Product[]> {
   const query = new URLSearchParams();
   if (params?.search) query.set("search", params.search);
   if (params?.category) query.set("category", params.category);
   if (params?.sort) query.set("sort", params.sort);
+  if (typeof params?.limit === "number" && Number.isFinite(params.limit)) {
+    query.set("limit", String(Math.max(1, Math.trunc(params.limit))));
+  }
 
   const response = await fetch(`/api/products${query.toString() ? `?${query}` : ""}`);
   return parseResponse<Product[]>(response);
@@ -61,6 +65,11 @@ export async function fetchProductDetail(id: string): Promise<{
 }> {
   const response = await fetch(`/api/products/${id}`);
   return parseResponse<{ product: Product; relatedProducts: Product[] }>(response);
+}
+
+export async function fetchProductMedia(id: string): Promise<{ images: string[] }> {
+  const response = await fetch(`/api/products/${id}/media`);
+  return parseResponse<{ images: string[] }>(response);
 }
 
 export async function fetchPublicSettings(): Promise<{ siteName: string }> {

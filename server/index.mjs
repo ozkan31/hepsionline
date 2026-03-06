@@ -30,6 +30,7 @@ if (!fs.existsSync(uploadsDir)) {
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use("/uploads", express.static(uploadsDir, { maxAge: "365d", immutable: true }));
+app.use("/api/uploads", express.static(uploadsDir, { maxAge: "365d", immutable: true }));
 
 const allowedUploadMimeTypes = new Set([
   "image/jpeg",
@@ -180,6 +181,7 @@ function normalizeMediaPath(rawValue) {
   if (!value) return "";
   if (/^(https?:)?\/\//i.test(value)) return value;
   if (/^(data:|blob:)/i.test(value)) return value;
+  if (value.startsWith("/uploads/")) return `/api${value}`;
   return value.startsWith("/") ? value : `/${value}`;
 }
 
@@ -2572,7 +2574,7 @@ app.post("/api/admin/upload-images", requireAdminAuth, (req, res) => {
       return res.status(400).json({ message: "Yüklenecek görsel bulunamadı." });
     }
 
-    const urls = files.map((file) => `/uploads/${file.filename}`);
+    const urls = files.map((file) => `/api/uploads/${file.filename}`);
     return res.json({ urls });
   });
 });

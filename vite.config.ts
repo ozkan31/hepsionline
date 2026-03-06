@@ -13,6 +13,10 @@ export default defineConfig({
         target: `http://localhost:${process.env.API_PORT || 3001}`,
         changeOrigin: true,
       },
+      '/uploads': {
+        target: `http://localhost:${process.env.API_PORT || 3001}`,
+        changeOrigin: true,
+      },
     },
   },
   resolve: {

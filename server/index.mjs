@@ -612,100 +612,135 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
 <meta name="viewport" content="width=device-width">
 <title>Siparişiniz Alındı</title>
 </head>
-<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,Helvetica,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:30px 0;">
+
+<body style="margin:0;padding:0;background:#efefef;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#222;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#efefef;padding:40px 0;">
 <tr>
 <td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;">
+
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
 <tr>
-<td style="background:#111;color:#ffffff;text-align:center;padding:35px 20px;">
-<h1 style="margin:0;font-weight:500;font-size:28px;">StilBags&Fashion</h1>
-<p style="margin:8px 0 0;font-size:14px;color:#d4d4d4;">Zarafetin Yeni Adresi</p>
+<td style="background:#111;padding:40px 20px;text-align:center;color:#fff;">
+<div style="font-size:30px;font-weight:500;letter-spacing:0.5px;">StilBags&Fashion</div>
+<div style="margin-top:8px;font-size:14px;color:#d2d2d2;">Zarafetin Yeni Adresi</div>
 </td>
 </tr>
+
 <tr>
-<td style="text-align:center;padding:35px 30px 10px;">
-<h2 style="margin:0;font-size:32px;color:#111;">Siparişiniz Alındı</h2>
-<p style="margin-top:8px;color:#777;font-size:16px;">Teşekkür ederiz!</p>
+<td style="padding:40px 40px 10px;text-align:center;">
+<div style="font-size:36px;font-weight:600;color:#111;">Siparişiniz Alındı</div>
+<div style="margin-top:8px;font-size:18px;color:#666;">Teşekkür ederiz!</div>
 </td>
 </tr>
+
 <tr>
-<td style="padding:10px 40px 25px;color:#444;font-size:16px;line-height:1.6;">
-Merhaba <b>${safeFirstName}</b>,<br><br>
+<td style="padding:10px 50px 25px;font-size:17px;line-height:1.7;color:#444;">
+Merhaba ${safeFirstName},<br><br>
 Siparişiniz başarıyla oluşturuldu.<br>
 Siparişiniz hazırlanmaya başlanmıştır.
 </td>
 </tr>
+
 <tr>
-<td style="padding:0 40px 25px;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f7;border-radius:8px;padding:20px;">
+<td style="padding:0 40px 30px;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f7;border-radius:12px;padding:25px;">
 <tr>
-<td style="width:50%;font-size:15px;color:#333;">
-<b>Sipariş No:</b> ${safeOrderId}<br><br>
-<b>Tarih:</b> ${safeOrderDate}<br><br>
+<td colspan="2" style="font-size:22px;font-weight:600;padding-bottom:20px;">
+Sipariş Bilgileri
+</td>
+</tr>
+
+<tr>
+<td width="50%" style="font-size:16px;line-height:2;color:#333;border-right:1px solid #e4e4e4;padding-right:25px;">
+<b>Sipariş No:</b> ${safeOrderId}<br>
+<b>Tarih:</b> ${safeOrderDate}<br>
 <b>Ödeme:</b> Kredi Kartı
 </td>
-<td style="width:50%;font-size:15px;color:#333;">
-<b>Teslimat Bilgileri</b><br><br>
+
+<td width="50%" style="font-size:16px;line-height:2;color:#333;padding-left:25px;">
+<b>Teslimat Bilgileri</b><br>
 ${safeReceiverName}<br>
-${safeDeliveryPhone}<br>
-<b>Adres Başlığı:</b> ${safeAddressName}<br>
+Telefon ${safeDeliveryPhone}<br>
 ${safeDeliveryAddress}
 </td>
 </tr>
+
 </table>
 </td>
 </tr>
+
 <tr>
-<td style="padding:0 40px 25px;">
-<table width="100%" cellpadding="0" cellspacing="0">
+<td style="padding:0 40px 30px;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f7;border-radius:12px;padding:25px;">
+
 <tr>
-<td width="120">
-${firstProductImage ? `<img src="${escapeHtml(firstProductImage)}" width="110" style="border-radius:6px;" alt="${firstProductName}">` : `<div style="width:110px;height:110px;background:#f2f2f2;border-radius:6px;"></div>`}
+<td width="130" valign="top">
+${firstProductImage ? `<img src="${escapeHtml(firstProductImage)}" width="120" style="border-radius:10px;display:block;" alt="${firstProductName}">` : `<div style="width:120px;height:120px;border-radius:10px;background:#ececec;display:block;"></div>`}
 </td>
-<td style="padding-left:15px;font-size:15px;color:#333;">
-<b style="font-size:18px;"><a href="${escapeHtml(firstProductUrl)}" style="color:#111;text-decoration:none;">${firstProductName}</a></b><br><br>
-Adet: ${firstQuantity}<br>
-Fiyat: <b>${firstLineTotalText} TL</b>
+
+<td valign="top" style="padding-left:20px;">
+<div style="font-size:22px;font-weight:600;margin-bottom:10px;"><a href="${escapeHtml(firstProductUrl)}" style="color:inherit;text-decoration:none;">${firstProductName}</a></div>
+<div style="color:#666;font-size:16px;">Adet: ${firstQuantity}</div>
+<div style="color:#666;font-size:16px;">Renk: ${escapeHtml(String(firstItem?.color ?? "Siyah"))}</div>
+<div style="margin-top:6px;font-size:18px;font-weight:600;">Fiyat: ${firstLineTotalText} TL</div>
 </td>
 </tr>
-</table>
-</td>
+
+<tr>
+<td colspan="2" style="padding-top:25px;border-top:1px solid #e4e4e4;"></td>
 </tr>
+
 <tr>
-<td style="padding:0 40px 25px;">
-<table width="100%" style="font-size:15px;color:#333;">
+<td colspan="2">
+
+<table width="100%" style="font-size:16px;color:#333;line-height:2.2;">
+
 <tr>
-<td>Ürün Toplamı</td>
+<td>Ürün Toplamı:</td>
 <td align="right">${firstLineTotalText} TL</td>
 </tr>
+
 <tr>
-<td>Kargo</td>
+<td>Kargo:</td>
 <td align="right">${cargoPrice.toLocaleString("tr-TR")} TL</td>
 </tr>
+
 <tr>
-<td style="padding-top:10px;font-size:18px;"><b>TOPLAM</b></td>
-<td align="right" style="padding-top:10px;font-size:18px;"><b>${safeGrandTotal} TL</b></td>
+<td style="font-size:20px;font-weight:600;padding-top:6px;">TOPLAM:</td>
+<td align="right" style="font-size:20px;font-weight:600;padding-top:6px;">${safeGrandTotal} TL</td>
 </tr>
+
+</table>
+
+</td>
+</tr>
+
 </table>
 </td>
 </tr>
+
 <tr>
-<td align="center" style="padding:10px 40px 35px;">
-<a href="${escapeHtml(`${baseUrl}/hesabim`)}" style="background:#111;color:#ffffff;text-decoration:none;padding:14px 35px;border-radius:30px;font-size:16px;display:inline-block;">
+<td align="center" style="padding:10px 40px 30px;">
+<a href="${escapeHtml(`${baseUrl}/hesabim`)}" style="background:#111;color:#fff;text-decoration:none;padding:16px 45px;border-radius:35px;font-size:16px;font-weight:500;display:inline-block;">
 Siparişimi Görüntüle
 </a>
 </td>
 </tr>
+
 <tr>
-<td style="text-align:center;padding:20px;color:#777;font-size:14px;">
+<td style="padding:10px 40px 40px;text-align:center;font-size:14px;color:#777;">
 Siparişiniz kargoya verildiğinde size bilgilendirme e-postası gönderilecektir.
 </td>
 </tr>
+
 </table>
+
 </td>
 </tr>
 </table>
+
 </body>
 </html>
   `;

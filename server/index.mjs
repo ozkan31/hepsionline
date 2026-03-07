@@ -243,6 +243,12 @@ function formatWhatsappOrderText({ order, deliveryAddress }) {
 async function sendOrderWhatsappNotification({ order, deliveryAddress }) {
   if (!isWhatsappConfigured || !order) return;
   for (const recipient of WHATSAPP_TO_NUMBERS) {
+    const customerName = `${String(deliveryAddress?.firstName ?? "").trim()} ${String(
+      deliveryAddress?.lastName ?? ""
+    ).trim()}`.trim();
+    const orderIdText = String(order?.id ?? "-").trim() || "-";
+    const customerNameText = customerName || "-";
+
     const textPayload = {
       messaging_product: "whatsapp",
       to: recipient,
@@ -259,6 +265,15 @@ async function sendOrderWhatsappNotification({ order, deliveryAddress }) {
       template: {
         name: WHATSAPP_TEMPLATE_NAME,
         language: { code: WHATSAPP_TEMPLATE_LANG },
+        components: [
+          {
+            type: "body",
+            parameters: [
+              { type: "text", text: orderIdText },
+              { type: "text", text: customerNameText },
+            ],
+          },
+        ],
       },
     };
 

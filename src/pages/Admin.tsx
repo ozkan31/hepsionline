@@ -625,6 +625,37 @@ export function Admin() {
     });
   };
 
+  const handleImageTouchStart = (imageId: string) => {
+    setDraggingImageId(imageId);
+  };
+
+  const handleImageTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!draggingImageId) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    e.preventDefault();
+
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    const targetCard = element?.closest?.("[data-admin-image-id]") as HTMLElement | null;
+    const targetImageId = targetCard?.dataset.adminImageId;
+    if (!targetImageId || targetImageId === draggingImageId) return;
+
+    setProductEditor((prev) => {
+      if (!prev) return prev;
+      const fromIndex = prev.images.findIndex((img) => img.id === draggingImageId);
+      const toIndex = prev.images.findIndex((img) => img.id === targetImageId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return prev;
+      const next = [...prev.images];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return { ...prev, images: next };
+    });
+  };
+
+  const handleImageTouchEnd = () => {
+    setDraggingImageId(null);
+  };
+
   const handleAddFeature = () => {
     if (!productEditor) return;
     const normalized = newFeatureName.trim();
@@ -1372,14 +1403,19 @@ export function Admin() {
                   {productEditor.images.map((image) => (
                     <div
                       key={image.id}
+                      data-admin-image-id={image.id}
                       draggable
                       onDragStart={(e) => handleImageDragStart(image.id, e)}
                       onDragOver={(e) => handleImageDragOver(e, image.id)}
                       onDrop={() => handleImageDrop(image.id)}
                       onDragEnd={() => setDraggingImageId(null)}
+                      onTouchStart={() => handleImageTouchStart(image.id)}
+                      onTouchMove={handleImageTouchMove}
+                      onTouchEnd={handleImageTouchEnd}
+                      onTouchCancel={handleImageTouchEnd}
                       className={`relative aspect-square rounded-lg border overflow-hidden bg-white cursor-grab active:cursor-grabbing transition-all ${
                         draggingImageId === image.id
-                          ? "border-transparent opacity-0"
+                          ? "border-transparent opacity-0 touch-none"
                           : "border-gray-300"
                       }`}
                     >

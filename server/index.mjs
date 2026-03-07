@@ -603,7 +603,9 @@ function sendImageSourceResponse(res, source) {
     try {
       const buffer = Buffer.from(payload, "base64");
       res.setHeader("Content-Type", mimeType);
-      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      // Product image proxy URLs are stable (/api/products/:id/image/:index) while source can change.
+      // Avoid long immutable caching so updated images appear immediately after admin edits.
+      res.setHeader("Cache-Control", "no-store");
       return res.send(buffer);
     } catch {
       return res.status(400).json({ message: "Invalid image payload." });
@@ -611,9 +613,11 @@ function sendImageSourceResponse(res, source) {
   }
 
   if (/^https?:\/\//i.test(normalized)) {
+    res.setHeader("Cache-Control", "no-store");
     return res.redirect(302, normalized);
   }
 
+  res.setHeader("Cache-Control", "no-store");
   return res.redirect(302, normalized.startsWith("/") ? normalized : `/${normalized}`);
 }
 

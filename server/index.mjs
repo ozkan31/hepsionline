@@ -41,6 +41,8 @@ const allowedUploadMimeTypes = new Set([
   "image/avif",
   "image/bmp",
   "image/svg+xml",
+  "image/heic",
+  "image/heif",
 ]);
 const uploadStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -588,6 +590,24 @@ function parseProductImageSources(row) {
   const cover = normalizeMediaPath(row.image);
   if (parsed.length > 0) return parsed;
   return cover ? [cover] : [];
+}
+
+function isLocalUploadPath(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized.startsWith("/uploads/") || normalized.startsWith("/api/uploads/");
+}
+
+function localUploadExists(value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return false;
+  if (!isLocalUploadPath(normalized)) return true;
+  const relativePath = normalized
+    .replace(/^\/api\/uploads\//, "")
+    .replace(/^\/uploads\//, "")
+    .replace(/^\/+/, "");
+  if (!relativePath) return false;
+  const filePath = path.join(uploadsDir, relativePath);
+  return fs.existsSync(filePath);
 }
 
 function resolveAdminImageSource(inputValue, productId, existingSources) {
@@ -2994,7 +3014,17 @@ app.get("/api/products/:id/image/:index", async (req, res) => {
       return res.status(404).json({ message: "Product not found." });
     }
     const sources = parseProductImageSources(rows[0]);
-    const selected = sources[imageIndex] ?? sources[0] ?? rows[0].image;
+    const candidates = [
+      sources[imageIndex],
+      ...sources,
+      rows[0].image,
+    ]
+      .map((item) => String(item ?? "").trim())
+      .filter(Boolean);
+    const selected = candidates.find((item) => localUploadExists(item));
+    if (!selected) {
+      return res.status(404).json({ message: "Image not found." });
+    }
     return sendImageSourceResponse(res, selected);
   } catch (error) {
     return res.status(500).json({ message: "Failed to fetch product image." });

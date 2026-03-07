@@ -234,6 +234,23 @@ export function Product() {
     animateSlide(direction, normalized, 0);
   };
 
+  const selectImageDirectly = (nextIndex: number) => {
+    if (productImages.length <= 1) return;
+    const normalized = (nextIndex + productImages.length) % productImages.length;
+    if (normalized === selectedImageIndex) return;
+    if (imageAnimationTimeoutRef.current != null) {
+      window.clearTimeout(imageAnimationTimeoutRef.current);
+      imageAnimationTimeoutRef.current = null;
+    }
+    setIsDraggingImage(false);
+    setIsSettlingImage(false);
+    setIsImageResetting(false);
+    setSettlingDirection(0);
+    setPendingImageIndex(null);
+    setDragOffsetX(0);
+    setSelectedImageIndex(normalized);
+  };
+
   const handleImageTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (productImages.length <= 1) return;
     if (imageAnimationTimeoutRef.current != null) {
@@ -309,6 +326,7 @@ export function Product() {
             >
               {previewImageIndex !== null && (
                 <img
+                  key={`${product.id}-preview-${previewImageIndex}-${productImages[previewImageIndex] ?? activeImage}`}
                   src={productImages[previewImageIndex] ?? activeImage}
                   alt={product.name}
                   className="absolute inset-0 w-full h-full object-cover"
@@ -319,6 +337,7 @@ export function Product() {
                 />
               )}
               <img
+                key={`${product.id}-active-${selectedImageIndex}-${activeImage}`}
                 src={activeImage}
                 alt={product.name}
                 className="absolute inset-0 w-full h-full object-cover"
@@ -372,7 +391,7 @@ export function Product() {
                   <button
                     key={`${product.id}-image-${index}`}
                     type="button"
-                    onClick={() => setSelectedImageIndex(index)}
+                    onClick={() => selectImageDirectly(index)}
                     className={`aspect-square rounded-md overflow-hidden border ${
                       selectedImageIndex === index ? "border-black" : "border-gray-200"
                     }`}

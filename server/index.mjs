@@ -590,6 +590,22 @@ function parseProductImageSources(row) {
   return cover ? [cover] : [];
 }
 
+function resolveAdminImageSource(inputValue, productId, existingSources) {
+  const value = String(inputValue ?? "").trim();
+  if (!value) return "";
+  const proxyMatch = value.match(/^\/api\/products\/([^/]+)\/image\/(\d+)$/i);
+  if (!proxyMatch) return value;
+
+  const matchedProductId = decodeURIComponent(proxyMatch[1]);
+  if (matchedProductId !== String(productId)) return value;
+
+  const index = Number(proxyMatch[2]);
+  if (!Number.isFinite(index) || index < 0) {
+    return existingSources[0] ?? "";
+  }
+  return existingSources[index] ?? existingSources[0] ?? "";
+}
+
 function sendImageSourceResponse(res, source) {
   const normalized = String(source ?? "").trim();
   if (!normalized) {
@@ -2726,7 +2742,7 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     }
     const [existingRows] = await pool.query(
       `
-      SELECT id, name, price, category_id, description
+      SELECT id, name, price, image, images_json, category_id, description
       FROM products
       WHERE id = ?
       LIMIT 1
@@ -2751,11 +2767,14 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     const description = requestedDescription || String(existing.description ?? "").trim();
     const normalizedPrice = price;
 
+    const existingImageSources = parseProductImageSources(existing);
     const normalizedImages = images
+      .map((item) => resolveAdminImageSource(item, productId, existingImageSources))
       .map((item) => String(item ?? "").trim())
       .filter((item) => item.length > 0)
       .slice(0, 15);
-    const primaryImage = normalizedImages[0] ?? image;
+    const resolvedImage = resolveAdminImageSource(image, productId, existingImageSources);
+    const primaryImage = normalizedImages[0] ?? resolvedImage;
     if (!primaryImage) {
       return res.status(400).json({ message: "En az bir urun gorseli zorunludur." });
     }

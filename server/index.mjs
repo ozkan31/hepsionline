@@ -125,6 +125,21 @@ const orderMailTransporter = isOrderSmtpConfigured
       },
     })
   : null;
+const WHATSAPP_ENABLED = String(process.env.WHATSAPP_ENABLED ?? "false").toLowerCase() === "true";
+const WHATSAPP_API_URL = String(process.env.WHATSAPP_API_URL ?? "").trim();
+const WHATSAPP_API_TOKEN = String(process.env.WHATSAPP_API_TOKEN ?? "").trim();
+const WHATSAPP_PHONE_NUMBER_ID = String(process.env.WHATSAPP_PHONE_NUMBER_ID ?? "").trim();
+const WHATSAPP_TO_NUMBER = String(process.env.WHATSAPP_TO_NUMBER ?? "").trim();
+const WHATSAPP_TEMPLATE_NAME = String(process.env.WHATSAPP_TEMPLATE_NAME ?? "hello_world").trim();
+const WHATSAPP_TEMPLATE_LANG = String(process.env.WHATSAPP_TEMPLATE_LANG ?? "en_US").trim();
+const WHATSAPP_WEBHOOK_VERIFY_TOKEN = String(process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? "").trim();
+const isWhatsappConfigured = Boolean(
+  WHATSAPP_ENABLED &&
+    WHATSAPP_API_URL &&
+    WHATSAPP_API_TOKEN &&
+    WHATSAPP_TO_NUMBER &&
+    (WHATSAPP_PHONE_NUMBER_ID || /\/messages$/i.test(WHATSAPP_API_URL))
+);
 const allowedShippingCompanies = new Set([
   "Sen Kargo",
   "Aras Kargo",
@@ -176,6 +191,99 @@ function toPublicUrl(baseUrl, rawValue) {
   if (value.startsWith("//")) return `https:${value}`;
   if (value.startsWith("/")) return `${baseUrl}${value}`;
   return `${baseUrl}/${value.replace(/^\/+/, "")}`;
+}
+
+function getWhatsappMessagesEndpoint() {
+  const cleanUrl = WHATSAPP_API_URL.replace(/\/+$/, "");
+  if (/\/messages$/i.test(cleanUrl)) return cleanUrl;
+  if (!WHATSAPP_PHONE_NUMBER_ID) return "";
+  return `${cleanUrl}/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
+}
+
+async function sendWhatsappPayload(payload) {
+  const endpoint = getWhatsappMessagesEndpoint();
+  if (!endpoint) {
+    throw new Error("WhatsApp endpoint is not configured.");
+  }
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${WHATSAPP_API_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const bodyText = await response.text();
+  if (!response.ok) {
+    throw new Error(`WhatsApp API failed (${response.status}): ${bodyText.slice(0, 500)}`);
+  }
+  return bodyText;
+}
+
+function formatWhatsappOrderText({ order, deliveryAddress }) {
+  const createdAt = order?.date ? new Date(order.date) : new Date();
+  const dateText = Number.isNaN(createdAt.getTime())
+    ? ""
+    : createdAt.toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
+  const itemCount = Array.isArray(order?.items)
+    ? order.items.reduce((sum, item) => sum + Number(item?.quantity || 0), 0)
+    : 0;
+  const customerName = `${String(deliveryAddress?.firstName ?? "").trim()} ${String(
+    deliveryAddress?.lastName ?? ""
+  ).trim()}`.trim();
+  const addressLine = buildDeliveryAddressText(deliveryAddress);
+  const totalText = Number(order?.total || 0).toLocaleString("tr-TR");
+
+  const lines = [
+    "Yeni sipariş alındı",
+    `Sipariş No: ${order?.id ?? "-"}`,
+    dateText ? `Tarih: ${dateText}` : "",
+    customerName ? `Müşteri: ${customerName}` : "",
+    deliveryAddress?.phone ? `Telefon: ${deliveryAddress.phone}` : "",
+    addressLine ? `Adres: ${addressLine}` : "",
+    `Ürün Adedi: ${itemCount}`,
+    `Toplam: ${totalText} TL`,
+  ].filter(Boolean);
+
+  return lines.join("\n");
+}
+
+async function sendOrderWhatsappNotification({ order, deliveryAddress }) {
+  if (!isWhatsappConfigured || !order) return;
+
+  const textPayload = {
+    messaging_product: "whatsapp",
+    to: WHATSAPP_TO_NUMBER,
+    type: "text",
+    text: {
+      body: formatWhatsappOrderText({ order, deliveryAddress }),
+    },
+  };
+
+  try {
+    await sendWhatsappPayload(textPayload);
+    return;
+  } catch (error) {
+    const errorText = error instanceof Error ? error.message : String(error);
+    console.error("WhatsApp text send failed, trying template fallback:", errorText);
+  }
+
+  const templatePayload = {
+    messaging_product: "whatsapp",
+    to: WHATSAPP_TO_NUMBER,
+    type: "template",
+    template: {
+      name: WHATSAPP_TEMPLATE_NAME,
+      language: { code: WHATSAPP_TEMPLATE_LANG },
+    },
+  };
+
+  try {
+    await sendWhatsappPayload(templatePayload);
+  } catch (error) {
+    const errorText = error instanceof Error ? error.message : String(error);
+    console.error("WhatsApp template fallback failed:", errorText);
+  }
 }
 
 function normalizeMediaPath(rawValue) {
@@ -2023,6 +2131,47 @@ app.post("/api/orders", requireAuth, async (req, res) => {
       }).catch((error) => {
         console.error("Order confirmation email send failed:", error?.message || error);
       });
+
+      sendOrderWhatsappNotification({
+        order: createdOrder,
+        deliveryAddress,
+      }).catch((error) => {
+        console.error("Order WhatsApp notification failed:", error?.message || error);
+      });
+    } else if (createdOrder && isWhatsappConfigured) {
+      const fallbackAddress =
+        req.authUser.addresses.find((address) => address.isDefault) ?? req.authUser.addresses[0] ?? null;
+      const fallbackStreet = String(fallbackAddress?.street ?? "");
+      const [fallbackAddressName, fallbackAddressDetail] = fallbackStreet.split("|||");
+      const normalizedFallbackAddress = fallbackAddress
+        ? {
+            ...fallbackAddress,
+            addressName: String(fallbackAddressName ?? "").trim(),
+            street: String(fallbackAddressDetail ?? "").trim() || String(fallbackAddressName ?? "").trim(),
+          }
+        : null;
+      const hasShippingAddressSnapshot = Boolean(
+        shippingAddressName || shippingStreet || shippingProvince || shippingDistrict || shippingNeighborhood
+      );
+      const deliveryAddress = hasShippingAddressSnapshot
+        ? {
+            addressName: shippingAddressName || normalizedFallbackAddress?.addressName || "",
+            firstName: shippingFirstName || normalizedFallbackAddress?.firstName || req.authUser.firstName,
+            lastName: shippingLastName || normalizedFallbackAddress?.lastName || req.authUser.lastName,
+            phone: shippingPhone || normalizedFallbackAddress?.phone || req.authUser.phone || "",
+            street: shippingStreet || normalizedFallbackAddress?.street || "",
+            province: shippingProvince || normalizedFallbackAddress?.province || "",
+            district: shippingDistrict || normalizedFallbackAddress?.district || "",
+            neighborhood: shippingNeighborhood || normalizedFallbackAddress?.neighborhood || "",
+          }
+        : normalizedFallbackAddress;
+
+      sendOrderWhatsappNotification({
+        order: createdOrder,
+        deliveryAddress,
+      }).catch((error) => {
+        console.error("Order WhatsApp notification failed:", error?.message || error);
+      });
     }
 
     return res.status(201).json({ order: createdOrder ?? null, orders });
@@ -2541,6 +2690,59 @@ app.get("/api/admin/products", requireAdminAuth, async (_req, res) => {
   } catch (error) {
     return res.status(500).json({ message: "Admin products fetch failed." });
   }
+});
+
+app.get("/api/whatsapp/webhook", (req, res) => {
+  const mode = String(req.query["hub.mode"] ?? "");
+  const token = String(req.query["hub.verify_token"] ?? "");
+  const challenge = String(req.query["hub.challenge"] ?? "");
+
+  if (!WHATSAPP_WEBHOOK_VERIFY_TOKEN) {
+    return res.status(500).send("WHATSAPP_WEBHOOK_VERIFY_TOKEN is missing.");
+  }
+  if (mode === "subscribe" && token === WHATSAPP_WEBHOOK_VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
+  }
+  return res.status(403).send("Forbidden");
+});
+
+app.post("/api/whatsapp/webhook", (req, res) => {
+  try {
+    const entries = Array.isArray(req.body?.entry) ? req.body.entry : [];
+    for (const entry of entries) {
+      const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+      for (const change of changes) {
+        const value = change?.value ?? {};
+        const statuses = Array.isArray(value?.statuses) ? value.statuses : [];
+        for (const status of statuses) {
+          const messageId = String(status?.id ?? "");
+          const state = String(status?.status ?? "");
+          const recipient = String(status?.recipient_id ?? "");
+          const timestamp = String(status?.timestamp ?? "");
+          const errors = Array.isArray(status?.errors) ? status.errors : [];
+          if (errors.length > 0) {
+            console.error("WhatsApp status error:", {
+              messageId,
+              state,
+              recipient,
+              timestamp,
+              errors,
+            });
+          } else {
+            console.log("WhatsApp status:", {
+              messageId,
+              state,
+              recipient,
+              timestamp,
+            });
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("WhatsApp webhook parse failed:", error?.message || error);
+  }
+  return res.sendStatus(200);
 });
 
 app.get("/api/admin/contact-requests", requireAdminAuth, async (_req, res) => {

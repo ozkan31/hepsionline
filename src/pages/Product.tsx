@@ -16,6 +16,7 @@ export function Product() {
   const [product, setProduct] = useState<ProductType | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<ProductType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [productInfoTab, setProductInfoTab] = useState<'description' | 'features'>('description');
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [dragOffsetX, setDragOffsetX] = useState(0);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
@@ -82,6 +83,7 @@ export function Product() {
     setSettlingDirection(0);
     setPendingImageIndex(null);
     setIsAddedToCart(false);
+    setProductInfoTab('description');
     window.scrollTo(0, 0);
   }, [product]);
 
@@ -425,21 +427,48 @@ export function Product() {
               <p className="text-xl md:text-2xl font-medium">{product.price.toLocaleString('tr-TR')} TL</p>
             </div>
 
-            <p className="text-gray-600 leading-relaxed mb-6">
-              {product.description}
-            </p>
-
-            {/* Features */}
             <div className="mb-6">
-              <h3 className="text-sm font-medium mb-3">Özellikler</h3>
-              <ul className="space-y-2">
-                {product.features.map((feature, index) => (
-                  <li key={index} className="text-sm text-gray-600 flex items-start gap-2">
-                    <span className="w-1 h-1 bg-black rounded-full mt-2 flex-shrink-0" />
-                    {feature}
-                  </li>
-                ))}
-              </ul>
+              <div className="flex gap-6 mb-4 border-b border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setProductInfoTab('description')}
+                  className={`pb-2 text-sm transition-colors border-b-2 ${
+                    productInfoTab === 'description'
+                      ? 'text-black border-black'
+                      : 'text-gray-500 border-transparent hover:text-black'
+                  }`}
+                >
+                  Açıklama
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProductInfoTab('features')}
+                  className={`pb-2 text-sm transition-colors border-b-2 ${
+                    productInfoTab === 'features'
+                      ? 'text-black border-black'
+                      : 'text-gray-500 border-transparent hover:text-black'
+                  }`}
+                >
+                  Özellikler
+                </button>
+              </div>
+
+              {productInfoTab === 'description' ? (
+                <p className="text-gray-600 leading-relaxed">
+                  {product.description}
+                </p>
+              ) : product.features.length > 0 ? (
+                <ul className="space-y-2">
+                  {product.features.map((feature, index) => (
+                    <li key={index} className="text-sm text-gray-600 flex items-start gap-2">
+                      <span className="w-1 h-1 bg-black rounded-full mt-2 flex-shrink-0" />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-500">Bu ürün için özellik bilgisi bulunmuyor.</p>
+              )}
             </div>
 
             {/* Color Selection */}

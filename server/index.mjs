@@ -540,17 +540,31 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
   const items = Array.isArray(order?.items) ? order.items : [];
   const mailAttachments = [];
 
-  const itemsHtml = items
+  const productSubtotal = items.reduce((sum, item) => {
+    const product = item?.product ?? {};
+    const quantity = Number(item?.quantity ?? 1);
+    const unitPrice = Number(product?.price ?? 0);
+    return sum + unitPrice * quantity;
+  }, 0);
+  const productSubtotalText = productSubtotal.toLocaleString("tr-TR");
+  const mailGrandTotal = Number(order?.total ?? productSubtotal);
+  const safeGrandTotal = mailGrandTotal.toLocaleString("tr-TR");
+  const shippingAmountRaw = mailGrandTotal - productSubtotal;
+  const shippingAmount = shippingAmountRaw > 0 ? shippingAmountRaw : 79;
+  const shippingAmountText = shippingAmount.toLocaleString("tr-TR");
+
+  const productCardsHtml = items
     .map((item, itemIndex) => {
       const product = item?.product ?? {};
       const productId = String(product?.id ?? "").trim();
       const productUrl = productId
         ? `${baseUrl}/?product=${encodeURIComponent(productId)}`
-        : baseUrl;
-      const productName = escapeHtml(product?.name ?? "Urun");
+        : `${baseUrl}/urunler`;
+      const productName = escapeHtml(String(product?.name ?? "Urun"));
       const quantity = Number(item?.quantity ?? 1);
       const unitPrice = Number(product?.price ?? 0);
-      const totalPrice = (unitPrice * quantity).toLocaleString("tr-TR");
+      const totalPriceText = (unitPrice * quantity).toLocaleString("tr-TR");
+      const color = escapeHtml(String(item?.color ?? "Siyah"));
       const imageList = Array.isArray(product?.images) ? product.images : [];
       const rawImage = String(imageList[0] ?? product?.image ?? "").trim();
       const dataAttachment = dataUrlToEmailAttachment(rawImage, `${safeOrderId || "order"}-${itemIndex}`);
@@ -558,51 +572,28 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
         mailAttachments.push(dataAttachment.attachment);
       }
       const image = dataAttachment?.src ?? toPublicUrl(baseUrl, rawImage);
-      const color = String(item?.color ?? "").trim();
 
       return `
-        <tr>
-          <td style="padding:12px;border-bottom:1px solid #eee;vertical-align:top;">
-            ${
-              image
-                ? `<img src="${escapeHtml(image)}" alt="${productName}" style="width:84px;height:84px;object-fit:cover;border-radius:8px;display:block;" />`
-                : `<div style="width:84px;height:84px;background:#f2f2f2;border-radius:8px;"></div>`
-            }
-          </td>
-          <td style="padding:12px;border-bottom:1px solid #eee;vertical-align:top;">
-            <a href="${escapeHtml(productUrl)}" style="color:#111;text-decoration:none;font-weight:600;">${productName}</a>
-            <div style="margin-top:6px;font-size:13px;color:#666;">Adet: ${quantity}</div>
-            ${color ? `<div style="margin-top:2px;font-size:13px;color:#666;">Renk: ${escapeHtml(color)}</div>` : ""}
-          </td>
-          <td style="padding:12px;border-bottom:1px solid #eee;vertical-align:top;text-align:right;white-space:nowrap;">
-            ${totalPrice} TL
-          </td>
-        </tr>
+<tr>
+<td style="padding:0 40px 30px;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f7;border-radius:12px;padding:25px;">
+<tr>
+<td width="130" valign="top">
+${image ? `<img src="${escapeHtml(image)}" width="120" style="border-radius:10px;display:block;" alt="${productName}">` : `<div style="width:120px;height:120px;border-radius:10px;background:#ececec;display:block;"></div>`}
+</td>
+<td valign="top" style="padding-left:20px;">
+<div style="font-size:22px;font-weight:600;margin-bottom:10px;"><a href="${escapeHtml(productUrl)}" style="color:inherit;text-decoration:none;">${productName}</a></div>
+<div style="color:#666;font-size:16px;">Adet: ${quantity}</div>
+<div style="color:#666;font-size:16px;">Renk: ${color}</div>
+<div style="margin-top:6px;font-size:18px;font-weight:600;">Fiyat: ${totalPriceText} TL</div>
+</td>
+</tr>
+</table>
+</td>
+</tr>
       `;
     })
     .join("");
-
-  const firstItem = items[0] ?? {};
-  const firstProduct = firstItem?.product ?? {};
-  const firstProductId = String(firstProduct?.id ?? "").trim();
-  const firstProductUrl = firstProductId
-    ? `${baseUrl}/?product=${encodeURIComponent(firstProductId)}`
-    : `${baseUrl}/urunler`;
-  const firstProductName = escapeHtml(String(firstProduct?.name ?? "Urun"));
-  const firstQuantity = Number(firstItem?.quantity ?? 1);
-  const firstUnitPrice = Number(firstProduct?.price ?? 0);
-  const firstLineTotal = firstUnitPrice * firstQuantity;
-  const firstLineTotalText = firstLineTotal.toLocaleString("tr-TR");
-  const cargoPrice = 79;
-  const mailGrandTotal = Number(order?.total ?? firstLineTotal + cargoPrice);
-  const safeGrandTotal = mailGrandTotal.toLocaleString("tr-TR");
-  const firstImageList = Array.isArray(firstProduct?.images) ? firstProduct.images : [];
-  const firstRawImage = String(firstImageList[0] ?? firstProduct?.image ?? "").trim();
-  const firstAttachment = dataUrlToEmailAttachment(firstRawImage, `${safeOrderId || "order"}-first`);
-  if (firstAttachment?.attachment) {
-    mailAttachments.push(firstAttachment.attachment);
-  }
-  const firstProductImage = firstAttachment?.src ?? toPublicUrl(baseUrl, firstRawImage);
 
   const html = `
 <!DOCTYPE html>
@@ -622,14 +613,8 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
 <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
 
 <tr>
-<td style="background:#111;padding:40px 20px;text-align:center;color:#fff;">
-<div style="font-size:30px;font-weight:500;letter-spacing:0.5px;">StilBags&Fashion</div>
-<div style="margin-top:8px;font-size:14px;color:#d2d2d2;">Zarafetin Yeni Adresi</div>
-</td>
-</tr>
-
-<tr>
 <td style="padding:40px 40px 10px;text-align:center;">
+<div style="font-size:30px;font-weight:700;letter-spacing:0.5px;color:#111;">StilBags&fashion</div>
 <div style="font-size:36px;font-weight:600;color:#111;">Siparişiniz Alındı</div>
 <div style="margin-top:8px;font-size:18px;color:#666;">Teşekkür ederiz!</div>
 </td>
@@ -671,52 +656,29 @@ ${safeDeliveryAddress}
 </td>
 </tr>
 
+${productCardsHtml}
+
 <tr>
 <td style="padding:0 40px 30px;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f7;border-radius:12px;padding:25px;">
-
 <tr>
-<td width="130" valign="top">
-${firstProductImage ? `<img src="${escapeHtml(firstProductImage)}" width="120" style="border-radius:10px;display:block;" alt="${firstProductName}">` : `<div style="width:120px;height:120px;border-radius:10px;background:#ececec;display:block;"></div>`}
-</td>
-
-<td valign="top" style="padding-left:20px;">
-<div style="font-size:22px;font-weight:600;margin-bottom:10px;"><a href="${escapeHtml(firstProductUrl)}" style="color:inherit;text-decoration:none;">${firstProductName}</a></div>
-<div style="color:#666;font-size:16px;">Adet: ${firstQuantity}</div>
-<div style="color:#666;font-size:16px;">Renk: ${escapeHtml(String(firstItem?.color ?? "Siyah"))}</div>
-<div style="margin-top:6px;font-size:18px;font-weight:600;">Fiyat: ${firstLineTotalText} TL</div>
-</td>
-</tr>
-
-<tr>
-<td colspan="2" style="padding-top:25px;border-top:1px solid #e4e4e4;"></td>
-</tr>
-
-<tr>
-<td colspan="2">
-
+<td>
 <table width="100%" style="font-size:16px;color:#333;line-height:2.2;">
-
 <tr>
 <td>Ürün Toplamı:</td>
-<td align="right">${firstLineTotalText} TL</td>
+<td align="right">${productSubtotalText} TL</td>
 </tr>
-
 <tr>
 <td>Kargo:</td>
-<td align="right">${cargoPrice.toLocaleString("tr-TR")} TL</td>
+<td align="right">${shippingAmountText} TL</td>
 </tr>
-
 <tr>
 <td style="font-size:20px;font-weight:600;padding-top:6px;">TOPLAM:</td>
 <td align="right" style="font-size:20px;font-weight:600;padding-top:6px;">${safeGrandTotal} TL</td>
 </tr>
-
 </table>
-
 </td>
 </tr>
-
 </table>
 </td>
 </tr>

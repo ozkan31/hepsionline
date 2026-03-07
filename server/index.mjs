@@ -130,6 +130,10 @@ const WHATSAPP_API_URL = String(process.env.WHATSAPP_API_URL ?? "").trim();
 const WHATSAPP_API_TOKEN = String(process.env.WHATSAPP_API_TOKEN ?? "").trim();
 const WHATSAPP_PHONE_NUMBER_ID = String(process.env.WHATSAPP_PHONE_NUMBER_ID ?? "").trim();
 const WHATSAPP_TO_NUMBER = String(process.env.WHATSAPP_TO_NUMBER ?? "").trim();
+const WHATSAPP_TO_NUMBER_2 = String(process.env.WHATSAPP_TO_NUMBER_2 ?? "").trim();
+const WHATSAPP_TO_NUMBERS = Array.from(
+  new Set([WHATSAPP_TO_NUMBER, WHATSAPP_TO_NUMBER_2].map((item) => String(item ?? "").trim()).filter(Boolean))
+);
 const WHATSAPP_TEMPLATE_NAME = String(process.env.WHATSAPP_TEMPLATE_NAME ?? "hello_world").trim();
 const WHATSAPP_TEMPLATE_LANG = String(process.env.WHATSAPP_TEMPLATE_LANG ?? "en_US").trim();
 const WHATSAPP_WEBHOOK_VERIFY_TOKEN = String(process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? "").trim();
@@ -140,7 +144,7 @@ const isWhatsappConfigured = Boolean(
   WHATSAPP_ENABLED &&
     WHATSAPP_API_URL &&
     WHATSAPP_API_TOKEN &&
-    WHATSAPP_TO_NUMBER &&
+    WHATSAPP_TO_NUMBERS.length > 0 &&
     (WHATSAPP_PHONE_NUMBER_ID || /\/messages$/i.test(WHATSAPP_API_URL))
 );
 const allowedShippingCompanies = new Set([
@@ -224,28 +228,13 @@ async function sendWhatsappPayload(payload) {
 }
 
 function formatWhatsappOrderText({ order, deliveryAddress }) {
-  const createdAt = order?.date ? new Date(order.date) : new Date();
-  const dateText = Number.isNaN(createdAt.getTime())
-    ? ""
-    : createdAt.toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
-  const itemCount = Array.isArray(order?.items)
-    ? order.items.reduce((sum, item) => sum + Number(item?.quantity || 0), 0)
-    : 0;
   const customerName = `${String(deliveryAddress?.firstName ?? "").trim()} ${String(
     deliveryAddress?.lastName ?? ""
   ).trim()}`.trim();
-  const addressLine = buildDeliveryAddressText(deliveryAddress);
-  const totalText = Number(order?.total || 0).toLocaleString("tr-TR");
-
   const lines = [
-    "Yeni sipariş alındı",
-    `Sipariş No: ${order?.id ?? "-"}`,
-    dateText ? `Tarih: ${dateText}` : "",
-    customerName ? `Müşteri: ${customerName}` : "",
-    deliveryAddress?.phone ? `Telefon: ${deliveryAddress.phone}` : "",
-    addressLine ? `Adres: ${addressLine}` : "",
-    `Ürün Adedi: ${itemCount}`,
-    `Toplam: ${totalText} TL`,
+    "Yeni sipariş oluşturuldu.",
+    `Sipariş ID: ${String(order?.id ?? "-")}`,
+    `Müşteri: ${customerName || "-"}`,
   ].filter(Boolean);
 
   return lines.join("\n");
@@ -253,52 +242,62 @@ function formatWhatsappOrderText({ order, deliveryAddress }) {
 
 async function sendOrderWhatsappNotification({ order, deliveryAddress }) {
   if (!isWhatsappConfigured || !order) return;
+  for (const recipient of WHATSAPP_TO_NUMBERS) {
+    const textPayload = {
+      messaging_product: "whatsapp",
+      to: recipient,
+      type: "text",
+      text: {
+        body: formatWhatsappOrderText({ order, deliveryAddress }),
+      },
+    };
 
-  const textPayload = {
-    messaging_product: "whatsapp",
-    to: WHATSAPP_TO_NUMBER,
-    type: "text",
-    text: {
-      body: formatWhatsappOrderText({ order, deliveryAddress }),
-    },
-  };
+    const templatePayload = {
+      messaging_product: "whatsapp",
+      to: recipient,
+      type: "template",
+      template: {
+        name: WHATSAPP_TEMPLATE_NAME,
+        language: { code: WHATSAPP_TEMPLATE_LANG },
+      },
+    };
 
-  const templatePayload = {
-    messaging_product: "whatsapp",
-    to: WHATSAPP_TO_NUMBER,
-    type: "template",
-    template: {
-      name: WHATSAPP_TEMPLATE_NAME,
-      language: { code: WHATSAPP_TEMPLATE_LANG },
-    },
-  };
+    const primaryPayload = WHATSAPP_ORDER_PRIMARY_MODE === "text" ? textPayload : templatePayload;
+    const secondaryPayload = WHATSAPP_ORDER_PRIMARY_MODE === "text" ? templatePayload : textPayload;
+    const primaryLabel = WHATSAPP_ORDER_PRIMARY_MODE === "text" ? "text" : "template";
+    const secondaryLabel = WHATSAPP_ORDER_PRIMARY_MODE === "text" ? "template" : "text";
 
-  const primaryPayload = WHATSAPP_ORDER_PRIMARY_MODE === "text" ? textPayload : templatePayload;
-  const secondaryPayload = WHATSAPP_ORDER_PRIMARY_MODE === "text" ? templatePayload : textPayload;
-  const primaryLabel = WHATSAPP_ORDER_PRIMARY_MODE === "text" ? "text" : "template";
-  const secondaryLabel = WHATSAPP_ORDER_PRIMARY_MODE === "text" ? "template" : "text";
+    try {
+      const responseText = await sendWhatsappPayload(primaryPayload);
+      console.log(`Order WhatsApp ${primaryLabel} sent:`, {
+        orderId: order?.id ?? "",
+        to: recipient,
+        response: responseText.slice(0, 300),
+      });
+      continue;
+    } catch (error) {
+      const errorText = error instanceof Error ? error.message : String(error);
+      console.error(
+        `WhatsApp ${primaryLabel} send failed, trying ${secondaryLabel} fallback:`,
+        { orderId: order?.id ?? "", to: recipient, error: errorText }
+      );
+    }
 
-  try {
-    const responseText = await sendWhatsappPayload(primaryPayload);
-    console.log(`Order WhatsApp ${primaryLabel} sent:`, {
-      orderId: order?.id ?? "",
-      response: responseText.slice(0, 300),
-    });
-    return;
-  } catch (error) {
-    const errorText = error instanceof Error ? error.message : String(error);
-    console.error(`WhatsApp ${primaryLabel} send failed, trying ${secondaryLabel} fallback:`, errorText);
-  }
-
-  try {
-    const responseText = await sendWhatsappPayload(secondaryPayload);
-    console.log(`Order WhatsApp ${secondaryLabel} fallback sent:`, {
-      orderId: order?.id ?? "",
-      response: responseText.slice(0, 300),
-    });
-  } catch (error) {
-    const errorText = error instanceof Error ? error.message : String(error);
-    console.error(`WhatsApp ${secondaryLabel} fallback failed:`, errorText);
+    try {
+      const responseText = await sendWhatsappPayload(secondaryPayload);
+      console.log(`Order WhatsApp ${secondaryLabel} fallback sent:`, {
+        orderId: order?.id ?? "",
+        to: recipient,
+        response: responseText.slice(0, 300),
+      });
+    } catch (error) {
+      const errorText = error instanceof Error ? error.message : String(error);
+      console.error(`WhatsApp ${secondaryLabel} fallback failed:`, {
+        orderId: order?.id ?? "",
+        to: recipient,
+        error: errorText,
+      });
+    }
   }
 }
 

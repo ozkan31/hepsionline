@@ -133,6 +133,9 @@ const WHATSAPP_TO_NUMBER = String(process.env.WHATSAPP_TO_NUMBER ?? "").trim();
 const WHATSAPP_TEMPLATE_NAME = String(process.env.WHATSAPP_TEMPLATE_NAME ?? "hello_world").trim();
 const WHATSAPP_TEMPLATE_LANG = String(process.env.WHATSAPP_TEMPLATE_LANG ?? "en_US").trim();
 const WHATSAPP_WEBHOOK_VERIFY_TOKEN = String(process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? "").trim();
+const WHATSAPP_ORDER_PRIMARY_MODE = String(process.env.WHATSAPP_ORDER_PRIMARY_MODE ?? "template")
+  .trim()
+  .toLowerCase();
 const isWhatsappConfigured = Boolean(
   WHATSAPP_ENABLED &&
     WHATSAPP_API_URL &&
@@ -260,18 +263,6 @@ async function sendOrderWhatsappNotification({ order, deliveryAddress }) {
     },
   };
 
-  try {
-    const responseText = await sendWhatsappPayload(textPayload);
-    console.log("Order WhatsApp text sent:", {
-      orderId: order?.id ?? "",
-      response: responseText.slice(0, 300),
-    });
-    return;
-  } catch (error) {
-    const errorText = error instanceof Error ? error.message : String(error);
-    console.error("WhatsApp text send failed, trying template fallback:", errorText);
-  }
-
   const templatePayload = {
     messaging_product: "whatsapp",
     to: WHATSAPP_TO_NUMBER,
@@ -282,15 +273,32 @@ async function sendOrderWhatsappNotification({ order, deliveryAddress }) {
     },
   };
 
+  const primaryPayload = WHATSAPP_ORDER_PRIMARY_MODE === "text" ? textPayload : templatePayload;
+  const secondaryPayload = WHATSAPP_ORDER_PRIMARY_MODE === "text" ? templatePayload : textPayload;
+  const primaryLabel = WHATSAPP_ORDER_PRIMARY_MODE === "text" ? "text" : "template";
+  const secondaryLabel = WHATSAPP_ORDER_PRIMARY_MODE === "text" ? "template" : "text";
+
   try {
-    const responseText = await sendWhatsappPayload(templatePayload);
-    console.log("Order WhatsApp template fallback sent:", {
+    const responseText = await sendWhatsappPayload(primaryPayload);
+    console.log(`Order WhatsApp ${primaryLabel} sent:`, {
+      orderId: order?.id ?? "",
+      response: responseText.slice(0, 300),
+    });
+    return;
+  } catch (error) {
+    const errorText = error instanceof Error ? error.message : String(error);
+    console.error(`WhatsApp ${primaryLabel} send failed, trying ${secondaryLabel} fallback:`, errorText);
+  }
+
+  try {
+    const responseText = await sendWhatsappPayload(secondaryPayload);
+    console.log(`Order WhatsApp ${secondaryLabel} fallback sent:`, {
       orderId: order?.id ?? "",
       response: responseText.slice(0, 300),
     });
   } catch (error) {
     const errorText = error instanceof Error ? error.message : String(error);
-    console.error("WhatsApp template fallback failed:", errorText);
+    console.error(`WhatsApp ${secondaryLabel} fallback failed:`, errorText);
   }
 }
 

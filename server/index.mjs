@@ -261,7 +261,11 @@ async function sendOrderWhatsappNotification({ order, deliveryAddress }) {
   };
 
   try {
-    await sendWhatsappPayload(textPayload);
+    const responseText = await sendWhatsappPayload(textPayload);
+    console.log("Order WhatsApp text sent:", {
+      orderId: order?.id ?? "",
+      response: responseText.slice(0, 300),
+    });
     return;
   } catch (error) {
     const errorText = error instanceof Error ? error.message : String(error);
@@ -279,7 +283,11 @@ async function sendOrderWhatsappNotification({ order, deliveryAddress }) {
   };
 
   try {
-    await sendWhatsappPayload(templatePayload);
+    const responseText = await sendWhatsappPayload(templatePayload);
+    console.log("Order WhatsApp template fallback sent:", {
+      orderId: order?.id ?? "",
+      response: responseText.slice(0, 300),
+    });
   } catch (error) {
     const errorText = error instanceof Error ? error.message : String(error);
     console.error("WhatsApp template fallback failed:", errorText);
@@ -2095,34 +2103,45 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     const orders = await getUserOrders(req.authUser.id);
     const createdOrder = orders.find((order) => order.id === orderId);
 
-    if (createdOrder && isOrderSmtpConfigured) {
-      const fallbackAddress =
-        req.authUser.addresses.find((address) => address.isDefault) ?? req.authUser.addresses[0] ?? null;
-      const fallbackStreet = String(fallbackAddress?.street ?? "");
-      const [fallbackAddressName, fallbackAddressDetail] = fallbackStreet.split("|||");
-      const normalizedFallbackAddress = fallbackAddress
-        ? {
-            ...fallbackAddress,
-            addressName: String(fallbackAddressName ?? "").trim(),
-            street: String(fallbackAddressDetail ?? "").trim() || String(fallbackAddressName ?? "").trim(),
-          }
-        : null;
+    const fallbackAddress =
+      req.authUser.addresses.find((address) => address.isDefault) ?? req.authUser.addresses[0] ?? null;
+    const fallbackStreet = String(fallbackAddress?.street ?? "");
+    const [fallbackAddressName, fallbackAddressDetail] = fallbackStreet.split("|||");
+    const normalizedFallbackAddress = fallbackAddress
+      ? {
+          ...fallbackAddress,
+          addressName: String(fallbackAddressName ?? "").trim(),
+          street: String(fallbackAddressDetail ?? "").trim() || String(fallbackAddressName ?? "").trim(),
+        }
+      : null;
 
-      const hasShippingAddressSnapshot = Boolean(
-        shippingAddressName || shippingStreet || shippingProvince || shippingDistrict || shippingNeighborhood
-      );
-      const deliveryAddress = hasShippingAddressSnapshot
-        ? {
-            addressName: shippingAddressName || normalizedFallbackAddress?.addressName || "",
-            firstName: shippingFirstName || normalizedFallbackAddress?.firstName || req.authUser.firstName,
-            lastName: shippingLastName || normalizedFallbackAddress?.lastName || req.authUser.lastName,
-            phone: shippingPhone || normalizedFallbackAddress?.phone || req.authUser.phone || "",
-            street: shippingStreet || normalizedFallbackAddress?.street || "",
-            province: shippingProvince || normalizedFallbackAddress?.province || "",
-            district: shippingDistrict || normalizedFallbackAddress?.district || "",
-            neighborhood: shippingNeighborhood || normalizedFallbackAddress?.neighborhood || "",
-          }
-        : normalizedFallbackAddress;
+    const hasShippingAddressSnapshot = Boolean(
+      shippingAddressName || shippingStreet || shippingProvince || shippingDistrict || shippingNeighborhood
+    );
+    const deliveryAddress = hasShippingAddressSnapshot
+      ? {
+          addressName: shippingAddressName || normalizedFallbackAddress?.addressName || "",
+          firstName: shippingFirstName || normalizedFallbackAddress?.firstName || req.authUser.firstName,
+          lastName: shippingLastName || normalizedFallbackAddress?.lastName || req.authUser.lastName,
+          phone: shippingPhone || normalizedFallbackAddress?.phone || req.authUser.phone || "",
+          street: shippingStreet || normalizedFallbackAddress?.street || "",
+          province: shippingProvince || normalizedFallbackAddress?.province || "",
+          district: shippingDistrict || normalizedFallbackAddress?.district || "",
+          neighborhood: shippingNeighborhood || normalizedFallbackAddress?.neighborhood || "",
+        }
+      : normalizedFallbackAddress;
+
+    const fallbackOrderForNotifications =
+      createdOrder ??
+      ({
+        id: orderId,
+        date: orderDate,
+        status: orderStatus,
+        total: Math.round(orderTotal),
+        items: orderItems,
+      });
+
+    if (createdOrder && isOrderSmtpConfigured) {
       sendOrderConfirmationEmail(req, {
         to: req.authUser.email,
         firstName: req.authUser.firstName,
@@ -2131,43 +2150,11 @@ app.post("/api/orders", requireAuth, async (req, res) => {
       }).catch((error) => {
         console.error("Order confirmation email send failed:", error?.message || error);
       });
+    }
 
+    if (isWhatsappConfigured) {
       sendOrderWhatsappNotification({
-        order: createdOrder,
-        deliveryAddress,
-      }).catch((error) => {
-        console.error("Order WhatsApp notification failed:", error?.message || error);
-      });
-    } else if (createdOrder && isWhatsappConfigured) {
-      const fallbackAddress =
-        req.authUser.addresses.find((address) => address.isDefault) ?? req.authUser.addresses[0] ?? null;
-      const fallbackStreet = String(fallbackAddress?.street ?? "");
-      const [fallbackAddressName, fallbackAddressDetail] = fallbackStreet.split("|||");
-      const normalizedFallbackAddress = fallbackAddress
-        ? {
-            ...fallbackAddress,
-            addressName: String(fallbackAddressName ?? "").trim(),
-            street: String(fallbackAddressDetail ?? "").trim() || String(fallbackAddressName ?? "").trim(),
-          }
-        : null;
-      const hasShippingAddressSnapshot = Boolean(
-        shippingAddressName || shippingStreet || shippingProvince || shippingDistrict || shippingNeighborhood
-      );
-      const deliveryAddress = hasShippingAddressSnapshot
-        ? {
-            addressName: shippingAddressName || normalizedFallbackAddress?.addressName || "",
-            firstName: shippingFirstName || normalizedFallbackAddress?.firstName || req.authUser.firstName,
-            lastName: shippingLastName || normalizedFallbackAddress?.lastName || req.authUser.lastName,
-            phone: shippingPhone || normalizedFallbackAddress?.phone || req.authUser.phone || "",
-            street: shippingStreet || normalizedFallbackAddress?.street || "",
-            province: shippingProvince || normalizedFallbackAddress?.province || "",
-            district: shippingDistrict || normalizedFallbackAddress?.district || "",
-            neighborhood: shippingNeighborhood || normalizedFallbackAddress?.neighborhood || "",
-          }
-        : normalizedFallbackAddress;
-
-      sendOrderWhatsappNotification({
-        order: createdOrder,
+        order: fallbackOrderForNotifications,
         deliveryAddress,
       }).catch((error) => {
         console.error("Order WhatsApp notification failed:", error?.message || error);

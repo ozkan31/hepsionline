@@ -1,15 +1,36 @@
-import type { Address, AdminContactRequest, AdminOrder, AdminUserSummary, CartItem, Category, Order, Product, User } from "@/types";
+﻿import type { Address, AdminContactRequest, AdminOrder, AdminUserSummary, CartItem, Category, Order, Product, User } from "@/types";
 
 const AUTH_TOKEN_KEY = "parisMoveAuthToken";
+
+function normalizeMojibake(value: string): string {
+  return String(value ?? "")
+    .replaceAll("Ã¼", "ü")
+    .replaceAll("Ãœ", "Ü")
+    .replaceAll("Ã¶", "ö")
+    .replaceAll("Ã–", "Ö")
+    .replaceAll("Ã§", "ç")
+    .replaceAll("Ã‡", "Ç")
+    .replaceAll("ÄŸ", "ğ")
+    .replaceAll("Äž", "Ğ")
+    .replaceAll("ÅŸ", "ş")
+    .replaceAll("Å", "Ş")
+    .replaceAll("Ä±", "ı")
+    .replaceAll("Ä°", "İ")
+    .replaceAll("â€™", "'")
+    .replaceAll("â€œ", "\"")
+    .replaceAll("â€", "\"")
+    .replaceAll("â€“", "-")
+    .replaceAll("Â", "");
+}
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message =
       typeof data?.message === "string"
-        ? data.message
+        ? normalizeMojibake(data.message)
         : `İstek başarısız: ${response.status}`;
-    throw new Error(message);
+    throw new Error(normalizeMojibake(message));
   }
   return data as T;
 }

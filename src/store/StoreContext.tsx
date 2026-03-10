@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useState } from 'react';
 import type { Product, CartItem, Order, User, Address } from '@/types';
 import { fetchCart, fetchOrders, fetchWishlist, saveCart, saveWishlist } from '@/lib/api';
+import { consumePendingWishlistProducts } from '@/lib/pendingWishlist';
 
 interface StoreState {
   cart: CartItem[];
@@ -108,6 +109,21 @@ function mergeCartItems(localItems: CartItem[], serverItems: CartItem[]): CartIt
     merged.set(key, { ...existing, quantity: existing.quantity + item.quantity });
   }
 
+  return Array.from(merged.values());
+}
+
+function mergeWishlistProducts(serverItems: Product[], pendingItems: Product[]): Product[] {
+  const safeServer = Array.isArray(serverItems) ? serverItems.map(normalizeProductMedia) : [];
+  const safePending = Array.isArray(pendingItems) ? pendingItems.map(normalizeProductMedia) : [];
+  const merged = new Map<string, Product>();
+  for (const item of safeServer) {
+    merged.set(item.id, item);
+  }
+  for (const item of safePending) {
+    if (!merged.has(item.id)) {
+      merged.set(item.id, item);
+    }
+  }
   return Array.from(merged.values());
 }
 
@@ -292,7 +308,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           : serverCart;
         dispatch({ type: 'SET_CART', payload: nextCart });
         shouldMergeLocalCartOnNextAuthSyncRef.current = false;
-        dispatch({ type: 'SET_WISHLIST', payload: serverWishlist });
+        const pendingWishlist = consumePendingWishlistProducts();
+        const mergedWishlist =
+          pendingWishlist.length > 0
+            ? mergeWishlistProducts(serverWishlist, pendingWishlist)
+            : serverWishlist;
+        dispatch({ type: 'SET_WISHLIST', payload: mergedWishlist });
         dispatch({ type: 'SET_ORDERS', payload: serverOrders });
       } catch (error) {
         console.error('Failed to load user state from server:', error);

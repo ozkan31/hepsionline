@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Heart, SlidersHorizontal, ChevronDown, X } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
 import type { Product, Category } from '@/types';
 import { fetchProducts, fetchCategories } from '@/lib/api';
+import { queuePendingWishlistProduct } from '@/lib/pendingWishlist';
 
 export function Shop() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
@@ -92,6 +94,11 @@ export function Shop() {
   };
 
   const addToWishlist = (product: Product) => {
+    if (!state.isAuthenticated) {
+      queuePendingWishlistProduct(product);
+      navigate('/giris?redirect=/favoriler');
+      return;
+    }
     if (isInWishlist(product.id)) {
       dispatch({ type: 'REMOVE_FROM_WISHLIST', payload: product.id });
       return;

@@ -1,9 +1,20 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { Heart, ShoppingBag, X } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
 
 export function Wishlist() {
   const { state, dispatch } = useStore();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (state.isAuthenticated) return;
+    navigate('/giris?redirect=/favoriler', { replace: true });
+  }, [navigate, state.isAuthenticated]);
+
+  if (!state.isAuthenticated) {
+    return null;
+  }
 
   const addToCart = (productId: string) => {
     const product = state.wishlist.find(p => p.id === productId);

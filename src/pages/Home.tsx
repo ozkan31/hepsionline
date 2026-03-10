@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Heart, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
 import type { Product, Category } from '@/types';
 import { fetchProducts } from '@/lib/api';
+import { queuePendingWishlistProduct } from '@/lib/pendingWishlist';
 
 const banners = [
   { id: 1, image: '/banner1.jpg', title: 'Yeni Sezon', subtitle: 'Zarif ve şık çantalar', cta: 'Keşfet', link: '/shop' },
@@ -35,6 +37,7 @@ const normalizeTurkishText = (value: string) =>
     .replaceAll('Â', '');
 
 export function Home() {
+  const navigate = useNavigate();
   const [currentBanner, setCurrentBanner] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [visibleProducts, setVisibleProducts] = useState<Product[]>([]);
@@ -104,6 +107,11 @@ export function Home() {
   };
 
   const addToWishlist = (product: Product) => {
+    if (!state.isAuthenticated) {
+      queuePendingWishlistProduct(product);
+      navigate('/giris?redirect=/favoriler');
+      return;
+    }
     if (isInWishlist(product.id)) {
       dispatch({ type: 'REMOVE_FROM_WISHLIST', payload: product.id });
       return;

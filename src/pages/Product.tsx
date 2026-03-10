@@ -4,6 +4,7 @@ import { Heart, Minus, Plus, ArrowLeft, Check, ShoppingBag, ChevronLeft, Chevron
 import { useStore } from '@/store/StoreContext';
 import type { Product as ProductType } from '@/types';
 import { fetchProductDetail, fetchProductMedia } from '@/lib/api';
+import { queuePendingWishlistProduct } from '@/lib/pendingWishlist';
 
 export function Product() {
   const { id } = useParams<{ id: string }>();
@@ -142,6 +143,11 @@ export function Product() {
   };
 
   const toggleWishlist = () => {
+    if (!state.isAuthenticated) {
+      queuePendingWishlistProduct(product);
+      navigate('/giris?redirect=/favoriler');
+      return;
+    }
     if (isInWishlist) {
       dispatch({ type: 'REMOVE_FROM_WISHLIST', payload: product.id });
     } else {

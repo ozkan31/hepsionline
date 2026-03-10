@@ -152,8 +152,8 @@ const allowedShippingCompanies = new Set([
   "Aras Kargo",
   "PTT Kargo",
   "DHL",
-  "SÃ¼rat Kargo",
-  "YurtiÃ§i Kargo",
+  "Sürat Kargo",
+  "Yurtiçi Kargo",
 ]);
 
 function sha256(input) {
@@ -232,9 +232,9 @@ function formatWhatsappOrderText({ order, deliveryAddress }) {
     deliveryAddress?.lastName ?? ""
   ).trim()}`.trim();
   const lines = [
-    "Yeni sipariÅŸ oluÅŸturuldu.",
-    `SipariÅŸ ID: ${String(order?.id ?? "-")}`,
-    `MÃ¼ÅŸteri: ${customerName || "-"}`,
+    "Yeni sipariş oluşturuldu.",
+    `Sipariş ID: ${String(order?.id ?? "-")}`,
+    `Müşteri: ${customerName || "-"}`,
   ].filter(Boolean);
 
   return lines.join("\n");
@@ -727,7 +727,7 @@ Siparişiniz kargoya verildiğinde size bilgilendirme e-postası gönderilecekti
     `Tarih: ${formatOrderDateForEmail(order?.date ?? "")}`,
     `Teslim Alacak Ki\u015fi: ${receiverName || firstName || "M\u00fc\u015fterimiz"}`,
     `Telefon: ${String(deliveryAddress?.phone ?? "").trim() || "-"}`,
-    `Adres BaÅŸlÄ±ÄŸÄ±: ${String(deliveryAddress?.addressName ?? "").trim() || "-"}`,
+    `Adres Başlığı: ${String(deliveryAddress?.addressName ?? "").trim() || "-"}`,
     `Teslimat Adresi: ${deliveryAddressText || "-"}`,
     "",
     "\u00dcr\u00fcnler:",
@@ -1346,7 +1346,7 @@ app.post("/api/auth/email/status", async (req, res) => {
     const [rows] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
     return res.json({ exists: rows.length > 0 });
   } catch (error) {
-    return res.status(500).json({ message: "E-posta kontrolÃ¼ baÅŸarÄ±sÄ±z." });
+    return res.status(500).json({ message: "E-posta kontrolü başarısız." });
   }
 });
 
@@ -1362,10 +1362,10 @@ app.post("/api/auth/flow/start", async (req, res) => {
     const normalizedGender = gender === "kadin" || gender === "erkek" ? gender : "";
 
     if (!email || !password) {
-      return res.status(400).json({ message: "E-posta ve ÅŸifre zorunludur." });
+      return res.status(400).json({ message: "E-posta ve şifre zorunludur." });
     }
     if (password.length < 6) {
-      return res.status(400).json({ message: "Åifre en az 6 karakter olmalÄ±." });
+      return res.status(400).json({ message: "Şifre en az 6 karakter olmalı." });
     }
 
     const [rows] = await pool.query(
@@ -1377,7 +1377,7 @@ app.post("/api/auth/flow/start", async (req, res) => {
       const found = rows[0];
       const isValid = await bcrypt.compare(password, found.password_hash);
       if (!isValid) {
-        return res.status(401).json({ message: "Åifre hatalÄ±." });
+        return res.status(401).json({ message: "Şifre hatalı." });
       }
       const token = await createSession(found.id);
       const user = await getSessionUser(token);
@@ -1389,11 +1389,11 @@ app.post("/api/auth/flow/start", async (req, res) => {
     }
 
     if (!termsAccepted) {
-      return res.status(400).json({ message: "Gizlilik PolitikasÄ± ve KullanÄ±m KoÅŸullarÄ± onayÄ± zorunludur." });
+      return res.status(400).json({ message: "Gizlilik Politikası ve Kullanım Koşulları onayı zorunludur." });
     }
 
     if (!isSmtpConfigured) {
-      return res.status(500).json({ message: "E-posta servisi henÃ¼z yapÄ±landÄ±rÄ±lmamÄ±ÅŸ." });
+      return res.status(500).json({ message: "E-posta servisi henüz yapılandırılmamış." });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -1427,28 +1427,28 @@ app.post("/api/auth/flow/start", async (req, res) => {
       const lowerMailError = String(mailError?.message ?? "").toLowerCase();
       if (lowerMailError.includes("smtp") || lowerMailError.includes("auth")) {
         return res.status(500).json({
-          message: "DoÄŸrulama kodu gÃ¶nderilemedi. E-posta sunucu ayarlarÄ±nÄ± kontrol edin.",
+          message: "Doğrulama kodu gönderilemedi. E-posta sunucu ayarlarını kontrol edin.",
         });
       }
-      return res.status(500).json({ message: "DoÄŸrulama kodu gÃ¶nderilemedi. LÃ¼tfen tekrar deneyin." });
+      return res.status(500).json({ message: "Doğrulama kodu gönderilemedi. Lütfen tekrar deneyin." });
     }
     return res.json({
       mode: "register",
       requiresVerification: true,
-      message: "DoÄŸrulama kodu e-posta adresinize gÃ¶nderildi.",
+      message: "Doğrulama kodu e-posta adresinize gönderildi.",
     });
   } catch (error) {
     console.error("Auth flow start failed:", error?.code, error?.message || error);
     if (error?.code === "ER_NO_SUCH_TABLE") {
-      return res.status(500).json({ message: "Auth akÄ±ÅŸÄ± iÃ§in DB migration gerekli. npm run db:migrate Ã§alÄ±ÅŸtÄ±rÄ±n." });
+      return res.status(500).json({ message: "Auth akışı için DB migration gerekli. npm run db:migrate çalıştırın." });
     }
     if (error?.code === "ER_BAD_FIELD_ERROR") {
-      return res.status(500).json({ message: "Auth akÄ±ÅŸÄ± iÃ§in DB sÃ¼tunlarÄ± eksik. npm run db:migrate Ã§alÄ±ÅŸtÄ±rÄ±n." });
+      return res.status(500).json({ message: "Auth akışı için DB sütunları eksik. npm run db:migrate çalıştırın." });
     }
     if (error?.code === "ER_DUP_ENTRY") {
-      return res.status(500).json({ message: "DoÄŸrulama kodu Ã¼retilirken Ã§akÄ±ÅŸma oluÅŸtu. LÃ¼tfen tekrar deneyin." });
+      return res.status(500).json({ message: "Doğrulama kodu üretilirken çakışma oluştu. Lütfen tekrar deneyin." });
     }
-    return res.status(500).json({ message: "Ä°ÅŸlem baÅŸarÄ±sÄ±z." });
+    return res.status(500).json({ message: "İşlem başarısız." });
   }
 });
 
@@ -1457,7 +1457,7 @@ app.post("/api/auth/flow/verify", async (req, res) => {
     const email = String(req.body?.email ?? "").trim().toLowerCase();
     const code = String(req.body?.code ?? "").trim();
     if (!email || !code) {
-      return res.status(400).json({ message: "E-posta ve doÄŸrulama kodu zorunludur." });
+      return res.status(400).json({ message: "E-posta ve doğrulama kodu zorunludur." });
     }
 
     const codeHash = sha256(code);
@@ -1472,7 +1472,7 @@ app.post("/api/auth/flow/verify", async (req, res) => {
     );
 
     if (verifyRows.length === 0) {
-      return res.status(400).json({ message: "DoÄŸrulama kodu geÃ§ersiz veya sÃ¼resi dolmuÅŸ." });
+      return res.status(400).json({ message: "Doğrulama kodu geçersiz veya süresi dolmuş." });
     }
 
     const verifyRow = verifyRows[0];
@@ -1533,9 +1533,9 @@ app.post("/api/auth/flow/verify", async (req, res) => {
     return res.json({ token, user });
   } catch (error) {
     if (error?.code === "ER_NO_SUCH_TABLE") {
-      return res.status(500).json({ message: "Auth akÄ±ÅŸÄ± iÃ§in DB migration gerekli. npm run db:migrate Ã§alÄ±ÅŸtÄ±rÄ±n." });
+      return res.status(500).json({ message: "Auth akışı için DB migration gerekli. npm run db:migrate çalıştırın." });
     }
-    return res.status(500).json({ message: "DoÄŸrulama iÅŸlemi baÅŸarÄ±sÄ±z." });
+    return res.status(500).json({ message: "Doğrulama işlemi başarısız." });
   }
 });
 
@@ -1627,7 +1627,7 @@ app.post("/api/auth/password/forgot", async (req, res) => {
     }
 
     if (!isSmtpConfigured) {
-      return res.status(500).json({ message: "E-posta servisi henÃ¼z yapÄ±landÄ±rÄ±lmamÄ±ÅŸ." });
+      return res.status(500).json({ message: "E-posta servisi henüz yapılandırılmamış." });
     }
 
     const [rows] = await pool.query(
@@ -1680,15 +1680,15 @@ app.post("/api/auth/password/forgot", async (req, res) => {
 
     return res.json({
       ok: true,
-      message: "Åifre yenileme baÄŸlantÄ±sÄ± e-posta adresinize gÃ¶nderildi.",
+      message: "Şifre yenileme bağlantısı e-posta adresinize gönderildi.",
     });
   } catch (error) {
     if (error?.code === "ER_NO_SUCH_TABLE") {
       return res.status(500).json({
-        message: "Åifre yenileme iÃ§in DB migration gerekli. npm run db:migrate Ã§alÄ±ÅŸtÄ±rÄ±n.",
+        message: "Şifre yenileme için DB migration gerekli. npm run db:migrate çalıştırın.",
       });
     }
-    return res.status(500).json({ message: "Åifre yenileme e-postasÄ± gÃ¶nderilemedi." });
+    return res.status(500).json({ message: "Şifre yenileme e-postası gönderilemedi." });
   }
 });
 
@@ -1711,7 +1711,7 @@ app.get("/api/auth/password/reset/validate", async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.json({ valid: false, message: "Åifre yenileme baÄŸlantÄ±sÄ± geÃ§ersiz veya sÃ¼resi dolmuÅŸ." });
+      return res.json({ valid: false, message: "Şifre yenileme bağlantısı geçersiz veya süresi dolmuş." });
     }
 
     return res.json({ valid: true });
@@ -1719,7 +1719,7 @@ app.get("/api/auth/password/reset/validate", async (req, res) => {
     if (error?.code === "ER_NO_SUCH_TABLE") {
       return res.status(500).json({
         valid: false,
-        message: "Åifre yenileme iÃ§in DB migration gerekli. npm run db:migrate Ã§alÄ±ÅŸtÄ±rÄ±n.",
+        message: "Şifre yenileme için DB migration gerekli. npm run db:migrate çalıştırın.",
       });
     }
     return res.status(500).json({ valid: false, message: "Token dogrulanamadi." });
@@ -1736,10 +1736,10 @@ app.post("/api/auth/password/reset", async (req, res) => {
       return res.status(400).json({ message: "Tum alanlar zorunludur." });
     }
     if (password !== confirmPassword) {
-      return res.status(400).json({ message: "Åifreler eÅŸleÅŸmiyor." });
+      return res.status(400).json({ message: "Şifreler eşleşmiyor." });
     }
     if (password.length < 6) {
-      return res.status(400).json({ message: "Åifre en az 6 karakter olmalÄ±." });
+      return res.status(400).json({ message: "Şifre en az 6 karakter olmalı." });
     }
 
     const tokenHash = sha256(token);
@@ -1754,7 +1754,7 @@ app.post("/api/auth/password/reset", async (req, res) => {
     );
 
     if (tokenRows.length === 0) {
-      return res.status(400).json({ message: "Åifre yenileme baÄŸlantÄ±sÄ± geÃ§ersiz veya sÃ¼resi dolmuÅŸ." });
+      return res.status(400).json({ message: "Şifre yenileme bağlantısı geçersiz veya süresi dolmuş." });
     }
 
     const resetTokenRow = tokenRows[0];
@@ -1786,14 +1786,14 @@ app.post("/api/auth/password/reset", async (req, res) => {
     await pool.query(`DELETE FROM password_reset_tokens WHERE user_id = ?`, [resetTokenRow.user_id]);
     await pool.query(`DELETE FROM user_sessions WHERE user_id = ?`, [resetTokenRow.user_id]);
 
-    return res.json({ ok: true, message: "Åifreniz baÅŸarÄ±yla gÃ¼ncellendi." });
+    return res.json({ ok: true, message: "Şifreniz başarıyla güncellendi." });
   } catch (error) {
     if (error?.code === "ER_NO_SUCH_TABLE") {
       return res.status(500).json({
-        message: "Åifre yenileme iÃ§in DB migration gerekli. npm run db:migrate Ã§alÄ±ÅŸtÄ±rÄ±n.",
+        message: "Şifre yenileme için DB migration gerekli. npm run db:migrate çalıştırın.",
       });
     }
-    return res.status(500).json({ message: "Åifre sÄ±fÄ±rlama iÅŸlemi baÅŸarÄ±sÄ±z." });
+    return res.status(500).json({ message: "Şifre sıfırlama işlemi başarısız." });
   }
 });
 
@@ -1805,7 +1805,7 @@ app.post("/api/auth/google", async (req, res) => {
     }
 
     if (!googleOAuthClient || GOOGLE_CLIENT_IDS.length === 0) {
-      return res.status(500).json({ message: "Google ile giriÅŸ henÃ¼z yapÄ±landÄ±rÄ±lmamÄ±ÅŸ." });
+      return res.status(500).json({ message: "Google ile giriş henüz yapılandırılmamış." });
     }
 
     const ticket = await googleOAuthClient.verifyIdToken({
@@ -1816,11 +1816,11 @@ app.post("/api/auth/google", async (req, res) => {
     const email = String(payload?.email ?? "").trim().toLowerCase();
 
     if (!email) {
-      return res.status(401).json({ message: "GeÃ§ersiz Google hesabÄ±." });
+      return res.status(401).json({ message: "Geçersiz Google hesabı." });
     }
 
     if (payload?.email_verified === false) {
-      return res.status(401).json({ message: "Google e-posta hesabÄ± doÄŸrulanmamÄ±ÅŸ." });
+      return res.status(401).json({ message: "Google e-posta hesabı doğrulanmamış." });
     }
 
     const [existing] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
@@ -1849,15 +1849,15 @@ app.post("/api/auth/google", async (req, res) => {
     console.error("Google auth error:", error);
     const rawMessage = String(error?.message ?? "").toLowerCase();
     if (rawMessage.includes("audience")) {
-      return res.status(401).json({ message: "Google client id uyuÅŸmuyor." });
+      return res.status(401).json({ message: "Google client id uyuşmuyor." });
     }
     if (rawMessage.includes("token used too early")) {
       return res.status(401).json({ message: "Cihaz veya sunucu saati geri. Saati otomatik senkronize edip tekrar deneyin." });
     }
     if (rawMessage.includes("token used too late") || rawMessage.includes("expired")) {
-      return res.status(401).json({ message: "Google token sÃ¼resi dolmuÅŸ. Tekrar deneyin." });
+      return res.status(401).json({ message: "Google token süresi dolmuş. Tekrar deneyin." });
     }
-    return res.status(401).json({ message: "Google ile giriÅŸ baÅŸarÄ±sÄ±z." });
+    return res.status(401).json({ message: "Google ile giriş başarısız." });
   }
 });
 
@@ -2398,7 +2398,7 @@ app.post("/api/paytr/token", async (req, res) => {
     const paytrJson = await paytrResponse.json().catch(() => null);
     if (!paytrResponse.ok || !paytrJson || paytrJson.status !== "success" || !paytrJson.token) {
       return res.status(400).json({
-        message: "PAYTR token alÄ±namadÄ±.",
+        message: "PAYTR token alınamadı.",
         reason: paytrJson?.reason || `HTTP ${paytrResponse.status}`,
       });
     }
@@ -2421,7 +2421,7 @@ app.post("/api/contact", async (req, res) => {
     const message = String(req.body?.message ?? "").trim();
 
     if (!name || !email || !subject || !message) {
-      return res.status(400).json({ message: "TÃ¼m alanlar zorunludur." });
+      return res.status(400).json({ message: "Tüm alanlar zorunludur." });
     }
 
     await ensureContactRequestsTable();
@@ -2433,9 +2433,9 @@ app.post("/api/contact", async (req, res) => {
       [crypto.randomUUID(), name, email, subject, message]
     );
 
-    return res.json({ ok: true, message: "MesajÄ±nÄ±z alÄ±ndÄ±." });
+    return res.json({ ok: true, message: "Mesajınız alındı." });
   } catch (error) {
-    return res.status(500).json({ message: "Ä°letiÅŸim talebi kaydedilemedi." });
+    return res.status(500).json({ message: "İletişim talebi kaydedilemedi." });
   }
 });
 
@@ -2707,10 +2707,10 @@ app.patch("/api/admin/orders/:id/status", requireAdminAuth, async (req, res) => 
       if (!shippingCompany || !shippingTrackingNo) {
         return res
           .status(400)
-          .json({ message: "Kargoya verildi iÃ§in kargo firmasÄ± ve takip no zorunludur." });
+          .json({ message: "Kargoya verildi için kargo firması ve takip no zorunludur." });
       }
       if (!allowedShippingCompanies.has(shippingCompany)) {
-        return res.status(400).json({ message: "GeÃ§ersiz kargo firmasÄ±." });
+        return res.status(400).json({ message: "Geçersiz kargo firması." });
       }
     }
 
@@ -2916,20 +2916,20 @@ app.post("/api/admin/upload-images", requireAdminAuth, (req, res) => {
   adminImageUpload.array("images", 15)(req, res, (error) => {
     if (error) {
       if (error?.message === "INVALID_IMAGE_TYPE") {
-        return res.status(400).json({ message: "Sadece gÃ¶rsel dosyalarÄ± yÃ¼klenebilir." });
+        return res.status(400).json({ message: "Sadece görsel dosyaları yüklenebilir." });
       }
       if (error?.code === "LIMIT_FILE_SIZE") {
-        return res.status(400).json({ message: "Her gÃ¶rsel en fazla 12MB olabilir." });
+        return res.status(400).json({ message: "Her görsel en fazla 12MB olabilir." });
       }
       if (error?.code === "LIMIT_FILE_COUNT") {
-        return res.status(400).json({ message: "En fazla 15 gÃ¶rsel yÃ¼kleyebilirsiniz." });
+        return res.status(400).json({ message: "En fazla 15 görsel yükleyebilirsiniz." });
       }
-      return res.status(400).json({ message: "GÃ¶rsel yÃ¼kleme baÅŸarÄ±sÄ±z." });
+      return res.status(400).json({ message: "Görsel yükleme başarısız." });
     }
 
     const files = Array.isArray(req.files) ? req.files : [];
     if (files.length === 0) {
-      return res.status(400).json({ message: "YÃ¼klenecek gÃ¶rsel bulunamadÄ±." });
+      return res.status(400).json({ message: "Yüklenecek görsel bulunamadı." });
     }
 
     const urls = files.map((file) => `/api/uploads/${file.filename}`);
@@ -3025,10 +3025,10 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
       return res.status(500).json({ message: "DB migration required for product media fields. Run npm run db:migrate." });
     }
     if (error?.code === "ER_NO_REFERENCED_ROW_2") {
-      return res.status(400).json({ message: "GeÃ§ersiz kategori." });
+      return res.status(400).json({ message: "Geçersiz kategori." });
     }
     if (error?.code === "ER_DUP_ENTRY") {
-      return res.status(409).json({ message: "Bu Ã¼rÃ¼n ID zaten kullanÄ±lÄ±yor." });
+      return res.status(409).json({ message: "Bu ürün ID zaten kullanılıyor." });
     }
     return res.status(500).json({ message: "Admin product create failed." });
   }
@@ -3038,7 +3038,7 @@ app.get("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
   try {
     const productId = String(req.params.id ?? "").trim();
     if (!productId) {
-      return res.status(400).json({ message: "GeÃ§ersiz Ã¼rÃ¼n." });
+      return res.status(400).json({ message: "Geçersiz ürün." });
     }
 
     const [rows] = await pool.query(
@@ -3052,7 +3052,7 @@ app.get("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ message: "ÃœrÃ¼n bulunamadÄ±." });
+      return res.status(404).json({ message: "Ürün bulunamadı." });
     }
 
     return res.json({ product: mapProductRow(rows[0]) });
@@ -3088,7 +3088,7 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
       [productId]
     );
     if (existingRows.length === 0) {
-      return res.status(404).json({ message: "ÃœrÃ¼n bulunamadÄ±." });
+      return res.status(404).json({ message: "Ürün bulunamadı." });
     }
     const existing = existingRows[0];
 
@@ -3161,7 +3161,7 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ message: "ÃœrÃ¼n bulunamadÄ±." });
+      return res.status(404).json({ message: "Ürün bulunamadı." });
     }
 
     const [rows] = await pool.query(
@@ -3175,7 +3175,7 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ message: "ÃœrÃ¼n bulunamadÄ±." });
+      return res.status(404).json({ message: "Ürün bulunamadı." });
     }
 
     return res.json({ product: mapProductRow(rows[0]) });
@@ -3184,7 +3184,7 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
       return res.status(500).json({ message: "DB migration required for product media fields. Run npm run db:migrate." });
     }
     if (error?.code === "ER_NO_REFERENCED_ROW_2") {
-      return res.status(400).json({ message: "GeÃ§ersiz kategori." });
+      return res.status(400).json({ message: "Geçersiz kategori." });
     }
     return res.status(500).json({ message: "Admin product update failed." });
   }
@@ -3365,7 +3365,7 @@ app.delete("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ message: "ÃœrÃ¼n bulunamadÄ±." });
+      return res.status(404).json({ message: "Ürün bulunamadı." });
     }
 
     return res.json({ ok: true });
@@ -3384,3 +3384,4 @@ if (fs.existsSync(distIndexHtml)) {
 app.listen(port, () => {
   console.log(`API server running on http://localhost:${port}`);
 });
+

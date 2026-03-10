@@ -827,13 +827,15 @@ export function Account() {
                 </button>
               </div>
             ) : shouldEnterResetFlow && resetTokenStatus === "valid" ? (
-              <form onSubmit={handleResetPassword} className="space-y-4">
+              <form onSubmit={handleResetPassword} className="space-y-4" autoComplete="on">
                 <p className="text-sm text-gray-600">Yeni şifrenizi belirleyin.</p>
                 <div>
                   <label className="block text-sm font-medium mb-2">Yeni Şifre</label>
                   <input
                     type="password"
                     required
+                    name="newPassword"
+                    autoComplete="new-password"
                     value={resetForm.password}
                     onChange={(e) => setResetForm({ ...resetForm, password: e.target.value })}
                     className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -844,6 +846,8 @@ export function Account() {
                   <input
                     type="password"
                     required
+                    name="newPasswordConfirm"
+                    autoComplete="new-password"
                     value={resetForm.confirmPassword}
                     onChange={(e) => setResetForm({ ...resetForm, confirmPassword: e.target.value })}
                     className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -854,7 +858,7 @@ export function Account() {
                 </button>
               </form>
             ) : authMode === "forgot" ? (
-              <form onSubmit={handleForgotPassword} className="space-y-4">
+              <form onSubmit={handleForgotPassword} className="space-y-4" autoComplete="on">
                 <p className="text-sm text-gray-600">
                   Şifre yenileme bağlantısını göndermek için e-posta adresinizi girin.
                 </p>
@@ -863,6 +867,8 @@ export function Account() {
                   <input
                     type="email"
                     required
+                    name="email"
+                    autoComplete="email"
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -889,7 +895,7 @@ export function Account() {
                       : "Kay\u0131t Ol"}
                 </p>
                 {authEmailExists === null ? (
-                  <form onSubmit={handleCheckEmailForAuthFlow} className="space-y-4">
+                  <form onSubmit={handleCheckEmailForAuthFlow} className="space-y-4" autoComplete="on">
                     <div>
                       <label className="block text-sm font-medium mb-2">E-posta</label>
                       <input
@@ -905,12 +911,14 @@ export function Account() {
                     </button>
                   </form>
                 ) : (
-                  <form onSubmit={handleStartUnifiedAuthFlow} className="space-y-4">
+                  <form onSubmit={handleStartUnifiedAuthFlow} className="space-y-4" autoComplete="on">
                     <div>
                       <label className="block text-sm font-medium mb-2">E-posta</label>
                       <input
                         type="email"
                         required
+                        name="email"
+                        autoComplete="email"
                         value={authEmail}
                         readOnly={authEmailExists === true}
                         onChange={(e) => {
@@ -928,6 +936,8 @@ export function Account() {
                       <input
                         type="password"
                         required
+                        name="password"
+                        autoComplete={authEmailExists ? "current-password" : "new-password"}
                         value={authPassword}
                         onChange={(e) => setAuthPassword(e.target.value)}
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -941,6 +951,8 @@ export function Account() {
                             <input
                               type="text"
                               required
+                              name="firstName"
+                              autoComplete="given-name"
                               value={authFirstName}
                               onChange={(e) => setAuthFirstName(e.target.value)}
                               className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -951,6 +963,8 @@ export function Account() {
                             <input
                               type="text"
                               required
+                              name="lastName"
+                              autoComplete="family-name"
                               value={authLastName}
                               onChange={(e) => setAuthLastName(e.target.value)}
                               className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -962,6 +976,8 @@ export function Account() {
                         </label>
                         <input
                           type="tel"
+                          name="phone"
+                          autoComplete="tel"
                           value={authPhone}
                           onChange={(e) => setAuthPhone(e.target.value)}
                           className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black mb-4"
@@ -1283,13 +1299,15 @@ export function Account() {
                     {profileSuccessMessage}
                   </div>
                 )}
-                <form onSubmit={handleProfileSave} className="bg-white rounded-lg p-6 space-y-4">
+                <form onSubmit={handleProfileSave} className="bg-white rounded-lg p-6 space-y-4" autoComplete="on">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium mb-2">Ad</label>
                       <input
                         type="text"
                         required
+                        name="firstName"
+                        autoComplete="given-name"
                         value={profileForm.firstName}
                         onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })}
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -1300,6 +1318,8 @@ export function Account() {
                       <input
                         type="text"
                         required
+                        name="lastName"
+                        autoComplete="family-name"
                         value={profileForm.lastName}
                         onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })}
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -1311,6 +1331,8 @@ export function Account() {
                     <input
                       type="email"
                       required
+                      name="email"
+                      autoComplete="email"
                       value={profileForm.email}
                       readOnly
                       className="w-full bg-gray-100 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-600 cursor-not-allowed"
@@ -1320,6 +1342,8 @@ export function Account() {
                     <label className="block text-sm font-medium mb-2">Telefon</label>
                     <input
                       type="tel"
+                      name="phone"
+                      autoComplete="tel"
                       value={profileForm.phone}
                       onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
                       className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -1347,13 +1371,15 @@ export function Account() {
                 </div>
 
                 {isAddressFormOpen && (
-                  <form onSubmit={handleAddAddress} className="bg-white rounded-lg p-6 space-y-4">
+                  <form onSubmit={handleAddAddress} className="bg-white rounded-lg p-6 space-y-4" autoComplete="on">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium mb-2">Ad</label>
                       <input
                         type="text"
                         required
+                        name="addressFirstName"
+                        autoComplete="given-name"
                         value={addressForm.firstName}
                         onChange={(e) => setAddressForm({ ...addressForm, firstName: e.target.value })}
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -1364,6 +1390,8 @@ export function Account() {
                       <input
                         type="text"
                         required
+                        name="addressLastName"
+                        autoComplete="family-name"
                         value={addressForm.lastName}
                         onChange={(e) => setAddressForm({ ...addressForm, lastName: e.target.value })}
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -1441,6 +1469,7 @@ export function Account() {
                       <input
                         type="tel"
                         required
+                        name="addressPhone"
                         autoComplete="tel"
                         value={addressForm.phone}
                         onChange={(e) => setAddressForm({ ...addressForm, phone: e.target.value })}
@@ -1452,7 +1481,8 @@ export function Account() {
                       <input
                         type="text"
                         required
-                        autoComplete="off"
+                        name="addressLabel"
+                        autoComplete="address-line1"
                         value={addressForm.street}
                         onChange={(e) => setAddressForm({ ...addressForm, street: e.target.value })}
                         placeholder="örn. ev adresim, iş adresim"
@@ -1465,6 +1495,7 @@ export function Account() {
                     <textarea
                       required
                       minLength={10}
+                      name="streetAddress"
                       autoComplete="street-address"
                       value={addressDetail}
                       onChange={(e) => setAddressDetail(e.target.value)}
@@ -1530,11 +1561,13 @@ export function Account() {
                         </button>
 
                         {editingAddressId === address.id && (
-                          <form onSubmit={handleUpdateAddress} className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+                          <form onSubmit={handleUpdateAddress} className="mt-4 pt-4 border-t border-gray-200 space-y-3" autoComplete="on">
                             <div className="grid grid-cols-2 gap-3">
                               <input
                                 type="text"
                                 required
+                                name="editAddressFirstName"
+                                autoComplete="given-name"
                                 value={editAddressForm.firstName}
                                 onChange={(e) => setEditAddressForm({ ...editAddressForm, firstName: e.target.value })}
                                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
@@ -1543,6 +1576,8 @@ export function Account() {
                               <input
                                 type="text"
                                 required
+                                name="editAddressLastName"
+                                autoComplete="family-name"
                                 value={editAddressForm.lastName}
                                 onChange={(e) => setEditAddressForm({ ...editAddressForm, lastName: e.target.value })}
                                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
@@ -1615,6 +1650,7 @@ export function Account() {
                               <input
                                 type="tel"
                                 required
+                                name="editAddressPhone"
                                 autoComplete="tel"
                                 value={editAddressForm.phone}
                                 onChange={(e) => setEditAddressForm({ ...editAddressForm, phone: e.target.value })}
@@ -1624,7 +1660,8 @@ export function Account() {
                               <input
                                 type="text"
                                 required
-                                autoComplete="off"
+                                name="editAddressLabel"
+                                autoComplete="address-line1"
                                 value={editAddressForm.street}
                                 onChange={(e) => setEditAddressForm({ ...editAddressForm, street: e.target.value })}
                                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
@@ -1634,6 +1671,7 @@ export function Account() {
                             <textarea
                               required
                               minLength={10}
+                              name="editStreetAddress"
                               autoComplete="street-address"
                               value={editAddressDetail}
                               onChange={(e) => setEditAddressDetail(e.target.value)}

@@ -472,11 +472,13 @@ export function Checkout() {
                   )}
 
                   {state.isAuthenticated && isAddressFormOpen && (
-                    <form onSubmit={handleAddAddress} className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
+                    <form onSubmit={handleAddAddress} className="bg-white rounded-lg border border-gray-200 p-4 space-y-3" autoComplete="on">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <input
                           type="text"
                           required
+                          name="addressFirstName"
+                          autoComplete="given-name"
                           placeholder="Ad"
                           value={newAddressForm.firstName}
                           onChange={(e) => setNewAddressForm({ ...newAddressForm, firstName: e.target.value })}
@@ -485,6 +487,8 @@ export function Checkout() {
                         <input
                           type="text"
                           required
+                          name="addressLastName"
+                          autoComplete="family-name"
                           placeholder="Soyad"
                           value={newAddressForm.lastName}
                           onChange={(e) => setNewAddressForm({ ...newAddressForm, lastName: e.target.value })}
@@ -551,6 +555,7 @@ export function Checkout() {
                         <input
                           type="tel"
                           required
+                          name="addressPhone"
                           autoComplete="tel"
                           placeholder="Telefon"
                           value={newAddressForm.phone}
@@ -560,7 +565,8 @@ export function Checkout() {
                         <input
                           type="text"
                           required
-                          autoComplete="off"
+                          name="addressLabel"
+                          autoComplete="address-line1"
                           placeholder="örn. ev adresim, iş adresim"
                           value={newAddressForm.street}
                           onChange={(e) => setNewAddressForm({ ...newAddressForm, street: e.target.value })}
@@ -570,6 +576,7 @@ export function Checkout() {
                       <textarea
                         required
                         minLength={10}
+                        name="streetAddress"
                         autoComplete="street-address"
                         placeholder="Adres Detayı"
                         value={newAddressDetail}

@@ -44,7 +44,7 @@ export function Contact() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
             <div>
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
                 {successMessage && (
                   <p className="text-sm text-green-700 bg-green-50 rounded p-3">{successMessage}</p>
                 )}
@@ -56,6 +56,8 @@ export function Contact() {
                   <input
                     type="text"
                     required
+                    name="name"
+                    autoComplete="name"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -66,6 +68,8 @@ export function Contact() {
                   <input
                     type="email"
                     required
+                    name="email"
+                    autoComplete="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -76,6 +80,8 @@ export function Contact() {
                   <input
                     type="text"
                     required
+                    name="subject"
+                    autoComplete="off"
                     value={formData.subject}
                     onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                     className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -85,6 +91,8 @@ export function Contact() {
                   <label className="block text-sm font-medium mb-2">Mesaj</label>
                   <textarea
                     required
+                    name="message"
+                    autoComplete="off"
                     rows={5}
                     value={formData.message}
                     onChange={(e) => setFormData({ ...formData, message: e.target.value })}

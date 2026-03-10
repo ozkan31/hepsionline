@@ -830,12 +830,14 @@ export function Admin() {
         <div className="max-w-md mx-auto bg-white rounded-lg p-6 md:p-8">
           <h1 className="text-2xl font-light mb-6">Admin Giriş</h1>
           {error && <p className="mb-4 text-sm text-red-600 bg-red-50 p-3 rounded">{error}</p>}
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4" autoComplete="on">
             <div>
               <label className="block text-sm font-medium mb-2">E-posta</label>
               <input
                 type="email"
                 required
+                name="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -846,6 +848,8 @@ export function Admin() {
               <input
                 type="password"
                 required
+                name="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"

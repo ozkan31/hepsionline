@@ -2224,6 +2224,10 @@ app.post("/api/orders", requireAuth, async (req, res) => {
       params
     );
 
+    // Keep order creation and cart cleanup atomic:
+    // if order is committed, user's server-side cart is guaranteed to be empty.
+    await connection.query(`DELETE FROM user_cart_items WHERE user_id = ?`, [req.authUser.id]);
+
     await connection.commit();
     const orders = await getUserOrders(req.authUser.id);
     const createdOrder = orders.find((order) => order.id === orderId);

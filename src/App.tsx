@@ -23,6 +23,7 @@ import {
 } from '@/pages/InfoPages';
 import { Footer } from '@/components/Footer';
 import { RouteSeo } from '@/components/RouteSeo';
+import { AnalyticsTracker } from '@/components/AnalyticsTracker';
 import './App.css';
 
 function ScrollToTop() {
@@ -123,6 +124,7 @@ function App() {
   return (
     <StoreProvider>
       <Router>
+        <AnalyticsTracker />
         <ScrollToTop />
         <HashRouteNormalizer />
         <ProductQueryNormalizer />

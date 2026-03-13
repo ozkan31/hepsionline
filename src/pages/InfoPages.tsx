@@ -1,4 +1,4 @@
-const BRAND = "StilBags&fashion";
+const BRAND = "StilBags&Fashion";
 const PHONE = "0536 953 68 86";
 const EMAIL = "destek@stilbagsfashion.com";
 const ADDRESS = "Kuletepe Mahallesi 4858. Sokak No: 8 Hatay/Reyhanlı";

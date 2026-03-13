@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { fetchPublicSettings } from '@/lib/api';
 
 export function Footer() {
-  const [siteName, setSiteName] = useState('Paris move');
+  const [siteName, setSiteName] = useState('StilBags&Fashion');
 
   useEffect(() => {
     let mounted = true;

@@ -112,7 +112,27 @@ export function Account() {
     element.click();
   };
   const normalizeAuthMessage = (message: string) => {
-    const input = String(message ?? "").trim();
+    const fixMojibake = (value: string) =>
+      String(value ?? "")
+        .replaceAll("Ã¼", "ü")
+        .replaceAll("Ãœ", "Ü")
+        .replaceAll("Ã¶", "ö")
+        .replaceAll("Ã–", "Ö")
+        .replaceAll("Ã§", "ç")
+        .replaceAll("Ã‡", "Ç")
+        .replaceAll("ÄŸ", "ğ")
+        .replaceAll("Äž", "Ğ")
+        .replaceAll("ÅŸ", "ş")
+        .replaceAll("Å", "Ş")
+        .replaceAll("Ä±", "ı")
+        .replaceAll("Ä°", "İ")
+        .replaceAll("â€™", "'")
+        .replaceAll("â€œ", "\"")
+        .replaceAll("â€", "\"")
+        .replaceAll("â€“", "-")
+        .replaceAll("Â", "");
+
+    const input = fixMojibake(String(message ?? "").trim());
     if (!input) return "İşlem başarısız.";
     const lower = input.toLowerCase();
 

@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /giris
+Disallow: /hesabim
+Disallow: /sepet
+Disallow: /favoriler
+Disallow: /odeme
+Disallow: /akalin1453
+Disallow: /api/
+
+Sitemap: https://stilbagsfashion.com/sitemap.xml

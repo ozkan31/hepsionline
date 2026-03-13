@@ -453,7 +453,7 @@ async function migrate() {
   await pool.query(
     `
     INSERT INTO app_settings (setting_key, setting_value)
-    VALUES ('site_name', 'Paris move')
+    VALUES ('site_name', 'StilBags&Fashion')
     ON DUPLICATE KEY UPDATE updated_at = updated_at
     `
   );

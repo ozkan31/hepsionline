@@ -5,6 +5,15 @@ import { useStore } from '@/store/StoreContext';
 import type { Product as ProductType } from '@/types';
 import { fetchProductDetail, fetchProductMedia } from '@/lib/api';
 import { queuePendingWishlistProduct } from '@/lib/pendingWishlist';
+import { Seo } from '@/components/Seo';
+import { SEO_BRAND_NAME } from '@/lib/seo';
+
+const CATEGORY_LABELS: Record<string, string> = {
+  crossbody: 'Çapraz Çantalar',
+  mini: 'Mini Çantalar',
+  shoulder: 'Omuz Çantaları',
+  new: 'Yeni Gelenler',
+};
 
 export function Product() {
   const { id } = useParams<{ id: string }>();
@@ -99,6 +108,12 @@ export function Product() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#F8F7F4] pt-20 md:pt-24 pb-20">
+        <Seo
+          title={`Ürün Detayı | ${SEO_BRAND_NAME}`}
+          description="Ürün detayları yükleniyor."
+          canonicalPath={`/product/${encodeURIComponent(String(id ?? '').trim())}`}
+          image="/banner2.jpg"
+        />
         <div className="w-full px-4 md:px-8">
           <div className="max-w-5xl mx-auto text-center py-20 text-gray-500">Yükleniyor...</div>
         </div>
@@ -109,6 +124,12 @@ export function Product() {
   if (!product) {
     return (
       <div className="min-h-screen bg-[#F8F7F4] flex items-center justify-center">
+        <Seo
+          title={`Ürün Bulunamadı | ${SEO_BRAND_NAME}`}
+          description="Aradığınız ürün bulunamadı."
+          canonicalPath={`/product/${encodeURIComponent(String(id ?? '').trim())}`}
+          noindex
+        />
         <div className="text-center">
           <p className="text-lg text-gray-500 mb-4">Ürün bulunamadı</p>
           <Link to="/shop" className="bg-black text-white px-6 py-2 rounded-full">Alışverişe Dön</Link>
@@ -128,6 +149,56 @@ export function Product() {
       : [product.isNew ? 'Yeni' : null, product.isBestseller ? 'Çok Satan' : null].filter(
           (tag): tag is string => Boolean(tag)
         );
+
+  const categoryLabel = CATEGORY_LABELS[String(product.category ?? '').trim()] ?? 'Kadın Çanta';
+  const canonicalProductPath = `/product/${encodeURIComponent(product.id)}`;
+  const seoDescription = String(product.description ?? '').trim().slice(0, 155) || `${product.name} ürün detayları.`;
+  const seoImage = activeImage || product.image;
+  const productSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: product.name,
+    sku: product.id,
+    brand: {
+      '@type': 'Brand',
+      name: SEO_BRAND_NAME,
+    },
+    description: String(product.description ?? '').trim(),
+    image: productImages,
+    category: categoryLabel,
+    offers: {
+      '@type': 'Offer',
+      priceCurrency: 'TRY',
+      price: Number(product.price ?? 0).toFixed(2),
+      availability: 'https://schema.org/InStock',
+      itemCondition: 'https://schema.org/NewCondition',
+      url: `${window.location.origin}${canonicalProductPath}`,
+    },
+  };
+  const breadcrumbSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      {
+        '@type': 'ListItem',
+        position: 1,
+        name: 'Ana Sayfa',
+        item: `${window.location.origin}/`,
+      },
+      {
+        '@type': 'ListItem',
+        position: 2,
+        name: 'Ürünler',
+        item: `${window.location.origin}/shop`,
+      },
+      {
+        '@type': 'ListItem',
+        position: 3,
+        name: product.name,
+        item: `${window.location.origin}${canonicalProductPath}`,
+      },
+    ],
+  };
 
   const addToCart = () => {
     dispatch({
@@ -312,6 +383,14 @@ export function Product() {
 
   return (
     <div className="min-h-screen bg-[#F8F7F4] pt-20 md:pt-24 pb-20">
+      <Seo
+        title={`${product.name} | ${categoryLabel} | ${SEO_BRAND_NAME}`}
+        description={seoDescription}
+        canonicalPath={canonicalProductPath}
+        image={seoImage}
+        type="product"
+        schema={[productSchema, breadcrumbSchema]}
+      />
       <div className="w-full px-4 md:px-8">
         {/* Breadcrumb */}
         <button 
@@ -596,3 +675,6 @@ export function Product() {
     </div>
   );
 }
+
+
+

@@ -1,4 +1,4 @@
-ï»¿import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
@@ -41,38 +41,38 @@ export function About() {
 
         <div className="space-y-8 text-base md:text-lg text-gray-600 leading-relaxed">
           <p className="animate-in">
-            Stilbags& fashion, zarafetin konforla buluÅŸtuÄŸu bir inanÃ§tan doÄŸdu. Paris'in kalbinde kurulan
-            markamÄ±z, sizinle birlikte hareket eden Ã§antalar yaratÄ±yor - kalabalÄ±k ÅŸehir sokaklarÄ±nda,
-            sessiz kafe kÃ¶ÅŸelerinde ve aradaki her anÄ±nÄ±zda.
+            StilBags&Fashion, zarafetin konforla buluştuğu bir inançtan doğdu. Paris'in kalbinde kurulan
+            markamız, sizinle birlikte hareket eden çantalar yaratıyor - kalabalık şehir sokaklarında,
+            sessiz kafe köşelerinde ve aradaki her anınızda.
           </p>
 
           <div className="py-8 animate-in">
             <img 
               src="/banner1.jpg" 
-              alt="Stilbags& fashion" 
+              alt="StilBags&Fashion" 
               className="w-full h-[40vh] md:h-[50vh] object-cover rounded-lg"
             />
           </div>
 
           <p className="animate-in">
-            Her Stilbags& fashion Ã§antasÄ± modern kadÄ±n dÃ¼ÅŸÃ¼nÃ¼lerek Ã¶zenle tasarlanÄ±r. SadeliÄŸin gÃ¼cÃ¼ne
-            inanÄ±yoruz - temiz Ã§izgiler, kaliteli malzemeler ve kusursuz iÅŸÃ§ilik. Ã‡antalarÄ±mÄ±z
-            sadece aksesuar deÄŸil, gÃ¼nlÃ¼k yolculuÄŸunuzun yoldaÅŸlarÄ±dÄ±r.
+            Her StilBags&Fashion çantası modern kadın düşünülerek özenle tasarlanır. Sadeliğin gücüne
+            inanıyoruz - temiz çizgiler, kaliteli malzemeler ve kusursuz işçilik. Çantalarımız
+            sadece aksesuar değil, günlük yolculuğunuzun yoldaşlarıdır.
           </p>
 
           <h2 className="text-xl md:text-2xl font-medium text-gray-900 mt-12 mb-6 animate-in">
-            Ã–zenle ÃœretilmiÅŸ
+            Özenle Üretilmiş
           </h2>
 
           <p className="animate-in">
-            MÃ¼kemmelliÄŸe olan baÄŸlÄ±lÄ±ÄŸÄ±mÄ±zÄ± paylaÅŸan yetenekli zanaatkÃ¢rlarla Ã§alÄ±ÅŸÄ±yoruz. Her dikiÅŸ,
-            her dikiÅŸ hattÄ±, her detay Ã¶zenle dÃ¼ÅŸÃ¼nÃ¼lÃ¼yor. Avrupa'nÄ±n dÃ¶rt bir yanÄ±ndan gÃ¼venilir
-            tedarikÃ§ilerden sadece en kaliteli deri ve malzemeleri kullanÄ±yoruz.
+            Mükemmelliğe olan bağlılığımızı paylaşan yetenekli zanaatkârlarla çalışıyoruz. Her dikiş,
+            her dikiş hattı, her detay özenle düşünülüyor. Avrupa'nın dört bir yanından güvenilir
+            tedarikçilerden sadece en kaliteli deri ve malzemeleri kullanıyoruz.
           </p>
 
           <p className="animate-in">
-            TasarÄ±m felsefemiz Paris zarafetine kÃ¶k salÄ±yor - abartÄ±sÄ±z, kendinden emin ve zamansÄ±z.
-            Mevsimleri ve trendleri aÅŸan parÃ§alar yaratÄ±yoruz, zamanla daha da gÃ¼zelleÅŸen Ã§antalar.
+            Tasarım felsefemiz Paris zarafetine kök salıyor - abartısız, kendinden emin ve zamansız.
+            Mevsimleri ve trendleri aşan parçalar yaratıyoruz, zamanla daha da güzelleşen çantalar.
           </p>
 
           <h2 className="text-xl md:text-2xl font-medium text-gray-900 mt-12 mb-6 animate-in">
@@ -80,13 +80,13 @@ export function About() {
           </h2>
 
           <p className="animate-in">
-            Ä°ster yoÄŸun bir iÅŸ gÃ¼nÃ¼, ister yeni bir ÅŸehir keÅŸfi, ister keyifli bir hafta sonu olsun,
-            Stilbags& fashion yanÄ±nÄ±zda olmak iÃ§in tasarlandÄ± - hafif, konforlu ve ÅŸÄ±k.
+            İster yoğun bir iş günü, ister yeni bir şehir keşfi, ister keyifli bir hafta sonu olsun,
+            StilBags&Fashion yanınızda olmak için tasarlandı - hafif, konforlu ve şık.
           </p>
 
           <p className="animate-in">
-            Hikayemizin bir parÃ§asÄ± olduÄŸunuz iÃ§in teÅŸekkÃ¼r ederiz. Koleksiyonu keÅŸfetmenizi ve
-            mÃ¼kemmel yoldaÅŸÄ±nÄ±zÄ± bulmanÄ±zÄ± dileriz.
+            Hikayemizin bir parçası olduğunuz için teşekkür ederiz. Koleksiyonu keşfetmenizi ve
+            mükemmel yoldaşınızı bulmanızı dileriz.
           </p>
         </div>
 
@@ -94,7 +94,7 @@ export function About() {
           <div className="grid grid-cols-1 gap-8 text-center">
             <div>
               <p className="text-3xl md:text-4xl font-light text-gray-900 mb-2">2026</p>
-              <p className="text-sm text-gray-500">KuruluÅŸ</p>
+              <p className="text-sm text-gray-500">Kuruluş</p>
             </div>
           </div>
         </div>
@@ -102,4 +102,5 @@ export function About() {
     </div>
   );
 }
+
 

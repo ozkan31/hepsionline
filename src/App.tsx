@@ -22,6 +22,7 @@ import {
   TermsPage,
 } from '@/pages/InfoPages';
 import { Footer } from '@/components/Footer';
+import { RouteSeo } from '@/components/RouteSeo';
 import './App.css';
 
 function ScrollToTop() {
@@ -79,6 +80,7 @@ function AppLayout() {
 
   return (
     <div className="relative min-h-screen bg-[#F8F7F4] overflow-x-hidden">
+      {!isAdminRoute ? <RouteSeo /> : null}
       {!isAdminRoute ? <Header /> : null}
       <main className="min-h-screen">
         {isHashAdminRoute ? (

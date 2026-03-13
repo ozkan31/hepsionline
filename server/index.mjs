@@ -16,7 +16,7 @@ dotenv.config();
 const app = express();
 const port = Number(process.env.API_PORT || 3001);
 const adminSessions = new Map();
-const DEFAULT_SITE_NAME = "Paris move";
+const DEFAULT_SITE_NAME = "StilBags&Fashion";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distDir = path.resolve(__dirname, "../dist");
@@ -86,7 +86,7 @@ const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_SECURE = String(process.env.SMTP_SECURE ?? "false").toLowerCase() === "true";
 const SMTP_USER = String(process.env.SMTP_USER ?? "").trim();
 const SMTP_PASS = String(process.env.SMTP_PASS ?? "").trim();
-const SMTP_FROM_NAME = String(process.env.SMTP_FROM_NAME ?? "Paris move").trim();
+const SMTP_FROM_NAME = String(process.env.SMTP_FROM_NAME ?? "StilBags&Fashion").trim();
 const SMTP_FROM_EMAIL = String(process.env.SMTP_FROM_EMAIL ?? SMTP_USER).trim();
 const isSmtpConfigured = Boolean(SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS && SMTP_FROM_EMAIL);
 const mailTransporter = isSmtpConfigured
@@ -105,7 +105,7 @@ const ORDER_SMTP_PORT = Number(process.env.ORDER_SMTP_PORT || 587);
 const ORDER_SMTP_SECURE = String(process.env.ORDER_SMTP_SECURE ?? "false").toLowerCase() === "true";
 const ORDER_SMTP_USER = String(process.env.ORDER_SMTP_USER ?? "").trim();
 const ORDER_SMTP_PASS = String(process.env.ORDER_SMTP_PASS ?? "").trim();
-const ORDER_SMTP_FROM_NAME = String(process.env.ORDER_SMTP_FROM_NAME ?? "Paris move").trim();
+const ORDER_SMTP_FROM_NAME = String(process.env.ORDER_SMTP_FROM_NAME ?? "StilBags&Fashion").trim();
 const ORDER_SMTP_FROM_EMAIL = String(process.env.ORDER_SMTP_FROM_EMAIL ?? ORDER_SMTP_USER).trim();
 const isOrderSmtpConfigured = Boolean(
   ORDER_SMTP_HOST &&
@@ -188,6 +188,29 @@ function buildPublicBaseUrl(req) {
     return normalizedBase.replace(/\/+$/, "");
   }
   return `${req.protocol}://${req.get("host")}`;
+}
+
+function buildSitemapBaseUrl(req) {
+  const rawBase = String(
+    process.env.PUBLIC_SITE_URL ??
+      process.env.ORDER_EMAIL_BASE_URL ??
+      process.env.PASSWORD_RESET_BASE_URL ??
+      ""
+  ).trim();
+  if (rawBase) {
+    const withProtocol = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+    return withProtocol.replace(/\/+$/, "");
+  }
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+function escapeXml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
 }
 
 function toPublicUrl(baseUrl, rawValue) {
@@ -614,7 +637,7 @@ ${image ? `<img src="${escapeHtml(image)}" width="120" style="border-radius:10px
 
 <tr>
 <td style="padding:40px 40px 10px;text-align:center;">
-<div style="font-size:30px;font-weight:700;letter-spacing:0.5px;color:#111;">StilBags&fashion</div>
+<div style="font-size:30px;font-weight:700;letter-spacing:0.5px;color:#111;">StilBags&Fashion</div>
 <div style="font-size:36px;font-weight:600;color:#111;">Siparişiniz Alındı</div>
 <div style="margin-top:8px;font-size:18px;color:#666;">Teşekkür ederiz!</div>
 </td>
@@ -3371,6 +3394,69 @@ app.delete("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     return res.json({ ok: true });
   } catch (error) {
     return res.status(500).json({ message: "Admin product delete failed." });
+  }
+});
+
+app.get("/sitemap.xml", async (req, res) => {
+  try {
+    const baseUrl = buildSitemapBaseUrl(req);
+    const nowIso = new Date().toISOString();
+
+    const staticUrls = [
+      { loc: "/", changefreq: "daily", priority: "1.0" },
+      { loc: "/shop", changefreq: "daily", priority: "0.95" },
+      { loc: "/hakkimizda", changefreq: "monthly", priority: "0.7" },
+      { loc: "/iletisim", changefreq: "monthly", priority: "0.7" },
+      { loc: "/kargo", changefreq: "monthly", priority: "0.6" },
+      { loc: "/iade", changefreq: "monthly", priority: "0.6" },
+      { loc: "/sss", changefreq: "weekly", priority: "0.6" },
+      { loc: "/gizlilik", changefreq: "yearly", priority: "0.4" },
+      { loc: "/kullanim-kosullari", changefreq: "yearly", priority: "0.4" },
+      { loc: "/surdurulebilirlik", changefreq: "monthly", priority: "0.5" },
+      { loc: "/kariyer", changefreq: "monthly", priority: "0.4" },
+    ];
+
+    const [productRows] = await pool.query(`SELECT id FROM products ORDER BY id ASC`);
+    const [categoryRows] = await pool.query(`SELECT id FROM categories ORDER BY id ASC`);
+
+    const productUrls = productRows.map((row) => ({
+      loc: `/product/${encodeURIComponent(String(row.id ?? "").trim())}`,
+      changefreq: "daily",
+      priority: "0.8",
+    }));
+
+    const categoryUrls = categoryRows.map((row) => {
+      const categoryId = encodeURIComponent(String(row.id ?? "").trim());
+      return {
+        loc: `/shop?category=${categoryId}`,
+        changefreq: "daily",
+        priority: "0.75",
+      };
+    });
+
+    const allUrls = [...staticUrls, ...categoryUrls, ...productUrls];
+
+    const urlset = allUrls
+      .filter((entry) => String(entry.loc ?? "").trim())
+      .map(
+        (entry) => `  <url>
+    <loc>${escapeXml(`${baseUrl}${entry.loc}`)}</loc>
+    <lastmod>${nowIso}</lastmod>
+    <changefreq>${entry.changefreq}</changefreq>
+    <priority>${entry.priority}</priority>
+  </url>`
+      )
+      .join("\n");
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urlset}
+</urlset>`;
+
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    return res.status(200).send(xml);
+  } catch (error) {
+    return res.status(500).send("Failed to generate sitemap.");
   }
 });
 

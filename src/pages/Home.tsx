@@ -6,6 +6,7 @@ import { useStore } from '@/store/StoreContext';
 import type { Product, Category } from '@/types';
 import { fetchProducts } from '@/lib/api';
 import { queuePendingWishlistProduct } from '@/lib/pendingWishlist';
+import { trackAddToCart } from '@/lib/analytics';
 
 const banners = [
   { id: 1, image: '/banner1.jpg', title: 'Yeni Sezon', subtitle: 'Zarif ve şık çantalar', cta: 'Keşfet', link: '/shop' },
@@ -123,6 +124,16 @@ export function Home() {
     dispatch({
       type: 'ADD_TO_CART',
       payload: { product, quantity: 1, color: product.colors[0] }
+    });
+    trackAddToCart({
+      product: {
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        price: product.price,
+      },
+      quantity: 1,
+      color: product.colors[0],
     });
   };
 

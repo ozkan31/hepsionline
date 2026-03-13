@@ -7,6 +7,25 @@ declare global {
 
 let initializedMeasurementId = "";
 
+type AnalyticsProduct = {
+  id: string;
+  name: string;
+  category?: string;
+  price: number;
+};
+
+type AnalyticsCartLine = {
+  product: AnalyticsProduct;
+  quantity: number;
+  color?: string;
+};
+
+type AnalyticsOrder = {
+  id: string;
+  total: number;
+  items: AnalyticsCartLine[];
+};
+
 function getMeasurementId() {
   const env = import.meta.env as Record<string, string | undefined>;
   return String(env.VITE_GA_MEASUREMENT_ID ?? "").trim();
@@ -52,4 +71,49 @@ export function trackPageView(path: string) {
 
 export function hasAnalyticsEnabled() {
   return Boolean(getMeasurementId());
+}
+
+function mapCartLineToGtagItem(line: AnalyticsCartLine) {
+  return {
+    item_id: String(line.product.id ?? ""),
+    item_name: String(line.product.name ?? ""),
+    item_category: String(line.product.category ?? ""),
+    item_variant: String(line.color ?? ""),
+    price: Number(line.product.price ?? 0),
+    quantity: Number(line.quantity ?? 1),
+  };
+}
+
+export function trackAddToCart(input: { product: AnalyticsProduct; quantity?: number; color?: string }) {
+  if (!window.gtag || !hasAnalyticsEnabled()) return;
+  const quantity = Math.max(1, Number(input.quantity ?? 1));
+  const item = mapCartLineToGtagItem({
+    product: input.product,
+    quantity,
+    color: input.color,
+  });
+  window.gtag("event", "add_to_cart", {
+    currency: "TRY",
+    value: Number(input.product.price ?? 0) * quantity,
+    items: [item],
+  });
+}
+
+export function trackBeginCheckout(input: { items: AnalyticsCartLine[]; total: number }) {
+  if (!window.gtag || !hasAnalyticsEnabled()) return;
+  window.gtag("event", "begin_checkout", {
+    currency: "TRY",
+    value: Number(input.total ?? 0),
+    items: (input.items ?? []).map(mapCartLineToGtagItem),
+  });
+}
+
+export function trackPurchase(order: AnalyticsOrder) {
+  if (!window.gtag || !hasAnalyticsEnabled()) return;
+  window.gtag("event", "purchase", {
+    transaction_id: String(order.id ?? ""),
+    currency: "TRY",
+    value: Number(order.total ?? 0),
+    items: (order.items ?? []).map(mapCartLineToGtagItem),
+  });
 }

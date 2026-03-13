@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Minus, Plus, X, ShoppingBag, ArrowRight, Truck } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
+import { trackBeginCheckout } from '@/lib/analytics';
 
 export function Cart() {
   const { state, dispatch, cartTotal } = useStore();
@@ -16,6 +17,28 @@ export function Cart() {
     } else {
       dispatch({ type: 'UPDATE_CART_QUANTITY', payload: { id: productId, quantity: newQuantity } });
     }
+  };
+
+  const handleBeginCheckout = () => {
+    trackBeginCheckout({
+      items: state.cart.map((item) => ({
+        product: {
+          id: item.product.id,
+          name: item.product.name,
+          category: item.product.category,
+          price: item.product.price,
+        },
+        quantity: item.quantity,
+        color: item.color,
+      })),
+      total,
+    });
+
+    if (state.isAuthenticated) {
+      navigate('/odeme');
+      return;
+    }
+    navigate('/giris?redirect=/odeme');
   };
 
   if (state.cart.length === 0) {
@@ -154,11 +177,7 @@ export function Cart() {
               </div>
 
               <button
-                onClick={() =>
-                  state.isAuthenticated
-                    ? navigate('/odeme')
-                    : navigate('/giris?redirect=/odeme')
-                }
+                onClick={handleBeginCheckout}
                 className="w-full bg-black text-white py-4 rounded-full font-medium text-sm hover:bg-gray-800 transition-colors"
               >
                 Ödemeye Geç

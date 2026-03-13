@@ -4,6 +4,7 @@ import { Check, ChevronRight, Truck } from "lucide-react";
 import { useStore } from "@/store/StoreContext";
 import { createOrder, createPaytrIframe, saveAddress } from "@/lib/api";
 import { loadTurkeyLocations } from "@/lib/turkiye";
+import { trackPurchase } from "@/lib/analytics";
 import type { Order } from "@/types";
 
 export function Checkout() {
@@ -230,12 +231,40 @@ export function Checkout() {
           .then((createdOrder) => {
             dispatch({ type: "ADD_ORDER", payload: createdOrder });
             setCompletedOrder(createdOrder);
+            trackPurchase({
+              id: createdOrder.id,
+              total: createdOrder.total,
+              items: createdOrder.items.map((item) => ({
+                product: {
+                  id: item.product.id,
+                  name: item.product.name,
+                  category: item.product.category,
+                  price: item.product.price,
+                },
+                quantity: item.quantity,
+                color: item.color,
+              })),
+            });
             dispatch({ type: "CLEAR_CART" });
           })
           .catch(() => {
             // Fallback keeps UX working even if API fails.
             dispatch({ type: "ADD_ORDER", payload: orderDraft });
             setCompletedOrder(orderDraft);
+            trackPurchase({
+              id: orderDraft.id,
+              total: orderDraft.total,
+              items: orderDraft.items.map((item) => ({
+                product: {
+                  id: item.product.id,
+                  name: item.product.name,
+                  category: item.product.category,
+                  price: item.product.price,
+                },
+                quantity: item.quantity,
+                color: item.color,
+              })),
+            });
             dispatch({ type: "CLEAR_CART" });
           });
       } else if (state.orders.length > 0) {

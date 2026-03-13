@@ -7,6 +7,7 @@ import { fetchProductDetail, fetchProductMedia } from '@/lib/api';
 import { queuePendingWishlistProduct } from '@/lib/pendingWishlist';
 import { Seo } from '@/components/Seo';
 import { SEO_BRAND_NAME } from '@/lib/seo';
+import { trackAddToCart } from '@/lib/analytics';
 
 const CATEGORY_LABELS: Record<string, string> = {
   crossbody: 'Çapraz Çantalar',
@@ -208,6 +209,16 @@ export function Product() {
         quantity,
         color: selectedColor,
       },
+    });
+    trackAddToCart({
+      product: {
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        price: product.price,
+      },
+      quantity,
+      color: selectedColor,
     });
     setIsAddedToCart(true);
     setTimeout(() => setIsAddedToCart(false), 2000);

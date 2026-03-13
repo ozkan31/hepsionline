@@ -33,6 +33,35 @@
     <meta name="twitter:image" content="/banner1.jpg" />
     <link rel="canonical" href="https://stilbagsfashion.com/" />
     <title>StilBags&Fashion | Kadın Çanta ve Aksesuar Modelleri</title>
+    <script>
+      (function () {
+        const GA_ID = "%VITE_GA_MEASUREMENT_ID%";
+        const isValidGaId =
+          typeof GA_ID === "string" &&
+          GA_ID.startsWith("G-") &&
+          !GA_ID.includes("VITE_GA_MEASUREMENT_ID");
+
+        if (!isValidGaId) return;
+
+        window.dataLayer = window.dataLayer || [];
+        window.gtag =
+          window.gtag ||
+          function () {
+            window.dataLayer.push(arguments);
+          };
+
+        const script = document.createElement("script");
+        script.id = "ga4-script";
+        script.async = true;
+        script.src =
+          "https://www.googletagmanager.com/gtag/js?id=" +
+          encodeURIComponent(GA_ID);
+        document.head.appendChild(script);
+
+        window.gtag("js", new Date());
+        window.gtag("config", GA_ID, { send_page_view: false });
+      })();
+    </script>
   </head>
   <body class="notranslate" translate="no">
     <div id="root"></div>

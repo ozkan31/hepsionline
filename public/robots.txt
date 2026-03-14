@@ -10,19 +10,12 @@ Disallow: /api/admin/
 Disallow: /api/auth/
 
 User-agent: Googlebot
-Allow: /
-Allow: /api/products/
-Allow: /api/uploads/
-Allow: /uploads/
-Disallow: /api/admin/
-Disallow: /api/auth/
+Disallow:
 
 User-agent: Googlebot-Image
-Allow: /
-Allow: /api/products/
-Allow: /api/uploads/
-Allow: /uploads/
-Disallow: /api/admin/
-Disallow: /api/auth/
+Disallow:
+
+User-agent: Googlebot-image
+Disallow:
 
 Sitemap: https://stilbagsfashion.com/sitemap.xml

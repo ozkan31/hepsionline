@@ -8,7 +8,7 @@ import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { OAuth2Client } from "google-auth-library";
+import { JWT, OAuth2Client } from "google-auth-library";
 import { pool } from "./db.mjs";
 
 dotenv.config();
@@ -140,6 +140,26 @@ const WHATSAPP_WEBHOOK_VERIFY_TOKEN = String(process.env.WHATSAPP_WEBHOOK_VERIFY
 const WHATSAPP_ORDER_PRIMARY_MODE = String(process.env.WHATSAPP_ORDER_PRIMARY_MODE ?? "template")
   .trim()
   .toLowerCase();
+const GOOGLE_MERCHANT_ENABLED = String(process.env.GOOGLE_MERCHANT_ENABLED ?? "false").toLowerCase() === "true";
+const GOOGLE_MERCHANT_ACCOUNT_ID = String(process.env.GOOGLE_MERCHANT_ACCOUNT_ID ?? "").trim();
+const GOOGLE_MERCHANT_CONTENT_LANGUAGE = String(process.env.GOOGLE_MERCHANT_CONTENT_LANGUAGE ?? "tr").trim() || "tr";
+const GOOGLE_MERCHANT_TARGET_COUNTRY = String(process.env.GOOGLE_MERCHANT_TARGET_COUNTRY ?? "TR").trim() || "TR";
+const GOOGLE_MERCHANT_CURRENCY = String(process.env.GOOGLE_MERCHANT_CURRENCY ?? "TRY").trim() || "TRY";
+const GOOGLE_MERCHANT_BRAND = String(process.env.GOOGLE_MERCHANT_BRAND ?? DEFAULT_SITE_NAME).trim() || DEFAULT_SITE_NAME;
+const GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL = String(
+  process.env.GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL ?? ""
+).trim();
+const GOOGLE_MERCHANT_SERVICE_ACCOUNT_PRIVATE_KEY = String(
+  process.env.GOOGLE_MERCHANT_SERVICE_ACCOUNT_PRIVATE_KEY ?? ""
+).trim();
+const GOOGLE_MERCHANT_PRODUCT_URL_BASE = String(process.env.GOOGLE_MERCHANT_PRODUCT_URL_BASE ?? "").trim();
+const GOOGLE_MERCHANT_SCOPES = ["https://www.googleapis.com/auth/content"];
+const isGoogleMerchantConfigured = Boolean(
+  GOOGLE_MERCHANT_ENABLED &&
+    GOOGLE_MERCHANT_ACCOUNT_ID &&
+    GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL &&
+    GOOGLE_MERCHANT_SERVICE_ACCOUNT_PRIVATE_KEY
+);
 const isWhatsappConfigured = Boolean(
   WHATSAPP_ENABLED &&
     WHATSAPP_API_URL &&
@@ -211,6 +231,142 @@ function escapeXml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
+}
+
+function getGoogleMerchantPrivateKey() {
+  if (!GOOGLE_MERCHANT_SERVICE_ACCOUNT_PRIVATE_KEY) return "";
+  return GOOGLE_MERCHANT_SERVICE_ACCOUNT_PRIVATE_KEY.replaceAll("\\n", "\n");
+}
+
+function buildGoogleMerchantBaseUrl(req) {
+  const explicit = String(GOOGLE_MERCHANT_PRODUCT_URL_BASE ?? "").trim();
+  if (explicit) {
+    const hasScheme = /^https?:\/\//i.test(explicit);
+    const normalized = hasScheme ? explicit : `https://${explicit}`;
+    return normalized.replace(/\/+$/, "");
+  }
+  return buildSitemapBaseUrl(req);
+}
+
+async function getGoogleMerchantAccessToken() {
+  if (!isGoogleMerchantConfigured) {
+    throw new Error("Google Merchant API ayarlari eksik.");
+  }
+  const client = new JWT({
+    email: GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL,
+    key: getGoogleMerchantPrivateKey(),
+    scopes: GOOGLE_MERCHANT_SCOPES,
+  });
+  const tokenResponse = await client.getAccessToken();
+  const token = String(tokenResponse?.token ?? "").trim();
+  if (!token) {
+    throw new Error("Google access token alinamadi.");
+  }
+  return token;
+}
+
+function mapProductToGoogleMerchantEntry(req, product, index) {
+  const baseUrl = buildGoogleMerchantBaseUrl(req);
+  const offerId = String(product.id ?? "").trim();
+  const title = String(product.name ?? "").trim().slice(0, 150);
+  const description = String(product.description ?? "").trim().slice(0, 5000) || title;
+  const price = Number(product.price ?? 0);
+  const productUrl = `${baseUrl}/product/${encodeURIComponent(offerId)}`;
+  const imageUrl = toPublicUrl(baseUrl, product.image);
+
+  return {
+    batchId: index + 1,
+    merchantId: GOOGLE_MERCHANT_ACCOUNT_ID,
+    method: "insert",
+    product: {
+      offerId,
+      title,
+      description,
+      link: productUrl,
+      imageLink: imageUrl,
+      additionalImageLinks: Array.isArray(product.images)
+        ? product.images.map((item) => toPublicUrl(baseUrl, item)).filter(Boolean).slice(0, 10)
+        : [],
+      contentLanguage: GOOGLE_MERCHANT_CONTENT_LANGUAGE.toLowerCase(),
+      targetCountry: GOOGLE_MERCHANT_TARGET_COUNTRY.toUpperCase(),
+      channel: "online",
+      availability: "in stock",
+      condition: "new",
+      price: {
+        value: Number.isFinite(price) ? price.toFixed(2) : "0.00",
+        currency: GOOGLE_MERCHANT_CURRENCY.toUpperCase(),
+      },
+      brand: GOOGLE_MERCHANT_BRAND,
+      productTypes: product.category ? [String(product.category)] : [],
+      identifierExists: false,
+    },
+  };
+}
+
+async function syncProductsToGoogleMerchant(req) {
+  const [rows] = await pool.query(
+    `
+    SELECT id, name, price, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
+    FROM products
+    ORDER BY id ASC
+    `
+  );
+  const products = rows.map(mapProductRow).filter((item) => String(item?.id ?? "").trim());
+  if (products.length === 0) {
+    return { total: 0, success: 0, failed: 0, errors: [] };
+  }
+
+  const accessToken = await getGoogleMerchantAccessToken();
+  const endpoint = `https://shoppingcontent.googleapis.com/content/v2.1/${encodeURIComponent(
+    GOOGLE_MERCHANT_ACCOUNT_ID
+  )}/products/batch`;
+  const chunkSize = 100;
+  let success = 0;
+  let failed = 0;
+  const errors = [];
+
+  for (let start = 0; start < products.length; start += chunkSize) {
+    const chunk = products.slice(start, start + chunkSize);
+    const entries = chunk.map((product, index) =>
+      mapProductToGoogleMerchantEntry(req, product, start + index)
+    );
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ entries }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(
+        `Google Merchant API hatasi (${response.status}): ${JSON.stringify(data).slice(0, 500)}`
+      );
+    }
+
+    const responseEntries = Array.isArray(data?.entries) ? data.entries : [];
+    for (const entry of responseEntries) {
+      if (entry?.errors?.errors?.length) {
+        failed += 1;
+        errors.push({
+          offerId: entry?.product?.offerId ?? "",
+          message: entry.errors.errors.map((item) => item.message).join(" | "),
+        });
+      } else {
+        success += 1;
+      }
+    }
+  }
+
+  return {
+    total: products.length,
+    success,
+    failed,
+    errors,
+  };
 }
 
 function toPublicUrl(baseUrl, rawValue) {
@@ -2549,6 +2705,42 @@ app.put("/api/admin/settings", requireAdminAuth, async (req, res) => {
     return res.json({ siteName });
   } catch (error) {
     return res.status(500).json({ message: "Admin settings update failed." });
+  }
+});
+
+app.get("/api/admin/google-merchant/status", requireAdminAuth, async (_req, res) => {
+  return res.json({
+    enabled: GOOGLE_MERCHANT_ENABLED,
+    configured: isGoogleMerchantConfigured,
+    accountId: GOOGLE_MERCHANT_ACCOUNT_ID || "",
+    targetCountry: GOOGLE_MERCHANT_TARGET_COUNTRY.toUpperCase(),
+    contentLanguage: GOOGLE_MERCHANT_CONTENT_LANGUAGE.toLowerCase(),
+    currency: GOOGLE_MERCHANT_CURRENCY.toUpperCase(),
+    brand: GOOGLE_MERCHANT_BRAND,
+  });
+});
+
+app.post("/api/admin/google-merchant/sync", requireAdminAuth, async (req, res) => {
+  try {
+    if (!GOOGLE_MERCHANT_ENABLED) {
+      return res.status(400).json({ message: "Google Merchant entegrasyonu aktif değil." });
+    }
+    if (!isGoogleMerchantConfigured) {
+      return res.status(500).json({
+        message:
+          "Google Merchant ayarları eksik. .env içine hesap id, service account email ve private key girin.",
+      });
+    }
+
+    const summary = await syncProductsToGoogleMerchant(req);
+    return res.json({
+      ok: true,
+      ...summary,
+      message: `Google Merchant senkron tamamlandı. Başarılı: ${summary.success}, Hatalı: ${summary.failed}`,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google Merchant senkronu başarısız.";
+    return res.status(500).json({ message });
   }
 });
 

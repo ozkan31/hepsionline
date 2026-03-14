@@ -406,6 +406,53 @@ export async function updateAdminSettings(
   return parseResponse<{ siteName: string }>(response);
 }
 
+export async function fetchAdminGoogleMerchantStatus(token: string): Promise<{
+  enabled: boolean;
+  configured: boolean;
+  accountId: string;
+  targetCountry: string;
+  contentLanguage: string;
+  currency: string;
+  brand: string;
+}> {
+  const response = await fetch("/api/admin/google-merchant/status", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseResponse<{
+    enabled: boolean;
+    configured: boolean;
+    accountId: string;
+    targetCountry: string;
+    contentLanguage: string;
+    currency: string;
+    brand: string;
+  }>(response);
+}
+
+export async function syncAdminGoogleMerchant(token: string): Promise<{
+  ok: boolean;
+  total: number;
+  success: number;
+  failed: number;
+  message: string;
+}> {
+  const response = await fetch("/api/admin/google-merchant/sync", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({}),
+  });
+  return parseResponse<{
+    ok: boolean;
+    total: number;
+    success: number;
+    failed: number;
+    message: string;
+  }>(response);
+}
+
 export async function fetchAdminOrders(token: string): Promise<AdminOrder[]> {
   const response = await fetch("/api/admin/orders", {
     headers: { Authorization: `Bearer ${token}` },

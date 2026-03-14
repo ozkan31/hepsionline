@@ -6,12 +6,14 @@ import {
   deleteAdminProduct,
   fetchAdminContactRequests,
   fetchAdminProductById,
+  fetchAdminGoogleMerchantStatus,
   fetchAdminSettings,
   fetchAdminUsers,
   adminValidate,
   fetchAdminOrders,
   fetchAdminProducts,
   updateAdminSettings,
+  syncAdminGoogleMerchant,
   updateAdminOrderStatus,
   updateAdminProduct,
   uploadAdminProductImages,
@@ -79,6 +81,18 @@ export function Admin() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState("");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [merchantStatus, setMerchantStatus] = useState<{
+    enabled: boolean;
+    configured: boolean;
+    accountId: string;
+    targetCountry: string;
+    contentLanguage: string;
+    currency: string;
+    brand: string;
+  } | null>(null);
+  const [merchantLoading, setMerchantLoading] = useState(false);
+  const [merchantSyncing, setMerchantSyncing] = useState(false);
+  const [merchantMessage, setMerchantMessage] = useState("");
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState("");
@@ -194,15 +208,24 @@ export function Admin() {
     const loadSettings = async () => {
       setSettingsLoading(true);
       setSettingsMessage("");
+      setMerchantLoading(true);
+      setMerchantMessage("");
       try {
-        const data = await fetchAdminSettings(token);
+        const [data, merchant] = await Promise.all([
+          fetchAdminSettings(token),
+          fetchAdminGoogleMerchantStatus(token),
+        ]);
         if (!mounted) return;
         setSiteNameInput(String(data?.siteName ?? ""));
+        setMerchantStatus(merchant);
       } catch (err) {
         if (!mounted) return;
         setSettingsMessage(err instanceof Error ? err.message : "Ayarlar alınamadı.");
       } finally {
-        if (mounted) setSettingsLoading(false);
+        if (mounted) {
+          setSettingsLoading(false);
+          setMerchantLoading(false);
+        }
       }
     };
 
@@ -311,6 +334,10 @@ export function Admin() {
     setSettingsLoading(false);
     setSettingsMessage("");
     setIsSavingSettings(false);
+    setMerchantStatus(null);
+    setMerchantLoading(false);
+    setMerchantSyncing(false);
+    setMerchantMessage("");
     setUsers([]);
     setUsersLoading(false);
     setUsersError("");
@@ -468,6 +495,24 @@ export function Admin() {
       setProductSaveMessage("");
     } catch (error) {
       setProductSaveMessage(error instanceof Error ? error.message : "Ürün detayları alınamadı.");
+    }
+  };
+
+  const handleSyncGoogleMerchant = async () => {
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) return;
+    setMerchantSyncing(true);
+    setMerchantMessage("");
+    try {
+      const result = await syncAdminGoogleMerchant(token);
+      setMerchantMessage(
+        result?.message ||
+          `Google Merchant senkron tamamlandı. Başarılı: ${result.success}, Hatalı: ${result.failed}`
+      );
+    } catch (err) {
+      setMerchantMessage(err instanceof Error ? err.message : "Google Merchant senkronu başarısız.");
+    } finally {
+      setMerchantSyncing(false);
     }
   };
 
@@ -1295,30 +1340,82 @@ export function Admin() {
               {settingsLoading ? (
                 <p className="text-sm text-gray-500">Ayarlar yükleniyor...</p>
               ) : (
-                <form onSubmit={handleSaveSettings} className="max-w-xl bg-white border border-[#E7E2D8] rounded-lg p-4 space-y-3">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Site İsmi</label>
-                    <input
-                      type="text"
-                      value={siteNameInput}
-                      onChange={(e) => setSiteNameInput(e.target.value)}
-                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                      maxLength={80}
-                    />
+                <div className="max-w-xl space-y-4">
+                  <form onSubmit={handleSaveSettings} className="bg-white border border-[#E7E2D8] rounded-lg p-4 space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Site İsmi</label>
+                      <input
+                        type="text"
+                        value={siteNameInput}
+                        onChange={(e) => setSiteNameInput(e.target.value)}
+                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                        maxLength={80}
+                      />
+                    </div>
+                    {settingsMessage ? (
+                      <p className={`text-sm ${settingsMessage.includes("güncellendi") ? "text-green-700" : "text-red-600"}`}>
+                        {settingsMessage}
+                      </p>
+                    ) : null}
+                    <button
+                      type="submit"
+                      disabled={isSavingSettings}
+                      className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
+                    >
+                      {isSavingSettings ? "Kaydediliyor..." : "Kaydet"}
+                    </button>
+                  </form>
+
+                  <div className="bg-white border border-[#E7E2D8] rounded-lg p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-medium">Google Merchant Center</h3>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Ürünleri Content API ile Merchant Center hesabına gönderir.
+                        </p>
+                      </div>
+                    </div>
+
+                    {merchantLoading ? (
+                      <p className="text-sm text-gray-500">Merchant durumu yükleniyor...</p>
+                    ) : merchantStatus ? (
+                      <div className="text-sm space-y-1">
+                        <p>
+                          Durum:{" "}
+                          <span className={merchantStatus.enabled ? "text-green-700" : "text-red-600"}>
+                            {merchantStatus.enabled ? "Aktif" : "Pasif"}
+                          </span>
+                        </p>
+                        <p>
+                          Konfigürasyon:{" "}
+                          <span className={merchantStatus.configured ? "text-green-700" : "text-red-600"}>
+                            {merchantStatus.configured ? "Hazır" : "Eksik"}
+                          </span>
+                        </p>
+                        <p>Merchant ID: {merchantStatus.accountId || "-"}</p>
+                        <p>
+                          Ülke/Dil/Para: {merchantStatus.targetCountry} / {merchantStatus.contentLanguage} /{" "}
+                          {merchantStatus.currency}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {merchantMessage ? (
+                      <p className={`text-sm ${merchantMessage.toLowerCase().includes("tamamlandı") ? "text-green-700" : "text-red-600"}`}>
+                        {merchantMessage}
+                      </p>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={handleSyncGoogleMerchant}
+                      disabled={merchantSyncing || !merchantStatus?.enabled || !merchantStatus?.configured}
+                      className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
+                    >
+                      {merchantSyncing ? "Google'a Gönderiliyor..." : "Ürünleri Google Merchant'a Gönder"}
+                    </button>
                   </div>
-                  {settingsMessage ? (
-                    <p className={`text-sm ${settingsMessage.includes("güncellendi") ? "text-green-700" : "text-red-600"}`}>
-                      {settingsMessage}
-                    </p>
-                  ) : null}
-                  <button
-                    type="submit"
-                    disabled={isSavingSettings}
-                    className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
-                  >
-                    {isSavingSettings ? "Kaydediliyor..." : "Kaydet"}
-                  </button>
-                </form>
+                </div>
               )}
             </div>
           )}

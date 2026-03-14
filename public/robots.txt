@@ -6,6 +6,23 @@ Disallow: /sepet
 Disallow: /favoriler
 Disallow: /odeme
 Disallow: /akalin1453
-Disallow: /api/
+Disallow: /api/admin/
+Disallow: /api/auth/
+
+User-agent: Googlebot
+Allow: /
+Allow: /api/products/
+Allow: /api/uploads/
+Allow: /uploads/
+Disallow: /api/admin/
+Disallow: /api/auth/
+
+User-agent: Googlebot-Image
+Allow: /
+Allow: /api/products/
+Allow: /api/uploads/
+Allow: /uploads/
+Disallow: /api/admin/
+Disallow: /api/auth/
 
 Sitemap: https://stilbagsfashion.com/sitemap.xml

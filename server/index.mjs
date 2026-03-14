@@ -393,6 +393,12 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
   };
 }
 
+function buildGoogleMerchantProductResourceId(offerId) {
+  return `online:${GOOGLE_MERCHANT_CONTENT_LANGUAGE.toLowerCase()}:${GOOGLE_MERCHANT_TARGET_COUNTRY.toUpperCase()}:${String(
+    offerId ?? ""
+  ).trim()}`;
+}
+
 async function syncProductsToGoogleMerchant(req) {
   const [rows] = await pool.query(
     `
@@ -415,6 +421,29 @@ async function syncProductsToGoogleMerchant(req) {
 
   for (let start = 0; start < products.length; start += chunkSize) {
     const chunk = products.slice(start, start + chunkSize);
+    const deleteEntries = chunk.map((product, index) => ({
+      batchId: start + index + 1,
+      merchantId: GOOGLE_MERCHANT_ACCOUNT_ID,
+      method: "delete",
+      productId: buildGoogleMerchantProductResourceId(product.id),
+    }));
+
+    const deleteResponse = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ entries: deleteEntries }),
+    });
+
+    const deleteData = await deleteResponse.json().catch(() => ({}));
+    if (!deleteResponse.ok) {
+      throw new Error(
+        `Google Merchant silme hatasi (${deleteResponse.status}): ${JSON.stringify(deleteData).slice(0, 500)}`
+      );
+    }
+
     const entries = chunk.map((product, index) =>
       mapProductToGoogleMerchantEntry(req, product, start + index)
     );

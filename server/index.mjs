@@ -271,8 +271,19 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
   const title = String(product.name ?? "").trim().slice(0, 150);
   const description = String(product.description ?? "").trim().slice(0, 5000) || title;
   const price = Number(product.price ?? 0);
-  const productUrl = `${baseUrl}/product/${encodeURIComponent(offerId)}`;
-  const imageUrl = toPublicUrl(baseUrl, product.image);
+  const storefrontUrl = `${baseUrl}/product/${encodeURIComponent(offerId)}`;
+  const productUrl = `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}`;
+  const rawImageCandidates = [
+    ...(Array.isArray(product.images) ? product.images : []),
+    product.image,
+  ]
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean);
+  const nonProxyCandidates = rawImageCandidates.filter(
+    (item) => !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(item)
+  );
+  const selectedCandidates = nonProxyCandidates.length > 0 ? nonProxyCandidates : rawImageCandidates;
+  const imageUrl = toPublicUrl(baseUrl, selectedCandidates[0] ?? "");
 
   return {
     batchId: index + 1,
@@ -284,9 +295,10 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
       description,
       link: productUrl,
       imageLink: imageUrl,
-      additionalImageLinks: Array.isArray(product.images)
-        ? product.images.map((item) => toPublicUrl(baseUrl, item)).filter(Boolean).slice(0, 10)
-        : [],
+      additionalImageLinks: selectedCandidates
+        .slice(1, 11)
+        .map((item) => toPublicUrl(baseUrl, item))
+        .filter(Boolean),
       contentLanguage: GOOGLE_MERCHANT_CONTENT_LANGUAGE.toLowerCase(),
       targetCountry: GOOGLE_MERCHANT_TARGET_COUNTRY.toUpperCase(),
       channel: "online",
@@ -299,6 +311,7 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
       brand: GOOGLE_MERCHANT_BRAND,
       productTypes: product.category ? [String(product.category)] : [],
       identifierExists: false,
+      canonicalLink: storefrontUrl,
     },
   };
 }
@@ -3637,6 +3650,104 @@ app.get("/api/products/:id/image/:index", async (req, res) => {
     return sendImageSourceResponse(res, selected);
   } catch (error) {
     return res.status(500).json({ message: "Failed to fetch product image." });
+  }
+});
+
+app.get("/api/merchant/product/:id", async (req, res) => {
+  try {
+    const productId = String(req.params.id ?? "").trim();
+    if (!productId) {
+      return res.status(400).send("Geçersiz ürün.");
+    }
+
+    const [rows] = await pool.query(
+      `
+      SELECT id, name, price, image, images_json, category_id, description
+      FROM products
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [productId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).send("Ürün bulunamadı.");
+    }
+
+    const product = mapProductRow(rows[0]);
+    const baseUrl = buildSitemapBaseUrl(req);
+    const storefrontUrl = `${baseUrl}/product/${encodeURIComponent(product.id)}`;
+    const imageCandidates = [
+      ...(Array.isArray(product.images) ? product.images : []),
+      product.image,
+    ]
+      .map((item) => String(item ?? "").trim())
+      .filter(Boolean);
+    const selectedImage =
+      imageCandidates.find((item) => !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(item)) ??
+      imageCandidates[0] ??
+      "";
+    const imageUrl = toPublicUrl(baseUrl, selectedImage);
+
+    const safeTitle = escapeHtml(String(product.name ?? "Ürün"));
+    const safeDesc = escapeHtml(
+      String(product.description ?? "").trim() || `${safeTitle} - ${GOOGLE_MERCHANT_BRAND}`
+    );
+    const safePrice = Number(product.price ?? 0).toFixed(2);
+    const safeBrand = escapeHtml(String(GOOGLE_MERCHANT_BRAND ?? DEFAULT_SITE_NAME));
+    const safeCategory = escapeHtml(String(product.category ?? ""));
+    const safeImage = escapeHtml(imageUrl);
+    const safeStorefrontUrl = escapeHtml(storefrontUrl);
+
+    const html = `<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${safeTitle} | ${safeBrand}</title>
+  <meta name="description" content="${safeDesc}" />
+  <link rel="canonical" href="${safeStorefrontUrl}" />
+  <meta property="og:type" content="product" />
+  <meta property="og:title" content="${safeTitle}" />
+  <meta property="og:description" content="${safeDesc}" />
+  <meta property="og:url" content="${safeStorefrontUrl}" />
+  ${safeImage ? `<meta property="og:image" content="${safeImage}" />` : ""}
+</head>
+<body style="font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:32px auto;padding:0 16px;color:#111;">
+  <h1 style="margin:0 0 12px;">${safeTitle}</h1>
+  <p style="margin:0 0 16px;font-size:18px;"><strong>${safePrice} ${GOOGLE_MERCHANT_CURRENCY.toUpperCase()}</strong></p>
+  ${safeCategory ? `<p style="margin:0 0 12px;color:#666;">Kategori: ${safeCategory}</p>` : ""}
+  ${safeImage ? `<img src="${safeImage}" alt="${safeTitle}" style="max-width:360px;width:100%;height:auto;display:block;border-radius:8px;margin:0 0 16px;" />` : ""}
+  <p style="line-height:1.6;">${safeDesc}</p>
+  <p style="margin-top:20px;">
+    <a href="${safeStorefrontUrl}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;padding:10px 14px;border-radius:6px;">
+      Ürünü sitede aç
+    </a>
+  </p>
+  <script type="application/ld+json">
+  ${JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: String(product.name ?? ""),
+    image: imageUrl ? [imageUrl] : [],
+    description: String(product.description ?? ""),
+    brand: { "@type": "Brand", name: GOOGLE_MERCHANT_BRAND },
+    offers: {
+      "@type": "Offer",
+      url: storefrontUrl,
+      priceCurrency: GOOGLE_MERCHANT_CURRENCY.toUpperCase(),
+      price: Number(product.price ?? 0).toFixed(2),
+      availability: "https://schema.org/InStock",
+      itemCondition: "https://schema.org/NewCondition",
+    },
+  })}
+  </script>
+</body>
+</html>`;
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.status(200).send(html);
+  } catch {
+    return res.status(500).send("Merchant ürün sayfası oluşturulamadı.");
   }
 });
 

@@ -69,8 +69,16 @@ app.use((req, res, next) => {
 
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
-app.use("/uploads", express.static(uploadsDir, { maxAge: "365d", immutable: true }));
-app.use("/api/uploads", express.static(uploadsDir, { maxAge: "365d", immutable: true }));
+const staticUploadOptions = {
+  maxAge: "365d",
+  immutable: true,
+  setHeaders: (res) => {
+    res.setHeader("X-Robots-Tag", "all");
+    res.setHeader("Content-Disposition", "inline");
+  },
+};
+app.use("/uploads", express.static(uploadsDir, staticUploadOptions));
+app.use("/api/uploads", express.static(uploadsDir, staticUploadOptions));
 
 const allowedUploadMimeTypes = new Set([
   "image/jpeg",
@@ -329,7 +337,12 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
   const title = String(product.name ?? "").trim().slice(0, 150);
   const description = String(product.description ?? "").trim().slice(0, 5000) || title;
   const price = Number(product.price ?? 0);
-  const productUrl = `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}`;
+  const merchantVersion = buildMerchantProductVersion(product);
+  const productUrl = appendUrlQueryParam(
+    `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}`,
+    "gmc",
+    merchantVersion
+  );
   const rawImageCandidates = [
     ...(Array.isArray(product.images) ? product.images : []),
     product.image,
@@ -341,24 +354,32 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
   );
   const selectedCandidates = nonProxyCandidates.length > 0 ? nonProxyCandidates : rawImageCandidates;
   const toMerchantImageUrl = (rawValue, imageIndex = 0) => {
-    const value = String(rawValue ?? "").trim();
+    const value = normalizeMerchantImagePath(rawValue);
     if (!value) {
-      return `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`;
+      return appendUrlQueryParam(
+        `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`,
+        "gmcimg",
+        merchantVersion
+      );
     }
     if (value.startsWith("/api/uploads/") || value.startsWith("/uploads/")) {
-      return toPublicUrl(baseUrl, value);
+      return appendUrlQueryParam(toPublicUrl(baseUrl, value), "gmcimg", merchantVersion);
     }
     if (/^https?:\/\//i.test(value)) {
-      return value;
+      return appendUrlQueryParam(value, "gmcimg", merchantVersion);
     }
     if (
       /^\/api\/products\/[^/]+\/image\/\d+$/i.test(value) ||
       /^data:/i.test(value) ||
       /^blob:/i.test(value)
     ) {
-      return `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`;
+      return appendUrlQueryParam(
+        `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`,
+        "gmcimg",
+        merchantVersion
+      );
     }
-    return toPublicUrl(baseUrl, value);
+    return appendUrlQueryParam(toPublicUrl(baseUrl, value), "gmcimg", merchantVersion);
   };
   const imageUrl = toMerchantImageUrl(selectedCandidates[0], 0);
   const additionalImageLinks = selectedCandidates
@@ -633,6 +654,50 @@ function toPublicUrl(baseUrl, rawValue) {
   if (value.startsWith("//")) return `https:${value}`;
   if (value.startsWith("/")) return `${baseUrl}${value}`;
   return `${baseUrl}/${value.replace(/^\/+/, "")}`;
+}
+
+function normalizeMerchantImagePath(rawValue) {
+  const value = String(rawValue ?? "").trim();
+  if (!value) return "";
+  if (value.startsWith("/api/uploads/")) {
+    return `/uploads/${value.replace(/^\/api\/uploads\//, "")}`;
+  }
+  return value;
+}
+
+function appendUrlQueryParam(url, key, value) {
+  const normalizedUrl = String(url ?? "").trim();
+  const normalizedKey = String(key ?? "").trim();
+  const normalizedValue = String(value ?? "").trim();
+  if (!normalizedUrl || !normalizedKey || !normalizedValue) {
+    return normalizedUrl;
+  }
+
+  const hashIndex = normalizedUrl.indexOf("#");
+  const base = hashIndex >= 0 ? normalizedUrl.slice(0, hashIndex) : normalizedUrl;
+  const hash = hashIndex >= 0 ? normalizedUrl.slice(hashIndex) : "";
+  const separator = base.includes("?") ? "&" : "?";
+  return `${base}${separator}${encodeURIComponent(normalizedKey)}=${encodeURIComponent(
+    normalizedValue
+  )}${hash}`;
+}
+
+function buildMerchantProductVersion(product) {
+  const images = Array.isArray(product?.images)
+    ? product.images.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+  const seed = JSON.stringify({
+    id: String(product?.id ?? "").trim(),
+    name: String(product?.name ?? "").trim(),
+    price: Number(product?.price ?? 0).toFixed(2),
+    image: String(product?.image ?? "").trim(),
+    images,
+    category: String(product?.category ?? "").trim(),
+    description: String(product?.description ?? "").trim(),
+    isNew: Boolean(product?.isNew),
+    isBestseller: Boolean(product?.isBestseller),
+  });
+  return sha256(seed).slice(0, 16);
 }
 
 function getWhatsappMessagesEndpoint() {
@@ -3924,9 +3989,14 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
     }
 
     const product = mapProductRow(rows[0]);
+    const merchantVersion = buildMerchantProductVersion(product);
     const baseUrl = buildSitemapBaseUrl(req);
     const storefrontUrl = `${baseUrl}/product/${encodeURIComponent(product.id)}`;
-    const merchantUrl = `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}`;
+    const merchantUrl = appendUrlQueryParam(
+      `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}`,
+      "gmc",
+      merchantVersion
+    );
     const imageCandidates = [
       ...(Array.isArray(product.images) ? product.images : []),
       product.image,
@@ -3942,8 +4012,16 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
       !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(selectedImage) &&
       !/^data:/i.test(selectedImage) &&
       !/^blob:/i.test(selectedImage)
-        ? toPublicUrl(baseUrl, selectedImage)
-        : `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}/image/0`;
+        ? appendUrlQueryParam(
+            toPublicUrl(baseUrl, normalizeMerchantImagePath(selectedImage)),
+            "gmcimg",
+            merchantVersion
+          )
+        : appendUrlQueryParam(
+            `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}/image/0`,
+            "gmcimg",
+            merchantVersion
+          );
 
     const safeTitle = escapeHtml(String(product.name ?? "Ürün"));
     const safeDesc = escapeHtml(
@@ -3955,6 +4033,8 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
     const safeImage = escapeHtml(imageUrl);
     const safeStorefrontUrl = escapeHtml(storefrontUrl);
     const safeMerchantUrl = escapeHtml(merchantUrl);
+
+    res.setHeader("X-Robots-Tag", "all");
 
     const html = `<!doctype html>
 <html lang="tr">
@@ -4036,6 +4116,7 @@ app.get(["/api/merchant/product/:id/image/:index", "/merchant/product/:id/image/
       return res.status(404).json({ message: "Image not found." });
     }
 
+    res.setHeader("X-Robots-Tag", "all");
     return sendImageSourceDirect(res, candidate);
   } catch {
     return res.status(500).json({ message: "Failed to fetch merchant image." });

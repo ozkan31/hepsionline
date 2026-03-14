@@ -283,10 +283,21 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
     (item) => !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(item)
   );
   const selectedCandidates = nonProxyCandidates.length > 0 ? nonProxyCandidates : rawImageCandidates;
-  const imageUrl = `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/0`;
+  const toMerchantImageUrl = (rawValue, imageIndex = 0) => {
+    const value = String(rawValue ?? "").trim();
+    if (!value) {
+      return `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`;
+    }
+    if (/^\/api\/products\/[^/]+\/image\/\d+$/i.test(value)) {
+      return `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`;
+    }
+    return toPublicUrl(baseUrl, value);
+  };
+  const imageUrl = toMerchantImageUrl(selectedCandidates[0], 0);
   const additionalImageLinks = selectedCandidates
     .slice(1, 11)
-    .map((_, imageIndex) => `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${imageIndex + 1}`);
+    .map((item, relativeIndex) => toMerchantImageUrl(item, relativeIndex + 1))
+    .filter(Boolean);
 
   return {
     batchId: index + 1,

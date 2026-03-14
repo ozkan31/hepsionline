@@ -507,7 +507,7 @@ export function Admin() {
       const result = await syncAdminGoogleMerchant(token);
       setMerchantMessage(
         result?.message ||
-          `Google Merchant senkron tamamlandı. Başarılı: ${result.success}, Hatalı: ${result.failed}`
+          `Google Merchant senkron tamamlandı. Başarılı: ${result.success}, Silinen: ${result.deleted}, Hatalı: ${result.failed}`
       );
     } catch (err) {
       setMerchantMessage(err instanceof Error ? err.message : "Google Merchant senkronu başarısız.");

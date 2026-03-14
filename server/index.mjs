@@ -399,6 +399,94 @@ function buildGoogleMerchantProductResourceId(offerId) {
   ).trim()}`;
 }
 
+async function batchDeleteGoogleMerchantProducts(accessToken, offerIds) {
+  const uniqueOfferIds = Array.from(new Set(offerIds.map((item) => String(item ?? "").trim()).filter(Boolean)));
+  if (uniqueOfferIds.length === 0) {
+    return { deleted: 0, failed: 0, errors: [] };
+  }
+
+  const endpoint = "https://shoppingcontent.googleapis.com/content/v2.1/products/batch";
+  const chunkSize = 100;
+  let deleted = 0;
+  let failed = 0;
+  const errors = [];
+
+  for (let start = 0; start < uniqueOfferIds.length; start += chunkSize) {
+    const chunk = uniqueOfferIds.slice(start, start + chunkSize);
+    const entries = chunk.map((offerId, index) => ({
+      batchId: start + index + 1,
+      merchantId: GOOGLE_MERCHANT_ACCOUNT_ID,
+      method: "delete",
+      productId: buildGoogleMerchantProductResourceId(offerId),
+    }));
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ entries }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(
+        `Google Merchant silme hatasi (${response.status}): ${JSON.stringify(data).slice(0, 500)}`
+      );
+    }
+
+    const responseEntries = Array.isArray(data?.entries) ? data.entries : [];
+    if (responseEntries.length === 0) {
+      deleted += chunk.length;
+      continue;
+    }
+
+    for (const entry of responseEntries) {
+      const entryErrors = Array.isArray(entry?.errors?.errors) ? entry.errors.errors : [];
+      if (entryErrors.length === 0) {
+        deleted += 1;
+        continue;
+      }
+
+      const isNotFound = entryErrors.some((item) => {
+        const reason = String(item?.reason ?? "").toLowerCase();
+        const message = String(item?.message ?? "").toLowerCase();
+        return reason === "notfound" || message.includes("not found");
+      });
+
+      if (isNotFound) {
+        deleted += 1;
+        continue;
+      }
+
+      failed += 1;
+      errors.push({
+        offerId: String(entry?.productId ?? ""),
+        message: entryErrors.map((item) => item.message).join(" | "),
+      });
+    }
+  }
+
+  return { deleted, failed, errors };
+}
+
+async function listAllGoogleMerchantProducts() {
+  let pageToken = "";
+  const allProducts = [];
+
+  for (;;) {
+    const result = await listGoogleMerchantProducts({ maxResults: 250, pageToken });
+    allProducts.push(...result.products);
+    if (!result.nextPageToken) {
+      break;
+    }
+    pageToken = result.nextPageToken;
+  }
+
+  return allProducts;
+}
+
 async function syncProductsToGoogleMerchant(req) {
   const [rows] = await pool.query(
     `
@@ -408,41 +496,41 @@ async function syncProductsToGoogleMerchant(req) {
     `
   );
   const products = rows.map(mapProductRow).filter((item) => String(item?.id ?? "").trim());
-  if (products.length === 0) {
-    return { total: 0, success: 0, failed: 0, errors: [] };
-  }
-
   const accessToken = await getGoogleMerchantAccessToken();
-  const endpoint = "https://shoppingcontent.googleapis.com/content/v2.1/products/batch";
-  const chunkSize = 100;
+  const merchantProducts = await listAllGoogleMerchantProducts();
+  const dbOfferIds = new Set(products.map((item) => String(item.id ?? "").trim()).filter(Boolean));
+  const orphanOfferIds = merchantProducts
+    .map((item) => String(item.offerId ?? "").trim())
+    .filter((offerId) => offerId && !dbOfferIds.has(offerId));
+
   let success = 0;
   let failed = 0;
+  let deleted = 0;
   const errors = [];
+
+  if (orphanOfferIds.length > 0) {
+    const deleteSummary = await batchDeleteGoogleMerchantProducts(accessToken, orphanOfferIds);
+    deleted += deleteSummary.deleted;
+    failed += deleteSummary.failed;
+    errors.push(...deleteSummary.errors);
+  }
+
+  if (products.length === 0) {
+    return { total: 0, success: 0, failed, deleted, errors };
+  }
+
+  const endpoint = "https://shoppingcontent.googleapis.com/content/v2.1/products/batch";
+  const chunkSize = 100;
 
   for (let start = 0; start < products.length; start += chunkSize) {
     const chunk = products.slice(start, start + chunkSize);
-    const deleteEntries = chunk.map((product, index) => ({
-      batchId: start + index + 1,
-      merchantId: GOOGLE_MERCHANT_ACCOUNT_ID,
-      method: "delete",
-      productId: buildGoogleMerchantProductResourceId(product.id),
-    }));
-
-    const deleteResponse = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ entries: deleteEntries }),
-    });
-
-    const deleteData = await deleteResponse.json().catch(() => ({}));
-    if (!deleteResponse.ok) {
-      throw new Error(
-        `Google Merchant silme hatasi (${deleteResponse.status}): ${JSON.stringify(deleteData).slice(0, 500)}`
-      );
-    }
+    const deleteSummary = await batchDeleteGoogleMerchantProducts(
+      accessToken,
+      chunk.map((product) => product.id)
+    );
+    deleted += deleteSummary.deleted;
+    failed += deleteSummary.failed;
+    errors.push(...deleteSummary.errors);
 
     const entries = chunk.map((product, index) =>
       mapProductToGoogleMerchantEntry(req, product, start + index)
@@ -487,6 +575,7 @@ async function syncProductsToGoogleMerchant(req) {
     total: products.length,
     success,
     failed,
+    deleted,
     errors,
   };
 }
@@ -2959,7 +3048,7 @@ app.post("/api/admin/google-merchant/sync", requireAdminAuth, async (req, res) =
       ok: true,
       ...summary,
       accountId: GOOGLE_MERCHANT_ACCOUNT_ID,
-      message: `Google Merchant senkron tamamlandı. Başarılı: ${summary.success}, Hatalı: ${summary.failed}`,
+      message: `Google Merchant senkron tamamlandı. Başarılı: ${summary.success}, Silinen: ${summary.deleted}, Hatalı: ${summary.failed}`,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google Merchant senkronu başarısız.";

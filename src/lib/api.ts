@@ -433,6 +433,7 @@ export async function syncAdminGoogleMerchant(token: string): Promise<{
   ok: boolean;
   total: number;
   success: number;
+  deleted: number;
   failed: number;
   message: string;
 }> {
@@ -448,6 +449,7 @@ export async function syncAdminGoogleMerchant(token: string): Promise<{
     ok: boolean;
     total: number;
     success: number;
+    deleted: number;
     failed: number;
     message: string;
   }>(response);

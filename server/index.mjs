@@ -289,7 +289,6 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
   const title = String(product.name ?? "").trim().slice(0, 150);
   const description = String(product.description ?? "").trim().slice(0, 5000) || title;
   const price = Number(product.price ?? 0);
-  const storefrontUrl = `${baseUrl}/product/${encodeURIComponent(offerId)}`;
   const productUrl = `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}`;
   const rawImageCandidates = [
     ...(Array.isArray(product.images) ? product.images : []),
@@ -350,7 +349,6 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
       brand: GOOGLE_MERCHANT_BRAND,
       productTypes: product.category ? [String(product.category)] : [],
       identifierExists: false,
-      canonicalLink: storefrontUrl,
     },
   };
 }
@@ -3770,6 +3768,7 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
     const product = mapProductRow(rows[0]);
     const baseUrl = buildSitemapBaseUrl(req);
     const storefrontUrl = `${baseUrl}/product/${encodeURIComponent(product.id)}`;
+    const merchantUrl = `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}`;
     const imageCandidates = [
       ...(Array.isArray(product.images) ? product.images : []),
       product.image,
@@ -3791,6 +3790,7 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
     const safeCategory = escapeHtml(String(product.category ?? ""));
     const safeImage = escapeHtml(imageUrl);
     const safeStorefrontUrl = escapeHtml(storefrontUrl);
+    const safeMerchantUrl = escapeHtml(merchantUrl);
 
     const html = `<!doctype html>
 <html lang="tr">
@@ -3799,11 +3799,11 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${safeTitle} | ${safeBrand}</title>
   <meta name="description" content="${safeDesc}" />
-  <link rel="canonical" href="${safeStorefrontUrl}" />
+  <link rel="canonical" href="${safeMerchantUrl}" />
   <meta property="og:type" content="product" />
   <meta property="og:title" content="${safeTitle}" />
   <meta property="og:description" content="${safeDesc}" />
-  <meta property="og:url" content="${safeStorefrontUrl}" />
+  <meta property="og:url" content="${safeMerchantUrl}" />
   ${safeImage ? `<meta property="og:image" content="${safeImage}" />` : ""}
 </head>
 <body style="font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:32px auto;padding:0 16px;color:#111;">
@@ -3822,17 +3822,17 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
     "@context": "https://schema.org",
     "@type": "Product",
     name: String(product.name ?? ""),
-    image: imageUrl ? [imageUrl] : [],
-    description: String(product.description ?? ""),
-    brand: { "@type": "Brand", name: GOOGLE_MERCHANT_BRAND },
-    offers: {
-      "@type": "Offer",
-      url: storefrontUrl,
-      priceCurrency: GOOGLE_MERCHANT_CURRENCY.toUpperCase(),
-      price: Number(product.price ?? 0).toFixed(2),
-      availability: "https://schema.org/InStock",
-      itemCondition: "https://schema.org/NewCondition",
-    },
+      image: imageUrl ? [imageUrl] : [],
+      description: String(product.description ?? ""),
+      brand: { "@type": "Brand", name: GOOGLE_MERCHANT_BRAND },
+      offers: {
+        "@type": "Offer",
+        url: merchantUrl,
+        priceCurrency: GOOGLE_MERCHANT_CURRENCY.toUpperCase(),
+        price: Number(product.price ?? 0).toFixed(2),
+        availability: "https://schema.org/InStock",
+        itemCondition: "https://schema.org/NewCondition",
+      },
   })}
   </script>
 </body>

@@ -283,7 +283,10 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
     (item) => !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(item)
   );
   const selectedCandidates = nonProxyCandidates.length > 0 ? nonProxyCandidates : rawImageCandidates;
-  const imageUrl = toPublicUrl(baseUrl, selectedCandidates[0] ?? "");
+  const imageUrl = `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/0`;
+  const additionalImageLinks = selectedCandidates
+    .slice(1, 11)
+    .map((_, imageIndex) => `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${imageIndex + 1}`);
 
   return {
     batchId: index + 1,
@@ -295,10 +298,7 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
       description,
       link: productUrl,
       imageLink: imageUrl,
-      additionalImageLinks: selectedCandidates
-        .slice(1, 11)
-        .map((item) => toPublicUrl(baseUrl, item))
-        .filter(Boolean),
+      additionalImageLinks,
       contentLanguage: GOOGLE_MERCHANT_CONTENT_LANGUAGE.toLowerCase(),
       targetCountry: GOOGLE_MERCHANT_TARGET_COUNTRY.toUpperCase(),
       channel: "online",
@@ -1136,6 +1136,59 @@ function sendImageSourceResponse(res, source) {
 
   res.setHeader("Cache-Control", "no-store");
   return res.redirect(302, normalized.startsWith("/") ? normalized : `/${normalized}`);
+}
+
+function sendImageSourceDirect(res, source) {
+  const normalized = String(source ?? "").trim();
+  if (!normalized) {
+    return res.status(404).json({ message: "Image not found." });
+  }
+
+  const dataMatch = normalized.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (dataMatch) {
+    const mimeType = dataMatch[1];
+    const payload = dataMatch[2];
+    try {
+      const buffer = Buffer.from(payload, "base64");
+      res.setHeader("Content-Type", mimeType);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      return res.send(buffer);
+    } catch {
+      return res.status(400).json({ message: "Invalid image payload." });
+    }
+  }
+
+  if (isLocalUploadPath(normalized)) {
+    const relativePath = normalized
+      .replace(/^\/api\/uploads\//, "")
+      .replace(/^\/uploads\//, "")
+      .replace(/^\/+/, "");
+    const filePath = path.join(uploadsDir, relativePath);
+    if (relativePath && fs.existsSync(filePath)) {
+      const extension = path.extname(filePath).toLowerCase();
+      const mimeByExt = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+        ".avif": "image/avif",
+      };
+      const contentType = mimeByExt[extension];
+      if (contentType) {
+        res.setHeader("Content-Type", contentType);
+      }
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      return res.sendFile(filePath);
+    }
+  }
+
+  if (/^https?:\/\//i.test(normalized)) {
+    res.setHeader("Cache-Control", "no-store");
+    return res.redirect(302, normalized);
+  }
+
+  return sendImageSourceResponse(res, normalized);
 }
 
 function mapAddressRow(row) {
@@ -3686,7 +3739,7 @@ app.get("/api/merchant/product/:id", async (req, res) => {
       imageCandidates.find((item) => !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(item)) ??
       imageCandidates[0] ??
       "";
-    const imageUrl = toPublicUrl(baseUrl, selectedImage);
+    const imageUrl = `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}/image/0`;
 
     const safeTitle = escapeHtml(String(product.name ?? "Ürün"));
     const safeDesc = escapeHtml(
@@ -3748,6 +3801,39 @@ app.get("/api/merchant/product/:id", async (req, res) => {
     return res.status(200).send(html);
   } catch {
     return res.status(500).send("Merchant ürün sayfası oluşturulamadı.");
+  }
+});
+
+app.get("/api/merchant/product/:id/image/:index", async (req, res) => {
+  try {
+    const productId = String(req.params.id ?? "").trim();
+    const imageIndex = Math.max(0, Number(req.params.index) || 0);
+    if (!productId) {
+      return res.status(400).json({ message: "Product not found." });
+    }
+
+    const [rows] = await pool.query(
+      `
+      SELECT id, image, images_json
+      FROM products
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [productId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Product not found." });
+    }
+
+    const sources = parseProductImageSources(rows[0]);
+    const candidate = sources[imageIndex] || sources[0] || rows[0].image;
+    if (!candidate) {
+      return res.status(404).json({ message: "Image not found." });
+    }
+
+    return sendImageSourceDirect(res, candidate);
+  } catch {
+    return res.status(500).json({ message: "Failed to fetch merchant image." });
   }
 });
 

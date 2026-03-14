@@ -317,9 +317,7 @@ async function syncProductsToGoogleMerchant(req) {
   }
 
   const accessToken = await getGoogleMerchantAccessToken();
-  const endpoint = `https://shoppingcontent.googleapis.com/content/v2.1/${encodeURIComponent(
-    GOOGLE_MERCHANT_ACCOUNT_ID
-  )}/products/batch`;
+  const endpoint = "https://shoppingcontent.googleapis.com/content/v2.1/products/batch";
   const chunkSize = 100;
   let success = 0;
   let failed = 0;

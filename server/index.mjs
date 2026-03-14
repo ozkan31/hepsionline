@@ -346,6 +346,11 @@ async function syncProductsToGoogleMerchant(req) {
     }
 
     const responseEntries = Array.isArray(data?.entries) ? data.entries : [];
+    if (responseEntries.length === 0) {
+      throw new Error(
+        `Google Merchant API boş entry döndürdü. Yanıt: ${JSON.stringify(data).slice(0, 500)}`
+      );
+    }
     for (const entry of responseEntries) {
       if (entry?.errors?.errors?.length) {
         failed += 1;
@@ -364,6 +369,51 @@ async function syncProductsToGoogleMerchant(req) {
     success,
     failed,
     errors,
+  };
+}
+
+async function listGoogleMerchantProducts({ maxResults = 20, pageToken = "" } = {}) {
+  const accessToken = await getGoogleMerchantAccessToken();
+  const params = new URLSearchParams();
+  params.set("maxResults", String(Math.max(1, Math.min(250, Number(maxResults) || 20))));
+  if (String(pageToken ?? "").trim()) {
+    params.set("pageToken", String(pageToken).trim());
+  }
+
+  const endpoint = `https://shoppingcontent.googleapis.com/content/v2.1/${encodeURIComponent(
+    GOOGLE_MERCHANT_ACCOUNT_ID
+  )}/products?${params.toString()}`;
+
+  const response = await fetch(endpoint, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      `Google Merchant ürün listeleme hatası (${response.status}): ${JSON.stringify(data).slice(0, 500)}`
+    );
+  }
+
+  const resources = Array.isArray(data?.resources) ? data.resources : [];
+  return {
+    totalResources: resources.length,
+    nextPageToken: String(data?.nextPageToken ?? ""),
+    products: resources.map((item) => ({
+      id: String(item?.id ?? ""),
+      offerId: String(item?.offerId ?? ""),
+      title: String(item?.title ?? ""),
+      channel: String(item?.channel ?? ""),
+      targetCountry: String(item?.targetCountry ?? ""),
+      contentLanguage: String(item?.contentLanguage ?? ""),
+      availability: String(item?.availability ?? ""),
+      destinationStatuses: Array.isArray(item?.destinationStatuses) ? item.destinationStatuses : [],
+      issues: Array.isArray(item?.itemIssues) ? item.itemIssues : [],
+    })),
   };
 }
 
@@ -2734,10 +2784,38 @@ app.post("/api/admin/google-merchant/sync", requireAdminAuth, async (req, res) =
     return res.json({
       ok: true,
       ...summary,
+      accountId: GOOGLE_MERCHANT_ACCOUNT_ID,
       message: `Google Merchant senkron tamamlandı. Başarılı: ${summary.success}, Hatalı: ${summary.failed}`,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google Merchant senkronu başarısız.";
+    return res.status(500).json({ message });
+  }
+});
+
+app.get("/api/admin/google-merchant/products", requireAdminAuth, async (req, res) => {
+  try {
+    if (!GOOGLE_MERCHANT_ENABLED) {
+      return res.status(400).json({ message: "Google Merchant entegrasyonu aktif değil." });
+    }
+    if (!isGoogleMerchantConfigured) {
+      return res.status(500).json({
+        message:
+          "Google Merchant ayarları eksik. .env içine hesap id, service account email ve private key girin.",
+      });
+    }
+
+    const maxResults = Number(req.query?.maxResults ?? 20);
+    const pageToken = String(req.query?.pageToken ?? "").trim();
+    const result = await listGoogleMerchantProducts({ maxResults, pageToken });
+    return res.json({
+      ok: true,
+      accountId: GOOGLE_MERCHANT_ACCOUNT_ID,
+      ...result,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Google Merchant ürünleri alınamadı.";
     return res.status(500).json({ message });
   }
 });

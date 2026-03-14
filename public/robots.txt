@@ -15,16 +15,7 @@ Disallow:
 User-agent: Googlebot-Image
 Disallow:
 
-User-agent: Googlebot-image
-Disallow:
-
 User-agent: AdsBot-Google
-Disallow:
-
-User-agent: AdsBot-Google-Mobile
-Disallow:
-
-User-agent: APIs-Google
 Disallow:
 
 Sitemap: https://stilbagsfashion.com/sitemap.xml

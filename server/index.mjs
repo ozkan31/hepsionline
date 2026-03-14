@@ -290,7 +290,7 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
   const description = String(product.description ?? "").trim().slice(0, 5000) || title;
   const price = Number(product.price ?? 0);
   const storefrontUrl = `${baseUrl}/product/${encodeURIComponent(offerId)}`;
-  const productUrl = `${baseUrl}/merchant/product/${encodeURIComponent(offerId)}`;
+  const productUrl = `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}`;
   const rawImageCandidates = [
     ...(Array.isArray(product.images) ? product.images : []),
     product.image,
@@ -304,7 +304,7 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
   const toMerchantImageUrl = (rawValue, imageIndex = 0) => {
     const value = String(rawValue ?? "").trim();
     if (!value) {
-      return `${baseUrl}/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`;
+      return `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`;
     }
     if (value.startsWith("/api/uploads/") || value.startsWith("/uploads/")) {
       return toPublicUrl(baseUrl, value);
@@ -317,7 +317,7 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
       /^data:/i.test(value) ||
       /^blob:/i.test(value)
     ) {
-      return `${baseUrl}/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`;
+      return `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`;
     }
     return toPublicUrl(baseUrl, value);
   };
@@ -3780,7 +3780,7 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
       imageCandidates.find((item) => !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(item)) ??
       imageCandidates[0] ??
       "";
-    const imageUrl = `${baseUrl}/merchant/product/${encodeURIComponent(product.id)}/image/0`;
+    const imageUrl = `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}/image/0`;
 
     const safeTitle = escapeHtml(String(product.name ?? "Ürün"));
     const safeDesc = escapeHtml(

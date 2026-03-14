@@ -49,9 +49,27 @@ const uploadStorage = multer.diskStorage({
     cb(null, uploadsDir);
   },
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
-    const safeExt = ext.length <= 10 ? ext : ".jpg";
-    cb(null, `${Date.now()}-${crypto.randomUUID()}${safeExt}`);
+    const mime = String(file.mimetype || "").toLowerCase();
+    const normalizedExtByMime = {
+      "image/jpeg": ".jpg",
+      "image/jpg": ".jpg",
+      "image/pjpeg": ".jpg",
+      "image/png": ".png",
+      "image/webp": ".webp",
+      "image/gif": ".gif",
+      "image/bmp": ".bmp",
+      "image/avif": ".avif",
+      "image/heic": ".heic",
+      "image/heif": ".heif",
+      "image/svg+xml": ".svg",
+    };
+    const extFromMime = normalizedExtByMime[mime] || "";
+    const extFromName = path.extname(file.originalname || "").toLowerCase();
+    const safeExt = (extFromMime || (extFromName.length <= 10 ? extFromName : "") || ".jpg").replace(
+      /[^a-z0-9.]/gi,
+      ""
+    );
+    cb(null, `${Date.now()}-${crypto.randomUUID()}${safeExt || ".jpg"}`);
   },
 });
 const adminImageUpload = multer({
@@ -288,7 +306,13 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
     if (!value) {
       return `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`;
     }
-    if (/^\/api\/products\/[^/]+\/image\/\d+$/i.test(value)) {
+    if (
+      /^\/api\/products\/[^/]+\/image\/\d+$/i.test(value) ||
+      value.startsWith("/api/uploads/") ||
+      value.startsWith("/uploads/") ||
+      /^data:/i.test(value) ||
+      /^blob:/i.test(value)
+    ) {
       return `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`;
     }
     return toPublicUrl(baseUrl, value);
@@ -1180,10 +1204,12 @@ function sendImageSourceDirect(res, source) {
       const mimeByExt = {
         ".jpg": "image/jpeg",
         ".jpeg": "image/jpeg",
+        ".jfif": "image/jpeg",
         ".png": "image/png",
         ".webp": "image/webp",
         ".gif": "image/gif",
         ".avif": "image/avif",
+        ".bmp": "image/bmp",
       };
       const contentType = mimeByExt[extension];
       if (contentType) {

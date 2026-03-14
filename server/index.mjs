@@ -306,10 +306,14 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
     if (!value) {
       return `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`;
     }
+    if (value.startsWith("/api/uploads/") || value.startsWith("/uploads/")) {
+      return toPublicUrl(baseUrl, value);
+    }
+    if (/^https?:\/\//i.test(value)) {
+      return value;
+    }
     if (
       /^\/api\/products\/[^/]+\/image\/\d+$/i.test(value) ||
-      value.startsWith("/api/uploads/") ||
-      value.startsWith("/uploads/") ||
       /^data:/i.test(value) ||
       /^blob:/i.test(value)
     ) {

@@ -27,6 +27,46 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+function isGoogleCrawlerRequest(userAgent = "") {
+  const normalized = String(userAgent || "").toLowerCase();
+  return (
+    normalized.includes("googlebot") ||
+    normalized.includes("googlebot-image") ||
+    normalized.includes("adsbot-google") ||
+    normalized.includes("google-inspectiontool")
+  );
+}
+
+app.use((req, res, next) => {
+  const userAgent = String(req.get("user-agent") || "");
+  const shouldLogCrawlerRequest =
+    isGoogleCrawlerRequest(userAgent) &&
+    ["/robots.txt", "/sitemap.xml", "/api/uploads/", "/api/merchant/product/"].some((prefix) =>
+      req.path.startsWith(prefix)
+    );
+
+  if (!shouldLogCrawlerRequest) {
+    next();
+    return;
+  }
+
+  const startedAt = Date.now();
+  res.on("finish", () => {
+    const durationMs = Date.now() - startedAt;
+    console.info("Crawler request:", {
+      method: req.method,
+      path: req.originalUrl,
+      status: res.statusCode,
+      durationMs,
+      userAgent,
+      referer: String(req.get("referer") || ""),
+      ip: req.ip,
+    });
+  });
+
+  next();
+});
+
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use("/uploads", express.static(uploadsDir, { maxAge: "365d", immutable: true }));

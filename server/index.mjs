@@ -3819,7 +3819,13 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
       imageCandidates.find((item) => !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(item)) ??
       imageCandidates[0] ??
       "";
-    const imageUrl = `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}/image/0`;
+    const imageUrl =
+      selectedImage &&
+      !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(selectedImage) &&
+      !/^data:/i.test(selectedImage) &&
+      !/^blob:/i.test(selectedImage)
+        ? toPublicUrl(baseUrl, selectedImage)
+        : `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}/image/0`;
 
     const safeTitle = escapeHtml(String(product.name ?? "Ürün"));
     const safeDesc = escapeHtml(

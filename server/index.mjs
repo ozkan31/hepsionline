@@ -354,12 +354,17 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
     (item) => !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(item)
   );
   const selectedCandidates = nonProxyCandidates.length > 0 ? nonProxyCandidates : rawImageCandidates;
-  const toMerchantImageUrl = (_rawValue, imageIndex = 0) =>
-    appendUrlQueryParam(
+  const toMerchantImageUrl = (rawValue, imageIndex = 0) => {
+    const value = String(rawValue ?? "").trim();
+    if (isMerchantSafeDirectImageSource(value)) {
+      return appendUrlQueryParam(toPublicUrl(baseUrl, value), "gmcimg", merchantVersion);
+    }
+    return appendUrlQueryParam(
       `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`,
       "gmcimg",
       merchantVersion
     );
+  };
   const imageUrl = toMerchantImageUrl(selectedCandidates[0], 0);
   const additionalImageLinks = selectedCandidates
     .slice(1, 11)
@@ -650,6 +655,14 @@ function appendUrlQueryParam(url, key, value) {
   return `${base}${separator}${encodeURIComponent(normalizedKey)}=${encodeURIComponent(
     normalizedValue
   )}${hash}`;
+}
+
+function isMerchantSafeDirectImageSource(rawValue) {
+  const value = String(rawValue ?? "").trim();
+  if (!value) return false;
+  if (!isLocalUploadPath(value)) return false;
+  const extension = path.extname(value.split("?")[0]).toLowerCase();
+  return new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"]).has(extension);
 }
 
 function buildMerchantProductVersion(product) {
@@ -1459,8 +1472,12 @@ async function sendImageSourceAsMerchantJpeg(res, source) {
     res.setHeader("Cache-Control", "public, max-age=86400");
     res.setHeader("Content-Disposition", "inline");
     return res.send(outputBuffer);
-  } catch {
-    return res.status(500).json({ message: "Failed to normalize merchant image." });
+  } catch (error) {
+    console.error("Merchant image normalization failed:", {
+      source: normalized,
+      message: error?.message ?? String(error),
+    });
+    return sendImageSourceResponse(res, normalized);
   }
 }
 
@@ -4068,11 +4085,14 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
     ]
       .map((item) => String(item ?? "").trim())
       .filter(Boolean);
-    const imageUrl = appendUrlQueryParam(
-      `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}/image/0`,
-      "gmcimg",
-      merchantVersion
-    );
+    const directMerchantImage = imageCandidates.find((item) => isMerchantSafeDirectImageSource(item));
+    const imageUrl = directMerchantImage
+      ? appendUrlQueryParam(toPublicUrl(baseUrl, directMerchantImage), "gmcimg", merchantVersion)
+      : appendUrlQueryParam(
+          `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}/image/0`,
+          "gmcimg",
+          merchantVersion
+        );
 
     const safeTitle = escapeHtml(String(product.name ?? "Ürün"));
     const safeDesc = escapeHtml(

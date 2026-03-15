@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { JWT, OAuth2Client } from "google-auth-library";
+import sharp from "sharp";
 import { pool } from "./db.mjs";
 
 dotenv.config();
@@ -353,34 +354,12 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
     (item) => !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(item)
   );
   const selectedCandidates = nonProxyCandidates.length > 0 ? nonProxyCandidates : rawImageCandidates;
-  const toMerchantImageUrl = (rawValue, imageIndex = 0) => {
-    const value = normalizeMerchantImagePath(rawValue);
-    if (!value) {
-      return appendUrlQueryParam(
-        `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`,
-        "gmcimg",
-        merchantVersion
-      );
-    }
-    if (value.startsWith("/api/uploads/") || value.startsWith("/uploads/")) {
-      return appendUrlQueryParam(toPublicUrl(baseUrl, value), "gmcimg", merchantVersion);
-    }
-    if (/^https?:\/\//i.test(value)) {
-      return appendUrlQueryParam(value, "gmcimg", merchantVersion);
-    }
-    if (
-      /^\/api\/products\/[^/]+\/image\/\d+$/i.test(value) ||
-      /^data:/i.test(value) ||
-      /^blob:/i.test(value)
-    ) {
-      return appendUrlQueryParam(
-        `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`,
-        "gmcimg",
-        merchantVersion
-      );
-    }
-    return appendUrlQueryParam(toPublicUrl(baseUrl, value), "gmcimg", merchantVersion);
-  };
+  const toMerchantImageUrl = (_rawValue, imageIndex = 0) =>
+    appendUrlQueryParam(
+      `${baseUrl}/api/merchant/product/${encodeURIComponent(offerId)}/image/${Math.max(0, imageIndex)}`,
+      "gmcimg",
+      merchantVersion
+    );
   const imageUrl = toMerchantImageUrl(selectedCandidates[0], 0);
   const additionalImageLinks = selectedCandidates
     .slice(1, 11)
@@ -654,15 +633,6 @@ function toPublicUrl(baseUrl, rawValue) {
   if (value.startsWith("//")) return `https:${value}`;
   if (value.startsWith("/")) return `${baseUrl}${value}`;
   return `${baseUrl}/${value.replace(/^\/+/, "")}`;
-}
-
-function normalizeMerchantImagePath(rawValue) {
-  const value = String(rawValue ?? "").trim();
-  if (!value) return "";
-  if (value.startsWith("/api/uploads/")) {
-    return `/uploads/${value.replace(/^\/api\/uploads\//, "")}`;
-  }
-  return value;
 }
 
 function appendUrlQueryParam(url, key, value) {
@@ -1351,6 +1321,44 @@ function localUploadExists(value) {
   return fs.existsSync(filePath);
 }
 
+async function reencodeImageBufferToJpeg(buffer) {
+  return sharp(buffer, { animated: false })
+    .rotate()
+    .flatten({ background: "#ffffff" })
+    .jpeg({ quality: 90, mozjpeg: true })
+    .toBuffer();
+}
+
+async function normalizeUploadedImageFile(file) {
+  const originalPath = String(file?.path ?? "").trim();
+  if (!originalPath || !fs.existsSync(originalPath)) {
+    throw new Error("UPLOAD_FILE_MISSING");
+  }
+
+  const parsedPath = path.parse(originalPath);
+  const normalizedFilename = `${parsedPath.name}.jpg`;
+  const normalizedPath = path.join(parsedPath.dir, normalizedFilename);
+
+  const normalizedBuffer = await sharp(originalPath, { animated: false })
+    .rotate()
+    .flatten({ background: "#ffffff" })
+    .jpeg({ quality: 90, mozjpeg: true })
+    .toBuffer();
+
+  await fs.promises.writeFile(normalizedPath, normalizedBuffer);
+  if (normalizedPath !== originalPath && fs.existsSync(originalPath)) {
+    await fs.promises.unlink(originalPath).catch(() => {});
+  }
+
+  return {
+    ...file,
+    filename: normalizedFilename,
+    path: normalizedPath,
+    mimetype: "image/jpeg",
+    size: normalizedBuffer.length,
+  };
+}
+
 function resolveAdminImageSource(inputValue, productId, existingSources) {
   const value = String(inputValue ?? "").trim();
   if (!value) return "";
@@ -1401,8 +1409,60 @@ function sendImageSourceResponse(res, source) {
 function sendImageSourceDirect(res, source) {
   const normalized = String(source ?? "").trim();
   if (!normalized) {
+  return res.status(404).json({ message: "Image not found." });
+}
+
+async function sendImageSourceAsMerchantJpeg(res, source) {
+  const normalized = String(source ?? "").trim();
+  if (!normalized) {
     return res.status(404).json({ message: "Image not found." });
   }
+
+  try {
+    let inputBuffer = null;
+    let inputPath = "";
+
+    const dataMatch = normalized.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (dataMatch) {
+      inputBuffer = Buffer.from(dataMatch[2], "base64");
+    } else if (isLocalUploadPath(normalized)) {
+      const relativePath = normalized
+        .replace(/^\/api\/uploads\//, "")
+        .replace(/^\/uploads\//, "")
+        .replace(/^\/+/, "");
+      const filePath = path.join(uploadsDir, relativePath);
+      if (!relativePath || !fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "Image not found." });
+      }
+      inputPath = filePath;
+    } else if (/^https?:\/\//i.test(normalized)) {
+      const response = await fetch(normalized);
+      if (!response.ok) {
+        return res.status(404).json({ message: "Image not found." });
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      inputBuffer = Buffer.from(arrayBuffer);
+    } else {
+      const forwarded = normalized.startsWith("/") ? normalized : `/${normalized}`;
+      return res.redirect(302, forwarded);
+    }
+
+    const outputBuffer = inputPath
+      ? await sharp(inputPath, { animated: false })
+          .rotate()
+          .flatten({ background: "#ffffff" })
+          .jpeg({ quality: 90, mozjpeg: true })
+          .toBuffer()
+      : await reencodeImageBufferToJpeg(inputBuffer);
+
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("Content-Disposition", "inline");
+    return res.send(outputBuffer);
+  } catch {
+    return res.status(500).json({ message: "Failed to normalize merchant image." });
+  }
+}
 
   const dataMatch = normalized.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (dataMatch) {
@@ -3532,7 +3592,7 @@ app.get("/api/admin/users", requireAdminAuth, async (_req, res) => {
 });
 
 app.post("/api/admin/upload-images", requireAdminAuth, (req, res) => {
-  adminImageUpload.array("images", 15)(req, res, (error) => {
+  adminImageUpload.array("images", 15)(req, res, async (error) => {
     if (error) {
       if (error?.message === "INVALID_IMAGE_TYPE") {
         return res.status(400).json({ message: "Sadece görsel dosyaları yüklenebilir." });
@@ -3551,8 +3611,13 @@ app.post("/api/admin/upload-images", requireAdminAuth, (req, res) => {
       return res.status(400).json({ message: "Yüklenecek görsel bulunamadı." });
     }
 
-    const urls = files.map((file) => `/api/uploads/${file.filename}`);
-    return res.json({ urls });
+    try {
+      const normalizedFiles = await Promise.all(files.map((file) => normalizeUploadedImageFile(file)));
+      const urls = normalizedFiles.map((file) => `/api/uploads/${file.filename}`);
+      return res.json({ urls });
+    } catch {
+      return res.status(500).json({ message: "Görsel standart formata dönüştürülemedi." });
+    }
   });
 });
 
@@ -4003,25 +4068,11 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
     ]
       .map((item) => String(item ?? "").trim())
       .filter(Boolean);
-    const selectedImage =
-      imageCandidates.find((item) => !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(item)) ??
-      imageCandidates[0] ??
-      "";
-    const imageUrl =
-      selectedImage &&
-      !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(selectedImage) &&
-      !/^data:/i.test(selectedImage) &&
-      !/^blob:/i.test(selectedImage)
-        ? appendUrlQueryParam(
-            toPublicUrl(baseUrl, normalizeMerchantImagePath(selectedImage)),
-            "gmcimg",
-            merchantVersion
-          )
-        : appendUrlQueryParam(
-            `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}/image/0`,
-            "gmcimg",
-            merchantVersion
-          );
+    const imageUrl = appendUrlQueryParam(
+      `${baseUrl}/api/merchant/product/${encodeURIComponent(product.id)}/image/0`,
+      "gmcimg",
+      merchantVersion
+    );
 
     const safeTitle = escapeHtml(String(product.name ?? "Ürün"));
     const safeDesc = escapeHtml(
@@ -4117,7 +4168,7 @@ app.get(["/api/merchant/product/:id/image/:index", "/merchant/product/:id/image/
     }
 
     res.setHeader("X-Robots-Tag", "all");
-    return sendImageSourceDirect(res, candidate);
+    return sendImageSourceAsMerchantJpeg(res, candidate);
   } catch {
     return res.status(500).json({ message: "Failed to fetch merchant image." });
   }

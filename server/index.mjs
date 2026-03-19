@@ -23,6 +23,7 @@ const __dirname = path.dirname(__filename);
 const distDir = path.resolve(__dirname, "../dist");
 const distIndexHtml = path.join(distDir, "index.html");
 const uploadsDir = path.resolve(__dirname, "../uploads");
+const uploadVariantsDir = path.join(uploadsDir, "variants");
 const responseCache = new Map();
 const CACHE_TTL_MS = {
   settings: 5 * 60 * 1000,
@@ -31,9 +32,17 @@ const CACHE_TTL_MS = {
   productDetail: 60 * 1000,
   productMedia: 60 * 1000,
 };
+const IMAGE_VARIANT_SPECS = {
+  thumb: { width: 200, quality: 72 },
+  card: { width: 480, quality: 78 },
+  detail: { width: 960, quality: 84 },
+};
 
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
+}
+if (!fs.existsSync(uploadVariantsDir)) {
+  fs.mkdirSync(uploadVariantsDir, { recursive: true });
 }
 
 function getCachedResponse(cacheKey) {
@@ -1386,16 +1395,24 @@ function toDisplayImagePath(rawValue) {
   return normalized.replace(/^\/api\/uploads\//i, "/uploads/");
 }
 
-function buildResolvedProductImagePath(productId, rawValue, imageIndex = 0) {
+function buildResolvedProductImagePath(productId, rawValue, imageIndex = 0, variantKey = "original") {
   const normalized = toDisplayImagePath(rawValue);
   if (normalized) {
-    return normalized;
+    if (variantKey === "original" || !isLocalUploadPath(normalized)) {
+      return normalized;
+    }
+    const variantWebPath = getLocalUploadVariantWebPath(normalized, variantKey);
+    if (variantWebPath && localUploadExists(variantWebPath)) {
+      return variantWebPath;
+    }
+    return `${buildProductImageProxyPath(productId, imageIndex)}?variant=${encodeURIComponent(variantKey)}`;
   }
-  return buildProductImageProxyPath(productId, imageIndex);
+  const fallbackPath = buildProductImageProxyPath(productId, imageIndex);
+  return variantKey === "original" ? fallbackPath : `${fallbackPath}?variant=${encodeURIComponent(variantKey)}`;
 }
 
 function mapProductListRow(row) {
-  const cover = buildResolvedProductImagePath(row.id, row.image, 0);
+  const cover = buildResolvedProductImagePath(row.id, row.image, 0, "card");
   return {
     id: String(row.id),
     name: row.name,
@@ -1413,7 +1430,7 @@ function mapProductListRow(row) {
 }
 
 function mapAdminProductListRow(row) {
-  const proxyImage = buildResolvedProductImagePath(row.id, row.image, 0);
+  const proxyImage = buildResolvedProductImagePath(row.id, row.image, 0, "thumb");
   return {
     id: String(row.id),
     name: row.name,
@@ -1457,6 +1474,64 @@ function localUploadExists(value) {
   return fs.existsSync(filePath);
 }
 
+function resolveLocalUploadFileInfo(value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized || !isLocalUploadPath(normalized)) return null;
+  const relativePath = normalized
+    .replace(/^\/api\/uploads\//, "")
+    .replace(/^\/uploads\//, "")
+    .replace(/^\/+/, "");
+  if (!relativePath) return null;
+  return {
+    relativePath,
+    filePath: path.join(uploadsDir, relativePath),
+  };
+}
+
+function buildLocalUploadVariantRelativePath(rawValue, variantKey) {
+  const fileInfo = resolveLocalUploadFileInfo(rawValue);
+  const variantSpec = IMAGE_VARIANT_SPECS[variantKey];
+  if (!fileInfo || !variantSpec) return "";
+  const parsedPath = path.parse(fileInfo.relativePath);
+  const normalizedDir = String(parsedPath.dir ?? "").replace(/\\/g, "/");
+  const filename = `${parsedPath.name}__${variantKey}.webp`;
+  return [normalizedDir, filename].filter(Boolean).join("/");
+}
+
+function getLocalUploadVariantWebPath(rawValue, variantKey) {
+  const relativeVariantPath = buildLocalUploadVariantRelativePath(rawValue, variantKey);
+  return relativeVariantPath ? `/uploads/variants/${relativeVariantPath}` : "";
+}
+
+async function ensureLocalUploadVariant(rawValue, variantKey) {
+  const fileInfo = resolveLocalUploadFileInfo(rawValue);
+  const variantSpec = IMAGE_VARIANT_SPECS[variantKey];
+  if (!fileInfo || !variantSpec || !fs.existsSync(fileInfo.filePath)) {
+    return "";
+  }
+
+  const relativeVariantPath = buildLocalUploadVariantRelativePath(rawValue, variantKey);
+  if (!relativeVariantPath) {
+    return "";
+  }
+
+  const targetPath = path.join(uploadVariantsDir, relativeVariantPath);
+  if (!fs.existsSync(targetPath)) {
+    await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
+    await sharp(fileInfo.filePath, { animated: false })
+      .rotate()
+      .resize({
+        width: variantSpec.width,
+        withoutEnlargement: true,
+        fit: "inside",
+      })
+      .webp({ quality: variantSpec.quality })
+      .toFile(targetPath);
+  }
+
+  return `/uploads/variants/${relativeVariantPath.replace(/\\/g, "/")}`;
+}
+
 async function reencodeImageBufferToJpeg(buffer) {
   return sharp(buffer, { animated: false })
     .rotate()
@@ -1485,6 +1560,12 @@ async function normalizeUploadedImageFile(file) {
   if (normalizedPath !== originalPath && fs.existsSync(originalPath)) {
     await fs.promises.unlink(originalPath).catch(() => {});
   }
+
+  await Promise.all(
+    Object.keys(IMAGE_VARIANT_SPECS).map((variantKey) =>
+      ensureLocalUploadVariant(`/uploads/${normalizedFilename}`, variantKey).catch(() => "")
+    )
+  );
 
   return {
     ...file,
@@ -1545,64 +1626,8 @@ function sendImageSourceResponse(res, source) {
 function sendImageSourceDirect(res, source) {
   const normalized = String(source ?? "").trim();
   if (!normalized) {
-  return res.status(404).json({ message: "Image not found." });
-}
-
-async function sendImageSourceAsMerchantJpeg(res, source) {
-  const normalized = String(source ?? "").trim();
-  if (!normalized) {
     return res.status(404).json({ message: "Image not found." });
   }
-
-  try {
-    let inputBuffer = null;
-    let inputPath = "";
-
-    const dataMatch = normalized.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-    if (dataMatch) {
-      inputBuffer = Buffer.from(dataMatch[2], "base64");
-    } else if (isLocalUploadPath(normalized)) {
-      const relativePath = normalized
-        .replace(/^\/api\/uploads\//, "")
-        .replace(/^\/uploads\//, "")
-        .replace(/^\/+/, "");
-      const filePath = path.join(uploadsDir, relativePath);
-      if (!relativePath || !fs.existsSync(filePath)) {
-        return res.status(404).json({ message: "Image not found." });
-      }
-      inputPath = filePath;
-    } else if (/^https?:\/\//i.test(normalized)) {
-      const response = await fetch(normalized);
-      if (!response.ok) {
-        return res.status(404).json({ message: "Image not found." });
-      }
-      const arrayBuffer = await response.arrayBuffer();
-      inputBuffer = Buffer.from(arrayBuffer);
-    } else {
-      const forwarded = normalized.startsWith("/") ? normalized : `/${normalized}`;
-      return res.redirect(302, forwarded);
-    }
-
-    const outputBuffer = inputPath
-      ? await sharp(inputPath, { animated: false })
-          .rotate()
-          .flatten({ background: "#ffffff" })
-          .jpeg({ quality: 90, mozjpeg: true })
-          .toBuffer()
-      : await reencodeImageBufferToJpeg(inputBuffer);
-
-    res.setHeader("Content-Type", "image/jpeg");
-    res.setHeader("Cache-Control", "public, max-age=86400");
-    res.setHeader("Content-Disposition", "inline");
-    return res.send(outputBuffer);
-  } catch (error) {
-    console.error("Merchant image normalization failed:", {
-      source: normalized,
-      message: error?.message ?? String(error),
-    });
-    return sendImageSourceResponse(res, normalized);
-  }
-}
 
   const dataMatch = normalized.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (dataMatch) {
@@ -1651,6 +1676,58 @@ async function sendImageSourceAsMerchantJpeg(res, source) {
   }
 
   return sendImageSourceResponse(res, normalized);
+}
+
+async function sendImageSourceAsMerchantJpeg(res, source) {
+  const normalized = String(source ?? "").trim();
+  if (!normalized) {
+    return res.status(404).json({ message: "Image not found." });
+  }
+
+  try {
+    let inputBuffer = null;
+    let inputPath = "";
+
+    const dataMatch = normalized.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (dataMatch) {
+      inputBuffer = Buffer.from(dataMatch[2], "base64");
+    } else if (isLocalUploadPath(normalized)) {
+      const fileInfo = resolveLocalUploadFileInfo(normalized);
+      if (!fileInfo || !fs.existsSync(fileInfo.filePath)) {
+        return res.status(404).json({ message: "Image not found." });
+      }
+      inputPath = fileInfo.filePath;
+    } else if (/^https?:\/\//i.test(normalized)) {
+      const response = await fetch(normalized);
+      if (!response.ok) {
+        return res.status(404).json({ message: "Image not found." });
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      inputBuffer = Buffer.from(arrayBuffer);
+    } else {
+      const forwarded = normalized.startsWith("/") ? normalized : `/${normalized}`;
+      return res.redirect(302, forwarded);
+    }
+
+    const outputBuffer = inputPath
+      ? await sharp(inputPath, { animated: false })
+          .rotate()
+          .flatten({ background: "#ffffff" })
+          .jpeg({ quality: 90, mozjpeg: true })
+          .toBuffer()
+      : await reencodeImageBufferToJpeg(inputBuffer);
+
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("Content-Disposition", "inline");
+    return res.send(outputBuffer);
+  } catch (error) {
+    console.error("Merchant image normalization failed:", {
+      source: normalized,
+      message: error?.message ?? String(error),
+    });
+    return sendImageSourceResponse(res, normalized);
+  }
 }
 
 function mapAddressRow(row) {
@@ -4150,7 +4227,18 @@ app.get("/api/products/:id", async (req, res) => {
     }
 
     const baseProduct = mapProductRow(rows[0]);
-    const product = baseProduct;
+    const storefrontImages =
+      (Array.isArray(baseProduct.images) ? baseProduct.images : [])
+        .map((image, index) => buildResolvedProductImagePath(baseProduct.id, image, index, "detail"))
+        .filter(Boolean);
+    const product = {
+      ...baseProduct,
+      image: storefrontImages[0] ?? buildResolvedProductImagePath(baseProduct.id, baseProduct.image, 0, "detail"),
+      images:
+        storefrontImages.length > 0
+          ? storefrontImages
+          : [buildResolvedProductImagePath(baseProduct.id, baseProduct.image, 0, "detail")].filter(Boolean),
+    };
 
     const [relatedRows] = await pool.query(
       `
@@ -4198,7 +4286,7 @@ app.get("/api/products/:id/media", async (req, res) => {
     }
     const sources = parseProductImageSources(rows[0]);
     const images = (sources.length > 0 ? sources : [rows[0].image])
-      .map((source, index) => buildResolvedProductImagePath(rows[0].id, source, index))
+      .map((source, index) => buildResolvedProductImagePath(rows[0].id, source, index, "detail"))
       .filter(Boolean);
     const payload = { images };
     setCachedResponse(cacheKey, payload, CACHE_TTL_MS.productMedia);
@@ -4212,6 +4300,10 @@ app.get("/api/products/:id/media", async (req, res) => {
 app.get("/api/products/:id/image/:index", async (req, res) => {
   try {
     const imageIndex = Math.max(0, Number(req.params.index) || 0);
+    const requestedVariant = String(req.query?.variant ?? "").trim().toLowerCase();
+    const variantKey = Object.prototype.hasOwnProperty.call(IMAGE_VARIANT_SPECS, requestedVariant)
+      ? requestedVariant
+      : "";
     const [rows] = await pool.query(
       `
       SELECT id, image, images_json
@@ -4235,6 +4327,12 @@ app.get("/api/products/:id/image/:index", async (req, res) => {
     const selected = candidates.find((item) => localUploadExists(item));
     if (!selected) {
       return res.status(404).json({ message: "Image not found." });
+    }
+    if (variantKey && isLocalUploadPath(selected)) {
+      const variantWebPath = await ensureLocalUploadVariant(selected, variantKey).catch(() => "");
+      if (variantWebPath) {
+        return sendImageSourceDirect(res, variantWebPath);
+      }
     }
     return sendImageSourceResponse(res, selected);
   } catch (error) {

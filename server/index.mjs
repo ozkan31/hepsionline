@@ -73,9 +73,12 @@ app.use(express.json({ limit: "50mb" }));
 const staticUploadOptions = {
   maxAge: "365d",
   immutable: true,
-  setHeaders: (res) => {
+  setHeaders: (res, filePath) => {
     res.setHeader("X-Robots-Tag", "all");
     res.setHeader("Content-Disposition", "inline");
+    if (path.extname(String(filePath ?? "")).toLowerCase() === ".jfif") {
+      res.setHeader("Content-Type", "image/jpeg");
+    }
   },
 };
 app.use("/uploads", express.static(uploadsDir, staticUploadOptions));
@@ -662,7 +665,7 @@ function isMerchantSafeDirectImageSource(rawValue) {
   if (!value) return false;
   if (!isLocalUploadPath(value)) return false;
   const extension = path.extname(value.split("?")[0]).toLowerCase();
-  return new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"]).has(extension);
+  return new Set([".jpg", ".jpeg", ".jfif", ".png", ".webp", ".gif", ".bmp", ".avif"]).has(extension);
 }
 
 function buildMerchantProductVersion(product) {

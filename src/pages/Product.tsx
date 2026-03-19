@@ -7,7 +7,7 @@ import { fetchProductDetail, fetchProductMedia } from '@/lib/api';
 import { queuePendingWishlistProduct } from '@/lib/pendingWishlist';
 import { Seo } from '@/components/Seo';
 import { SEO_BRAND_NAME } from '@/lib/seo';
-import { trackAddToCart } from '@/lib/analytics';
+import { trackAddToCart, trackViewContent } from '@/lib/analytics';
 
 const CATEGORY_LABELS: Record<string, string> = {
   crossbody: 'Çapraz Çantalar',
@@ -96,6 +96,16 @@ export function Product() {
     setIsAddedToCart(false);
     setProductInfoTab('description');
     window.scrollTo(0, 0);
+  }, [product]);
+
+  useEffect(() => {
+    if (!product) return;
+    trackViewContent({
+      id: product.id,
+      name: product.name,
+      category: product.category,
+      price: product.price,
+    });
   }, [product]);
 
   useEffect(() => {

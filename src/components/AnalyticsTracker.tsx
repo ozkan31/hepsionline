@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { hasAnalyticsEnabled, initGoogleAnalytics, trackPageView } from "@/lib/analytics";
+import { hasAnalyticsEnabled, initGoogleAnalytics, initMetaPixel, trackPageView } from "@/lib/analytics";
 
 export function AnalyticsTracker() {
   const location = useLocation();
@@ -8,6 +8,7 @@ export function AnalyticsTracker() {
   useEffect(() => {
     if (!hasAnalyticsEnabled()) return;
     initGoogleAnalytics();
+    initMetaPixel();
   }, []);
 
   useEffect(() => {

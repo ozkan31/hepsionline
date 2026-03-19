@@ -13,7 +13,8 @@
     "db:test": "node scripts/test-mysql.mjs",
     "db:migrate": "node server/scripts/migrate.mjs",
     "db:seed": "node server/scripts/seed-products.mjs",
-    "db:setup": "npm run db:migrate && npm run db:seed"
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "images:normalize": "node server/scripts/normalize-product-images.mjs"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",

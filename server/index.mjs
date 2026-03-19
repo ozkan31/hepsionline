@@ -33,6 +33,7 @@ function isGoogleCrawlerRequest(userAgent = "") {
   return (
     normalized.includes("googlebot") ||
     normalized.includes("googlebot-image") ||
+    normalized.includes("storebot-google") ||
     normalized.includes("adsbot-google") ||
     normalized.includes("google-inspectiontool")
   );
@@ -42,7 +43,7 @@ app.use((req, res, next) => {
   const userAgent = String(req.get("user-agent") || "");
   const shouldLogCrawlerRequest =
     isGoogleCrawlerRequest(userAgent) &&
-    ["/robots.txt", "/sitemap.xml", "/api/uploads/", "/api/merchant/product/"].some((prefix) =>
+    ["/robots.txt", "/sitemap.xml", "/uploads/", "/api/uploads/", "/api/merchant/product/"].some((prefix) =>
       req.path.startsWith(prefix)
     );
 
@@ -356,7 +357,9 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
   const nonProxyCandidates = rawImageCandidates.filter(
     (item) => !/^\/api\/products\/[^/]+\/image\/\d+$/i.test(item)
   );
-  const selectedCandidates = nonProxyCandidates.length > 0 ? nonProxyCandidates : rawImageCandidates;
+  const selectedCandidates = Array.from(
+    new Set(nonProxyCandidates.length > 0 ? nonProxyCandidates : rawImageCandidates)
+  );
   const toMerchantImageUrl = (rawValue, imageIndex = 0) => {
     const value = String(rawValue ?? "").trim();
     if (isMerchantSafeDirectImageSource(value)) {

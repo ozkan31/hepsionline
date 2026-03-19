@@ -17,6 +17,10 @@ User-agent: Googlebot-Image
 Allow: /
 Disallow:
 
+User-agent: Storebot-Google
+Allow: /
+Disallow:
+
 User-agent: AdsBot-Google
 Allow: /
 Disallow:

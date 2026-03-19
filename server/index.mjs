@@ -339,11 +339,63 @@ async function getGoogleMerchantAccessToken() {
   return token;
 }
 
+const MERCHANT_CATEGORY_LABELS = {
+  crossbody: "Çapraz Çanta",
+  mini: "Mini Çanta",
+  shoulder: "Omuz Çantası",
+  shopper: "Shopper Çanta",
+  wallet: "Cüzdan",
+  tote: "Tote Çanta",
+};
+
+function sanitizeMerchantText(value) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u001F\u007F]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getMerchantCategoryLabel(categoryId) {
+  const normalized = sanitizeMerchantText(categoryId).toLowerCase();
+  return MERCHANT_CATEGORY_LABELS[normalized] || "Kadın Çanta";
+}
+
+function hasReadableLetters(value) {
+  return /[\p{L}]/u.test(String(value ?? ""));
+}
+
+function buildGoogleMerchantTitle(product) {
+  const rawTitle = sanitizeMerchantText(product?.name);
+  const categoryLabel = getMerchantCategoryLabel(product?.category);
+  const brand = sanitizeMerchantText(GOOGLE_MERCHANT_BRAND) || DEFAULT_SITE_NAME;
+
+  if (rawTitle.length >= 3 && hasReadableLetters(rawTitle)) {
+    const enrichedTitle = rawTitle.toLowerCase().includes(brand.toLowerCase())
+      ? `${rawTitle} - ${categoryLabel}`
+      : `${rawTitle} - ${brand}`;
+    return enrichedTitle.slice(0, 150);
+  }
+
+  return `${brand} ${categoryLabel}`.slice(0, 150);
+}
+
+function buildGoogleMerchantDescription(product, title) {
+  const rawDescription = sanitizeMerchantText(product?.description);
+  if (rawDescription.length >= 60) {
+    return rawDescription.slice(0, 5000);
+  }
+
+  const categoryLabel = getMerchantCategoryLabel(product?.category);
+  const brand = sanitizeMerchantText(GOOGLE_MERCHANT_BRAND) || DEFAULT_SITE_NAME;
+  const fallback = `${title} modeli ${brand} koleksiyonunda yer alan şık ve kullanışlı ${categoryLabel.toLowerCase()} seçeneklerinden biridir. Günlük kullanım ve modern kombinler için uygundur.`;
+  return fallback.slice(0, 5000);
+}
+
 function mapProductToGoogleMerchantEntry(req, product, index) {
   const baseUrl = buildGoogleMerchantBaseUrl(req);
   const offerId = String(product.id ?? "").trim();
-  const title = String(product.name ?? "").trim().slice(0, 150);
-  const description = String(product.description ?? "").trim().slice(0, 5000) || title;
+  const title = buildGoogleMerchantTitle(product);
+  const description = buildGoogleMerchantDescription(product, title);
   const price = Number(product.price ?? 0);
   const merchantVersion = buildMerchantProductVersion(product);
   const productUrl = appendUrlQueryParam(

@@ -224,6 +224,9 @@ const GOOGLE_MERCHANT_SERVICE_ACCOUNT_PRIVATE_KEY = String(
   process.env.GOOGLE_MERCHANT_SERVICE_ACCOUNT_PRIVATE_KEY ?? ""
 ).trim();
 const GOOGLE_MERCHANT_PRODUCT_URL_BASE = String(process.env.GOOGLE_MERCHANT_PRODUCT_URL_BASE ?? "").trim();
+const GOOGLE_MERCHANT_CRAWL_VERSION = String(
+  process.env.GOOGLE_MERCHANT_CRAWL_VERSION ?? Date.now().toString(36)
+).trim();
 const GOOGLE_MERCHANT_SCOPES = ["https://www.googleapis.com/auth/content"];
 const isGoogleMerchantConfigured = Boolean(
   GOOGLE_MERCHANT_ENABLED &&
@@ -676,6 +679,7 @@ function buildMerchantProductVersion(product) {
     ? product.images.map((item) => String(item ?? "").trim()).filter(Boolean)
     : [];
   const seed = JSON.stringify({
+    crawlVersion: GOOGLE_MERCHANT_CRAWL_VERSION,
     id: String(product?.id ?? "").trim(),
     name: String(product?.name ?? "").trim(),
     price: Number(product?.price ?? 0).toFixed(2),

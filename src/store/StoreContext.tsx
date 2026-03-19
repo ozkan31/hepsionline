@@ -41,7 +41,10 @@ function normalizeMediaPath(value: unknown): string {
   if (/^(https?:)?\/\//i.test(raw)) return raw;
   if (/^(data:|blob:)/i.test(raw)) return raw;
   const normalized = raw.startsWith('/') ? raw : `/${raw}`;
-  return normalized.replace(/^\/api\/uploads\//i, '/uploads/');
+  if (normalized.startsWith('/uploads/')) {
+    return normalized.replace(/^\/uploads\//i, '/api/uploads/');
+  }
+  return normalized;
 }
 
 function normalizeProductMedia(product: Product): Product {

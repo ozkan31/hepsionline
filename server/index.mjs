@@ -1392,7 +1392,13 @@ function buildProductImageProxyPath(productId, imageIndex = 0) {
 function toDisplayImagePath(rawValue) {
   const normalized = normalizeMediaPath(rawValue);
   if (!normalized) return "";
-  return normalized.replace(/^\/api\/uploads\//i, "/uploads/");
+  if (normalized.startsWith("/api/uploads/")) {
+    return normalized;
+  }
+  if (normalized.startsWith("/uploads/")) {
+    return normalized.replace(/^\/uploads\//i, "/api/uploads/");
+  }
+  return normalized;
 }
 
 function buildResolvedProductImagePath(productId, rawValue, imageIndex = 0, variantKey = "original") {
@@ -1500,7 +1506,7 @@ function buildLocalUploadVariantRelativePath(rawValue, variantKey) {
 
 function getLocalUploadVariantWebPath(rawValue, variantKey) {
   const relativeVariantPath = buildLocalUploadVariantRelativePath(rawValue, variantKey);
-  return relativeVariantPath ? `/uploads/variants/${relativeVariantPath}` : "";
+  return relativeVariantPath ? `/api/uploads/variants/${relativeVariantPath}` : "";
 }
 
 async function ensureLocalUploadVariant(rawValue, variantKey) {
@@ -1529,7 +1535,7 @@ async function ensureLocalUploadVariant(rawValue, variantKey) {
       .toFile(targetPath);
   }
 
-  return `/uploads/variants/${relativeVariantPath.replace(/\\/g, "/")}`;
+  return `/api/uploads/variants/${relativeVariantPath.replace(/\\/g, "/")}`;
 }
 
 async function reencodeImageBufferToJpeg(buffer) {
@@ -3839,7 +3845,7 @@ app.post("/api/admin/upload-images", requireAdminAuth, (req, res) => {
 
     try {
       const normalizedFiles = await Promise.all(files.map((file) => normalizeUploadedImageFile(file)));
-      const urls = normalizedFiles.map((file) => `/uploads/${file.filename}`);
+      const urls = normalizedFiles.map((file) => `/api/uploads/${file.filename}`);
       return res.json({ urls });
     } catch {
       return res.status(500).json({ message: "Görsel standart formata dönüştürülemedi." });

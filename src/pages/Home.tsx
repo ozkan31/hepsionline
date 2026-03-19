@@ -74,21 +74,7 @@ export function Home() {
   }, []);
 
   useEffect(() => {
-    setVisibleProducts([]);
-    if (products.length === 0) return;
-
-    let index = 0;
-    const timer = window.setInterval(() => {
-      index += 1;
-      setVisibleProducts(products.slice(0, index));
-      if (index >= products.length) {
-        window.clearInterval(timer);
-      }
-    }, 90);
-
-    return () => {
-      window.clearInterval(timer);
-    };
+    setVisibleProducts(products);
   }, [products]);
 
   const nextBanner = () => setCurrentBanner((prev) => (prev + 1) % banners.length);
@@ -172,6 +158,9 @@ export function Home() {
             <img
               src={banner.image}
               alt={banner.title}
+              loading={index === currentBanner ? "eager" : "lazy"}
+              decoding="async"
+              fetchPriority={index === 0 ? "high" : "auto"}
               className="w-full h-full object-cover"
             />
             <div className="absolute inset-0 bg-black/20" />
@@ -228,6 +217,8 @@ export function Home() {
               <img
                 src={cat.image}
                 alt={cat.name}
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
               />
               <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition-colors" />
@@ -256,6 +247,8 @@ export function Home() {
                     <img
                       src={product.image}
                       alt={normalizeTurkishText(product.name)}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
                   </Link>

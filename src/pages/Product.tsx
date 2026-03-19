@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Heart, Minus, Plus, ArrowLeft, Check, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
 import type { Product as ProductType } from '@/types';
-import { fetchProductDetail, fetchProductMedia } from '@/lib/api';
+import { fetchProductDetail } from '@/lib/api';
 import { queuePendingWishlistProduct } from '@/lib/pendingWishlist';
 import { Seo } from '@/components/Seo';
 import { SEO_BRAND_NAME } from '@/lib/seo';
@@ -51,19 +51,6 @@ export function Product() {
         if (!isMounted) return;
         setProduct(data.product);
         setRelatedProducts(data.relatedProducts);
-        fetchProductMedia(id)
-          .then((media) => {
-            if (!isMounted) return;
-            const normalized = Array.isArray(media.images)
-              ? media.images.map((item) => String(item ?? "").trim()).filter(Boolean)
-              : [];
-            if (normalized.length === 0) return;
-            setProduct((prev) => (prev ? { ...prev, images: normalized, image: normalized[0] } : prev));
-          })
-          .catch((error) => {
-            if (!isMounted) return;
-            console.error('Failed to fetch product media:', error);
-          });
       } catch (error) {
         if (!isMounted) return;
         console.error('Failed to fetch product detail:', error);
@@ -437,6 +424,9 @@ export function Product() {
                   key={`${product.id}-preview-${previewImageIndex}-${productImages[previewImageIndex] ?? activeImage}`}
                   src={productImages[previewImageIndex] ?? activeImage}
                   alt={product.name}
+                  loading="eager"
+                  decoding="async"
+                  fetchPriority="high"
                   className="absolute inset-0 w-full h-full object-cover"
                   style={{
                     transform: `translateX(${dragOffsetX + (previewDirection === 1 ? viewportWidth : -viewportWidth)}px)`,
@@ -448,6 +438,9 @@ export function Product() {
                 key={`${product.id}-active-${selectedImageIndex}-${activeImage}`}
                 src={activeImage}
                 alt={product.name}
+                loading="eager"
+                decoding="async"
+                fetchPriority="high"
                 className="absolute inset-0 w-full h-full object-cover"
                 style={{
                   transform: `translateX(${dragOffsetX}px)`,
@@ -507,6 +500,8 @@ export function Product() {
                     <img
                       src={image}
                       alt={`${product.name} ${index + 1}`}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover"
                     />
                   </button>
@@ -682,6 +677,8 @@ export function Product() {
                     <img 
                       src={related.image} 
                       alt={related.name}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
                   </div>

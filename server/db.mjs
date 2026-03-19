@@ -24,6 +24,6 @@ export const pool = mysql.createPool({
   password: process.env.MYSQL_PASSWORD,
   timezone: "Z",
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit: Math.max(10, Number(process.env.MYSQL_POOL_SIZE || 20)),
   queueLimit: 0,
 });

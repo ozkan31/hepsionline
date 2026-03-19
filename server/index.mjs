@@ -23,9 +23,53 @@ const __dirname = path.dirname(__filename);
 const distDir = path.resolve(__dirname, "../dist");
 const distIndexHtml = path.join(distDir, "index.html");
 const uploadsDir = path.resolve(__dirname, "../uploads");
+const responseCache = new Map();
+const CACHE_TTL_MS = {
+  settings: 5 * 60 * 1000,
+  categories: 15 * 60 * 1000,
+  productList: 30 * 1000,
+  productDetail: 60 * 1000,
+  productMedia: 60 * 1000,
+};
 
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+function getCachedResponse(cacheKey) {
+  const entry = responseCache.get(cacheKey);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    responseCache.delete(cacheKey);
+    return null;
+  }
+  return entry.value;
+}
+
+function setCachedResponse(cacheKey, value, ttlMs) {
+  responseCache.set(cacheKey, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+  return value;
+}
+
+function invalidateCacheByPrefix(prefix) {
+  for (const cacheKey of responseCache.keys()) {
+    if (cacheKey.startsWith(prefix)) {
+      responseCache.delete(cacheKey);
+    }
+  }
+}
+
+function invalidateProductCaches() {
+  invalidateCacheByPrefix("products:list:");
+  invalidateCacheByPrefix("product:detail:");
+  invalidateCacheByPrefix("product:media:");
+}
+
+function invalidateSettingsCache() {
+  invalidateCacheByPrefix("settings:");
 }
 
 function isGoogleCrawlerRequest(userAgent = "") {
@@ -1302,14 +1346,17 @@ function mapProductRow(row) {
   if (images.length === 0 && row.image) {
     images = [row.image];
   }
-  const normalizedImages = images.map((image) => normalizeMediaPath(image)).filter(Boolean);
-  const normalizedSingleImage = normalizeMediaPath(row.image);
+  const normalizedImages = images
+    .map((image, index) => buildResolvedProductImagePath(row.id, image, index))
+    .filter(Boolean);
+  const normalizedSingleImage = buildResolvedProductImagePath(row.id, row.image, 0);
+  const resolvedImages = normalizedImages.length > 0 ? normalizedImages : normalizedSingleImage ? [normalizedSingleImage] : [];
   return {
     id: String(row.id),
     name: row.name,
     price: Number(row.price),
-    image: normalizedImages[0] ?? normalizedSingleImage,
-    images: normalizedImages,
+    image: resolvedImages[0] ?? buildProductImageProxyPath(row.id, 0),
+    images: resolvedImages,
     category: row.category_id,
     description: row.description,
     features: parseArrayJson(row.features_json),
@@ -1333,8 +1380,22 @@ function buildProductImageProxyPath(productId, imageIndex = 0) {
   return `/api/products/${encodeURIComponent(String(productId))}/image/${Math.max(0, Number(imageIndex) || 0)}`;
 }
 
+function toDisplayImagePath(rawValue) {
+  const normalized = normalizeMediaPath(rawValue);
+  if (!normalized) return "";
+  return normalized.replace(/^\/api\/uploads\//i, "/uploads/");
+}
+
+function buildResolvedProductImagePath(productId, rawValue, imageIndex = 0) {
+  const normalized = toDisplayImagePath(rawValue);
+  if (normalized) {
+    return normalized;
+  }
+  return buildProductImageProxyPath(productId, imageIndex);
+}
+
 function mapProductListRow(row) {
-  const cover = buildProductImageProxyPath(row.id, 0);
+  const cover = buildResolvedProductImagePath(row.id, row.image, 0);
   return {
     id: String(row.id),
     name: row.name,
@@ -1352,7 +1413,7 @@ function mapProductListRow(row) {
 }
 
 function mapAdminProductListRow(row) {
-  const proxyImage = buildProductImageProxyPath(row.id, 0);
+  const proxyImage = buildResolvedProductImagePath(row.id, row.image, 0);
   return {
     id: String(row.id),
     name: row.name,
@@ -3191,8 +3252,16 @@ app.get("/api/admin/me", async (req, res) => {
 
 app.get("/api/settings", async (_req, res) => {
   try {
+    const cacheKey = "settings:public";
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
+      return res.json(cached);
+    }
     const siteName = await getSiteNameSetting();
-    return res.json({ siteName });
+    const payload = setCachedResponse(cacheKey, { siteName }, CACHE_TTL_MS.settings);
+    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
+    return res.json(payload);
   } catch (error) {
     return res.status(500).json({ message: "Settings fetch failed." });
   }
@@ -3217,6 +3286,7 @@ app.put("/api/admin/settings", requireAdminAuth, async (req, res) => {
       return res.status(400).json({ message: "Site ismi en fazla 80 karakter olabilir." });
     }
     await setSiteNameSetting(siteName);
+    invalidateSettingsCache();
     return res.json({ siteName });
   } catch (error) {
     return res.status(500).json({ message: "Admin settings update failed." });
@@ -3519,7 +3589,7 @@ app.get("/api/admin/products", requireAdminAuth, async (_req, res) => {
     try {
       const [rows] = await pool.query(
         `
-        SELECT id, name, price, category_id, is_new, is_bestseller
+        SELECT id, name, price, image, category_id, is_new, is_bestseller
         FROM products
         ORDER BY id ASC
         LIMIT ?
@@ -3543,7 +3613,7 @@ app.get("/api/admin/products", requireAdminAuth, async (_req, res) => {
       }
       const [rows] = await pool.query(
         `
-        SELECT id, name, price, category_id, is_new, is_bestseller
+        SELECT id, name, price, image, category_id, is_new, is_bestseller
         FROM products
         ORDER BY id ASC
         LIMIT ?
@@ -3692,7 +3762,7 @@ app.post("/api/admin/upload-images", requireAdminAuth, (req, res) => {
 
     try {
       const normalizedFiles = await Promise.all(files.map((file) => normalizeUploadedImageFile(file)));
-      const urls = normalizedFiles.map((file) => `/api/uploads/${file.filename}`);
+      const urls = normalizedFiles.map((file) => `/uploads/${file.filename}`);
       return res.json({ urls });
     } catch {
       return res.status(500).json({ message: "Görsel standart formata dönüştürülemedi." });
@@ -3782,6 +3852,7 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
       return res.status(500).json({ message: "Urun olusturuldu ancak okunamadi." });
     }
 
+    invalidateProductCaches();
     return res.status(201).json({ product: mapProductRow(rows[0]) });
   } catch (error) {
     if (error?.code === "ER_BAD_FIELD_ERROR") {
@@ -3941,6 +4012,7 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
       return res.status(404).json({ message: "Ürün bulunamadı." });
     }
 
+    invalidateProductCaches();
     return res.json({ product: mapProductRow(rows[0]) });
   } catch (error) {
     if (error?.code === "ER_BAD_FIELD_ERROR") {
@@ -3955,10 +4027,18 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
 
 app.get("/api/categories", async (_req, res) => {
   try {
+    const cacheKey = "categories:list";
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, max-age=900, stale-while-revalidate=1800");
+      return res.json(cached);
+    }
     const [rows] = await pool.query(
       `SELECT id, name, image, description FROM categories ORDER BY name ASC`
     );
-    res.json(rows);
+    const payload = setCachedResponse(cacheKey, rows, CACHE_TTL_MS.categories);
+    res.setHeader("Cache-Control", "public, max-age=900, stale-while-revalidate=1800");
+    res.json(payload);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch categories." });
   }
@@ -3967,6 +4047,7 @@ app.get("/api/categories", async (_req, res) => {
 app.get("/api/products", async (req, res) => {
   try {
     const { search, category, sort, limit } = req.query;
+    const includeMeta = String(req.query?.includeMeta ?? "0") === "1";
 
     const where = [];
     const params = [];
@@ -3994,6 +4075,21 @@ app.get("/api/products", async (req, res) => {
 
     const parsedLimit = Number(limit);
     const safeLimit = Number.isInteger(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 120) : 60;
+    const parsedOffset = Number(req.query?.offset);
+    const safeOffset = Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
+    const cacheKey = `products:list:${String(search ?? "").trim()}|${String(category ?? "").trim()}|${String(sort ?? "").trim()}|${safeLimit}|${safeOffset}|${includeMeta ? "1" : "0"}`;
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=120");
+      return res.json(cached);
+    }
+
+    const countSql = `
+      SELECT COUNT(*) AS total
+      FROM products
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+    `;
+    const countParams = [...params];
 
     const sql = `
       SELECT id, name, price, image, category_id, description, colors_json, tags_json, is_new, is_bestseller
@@ -4001,11 +4097,30 @@ app.get("/api/products", async (req, res) => {
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
       ORDER BY ${orderBy}
       LIMIT ?
+      OFFSET ?
     `;
     params.push(safeLimit);
+    params.push(safeOffset);
 
     const [rows] = await pool.query(sql, params);
-    res.json(rows.map(mapProductListRow));
+    const products = rows.map(mapProductListRow);
+    let payload = products;
+
+    if (includeMeta) {
+      const [countRows] = await pool.query(countSql, countParams);
+      const total = Number(countRows?.[0]?.total ?? 0);
+      const nextOffset = safeOffset + products.length;
+      payload = {
+        products,
+        total,
+        hasMore: nextOffset < total,
+        nextOffset,
+      };
+    }
+
+    setCachedResponse(cacheKey, payload, CACHE_TTL_MS.productList);
+    res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=120");
+    res.json(payload);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch products." });
   }
@@ -4013,6 +4128,12 @@ app.get("/api/products", async (req, res) => {
 
 app.get("/api/products/:id", async (req, res) => {
   try {
+    const cacheKey = `product:detail:${String(req.params.id ?? "").trim()}`;
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+      return res.json(cached);
+    }
     const [rows] = await pool.query(
       `
       SELECT id, name, price, image, category_id, description, features_json, colors_json, is_new, is_bestseller
@@ -4029,12 +4150,7 @@ app.get("/api/products/:id", async (req, res) => {
     }
 
     const baseProduct = mapProductRow(rows[0]);
-    const cover = buildProductImageProxyPath(baseProduct.id, 0);
-    const product = {
-      ...baseProduct,
-      image: cover,
-      images: [cover],
-    };
+    const product = baseProduct;
 
     const [relatedRows] = await pool.query(
       `
@@ -4047,10 +4163,14 @@ app.get("/api/products/:id", async (req, res) => {
       [product.category, product.id]
     );
 
-    return res.json({
+    const payload = {
       product,
       relatedProducts: relatedRows.map(mapProductListRow),
-    });
+    };
+
+    setCachedResponse(cacheKey, payload, CACHE_TTL_MS.productDetail);
+    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+    return res.json(payload);
   } catch (error) {
     return res.status(500).json({ message: "Failed to fetch product." });
   }
@@ -4058,6 +4178,12 @@ app.get("/api/products/:id", async (req, res) => {
 
 app.get("/api/products/:id/media", async (req, res) => {
   try {
+    const cacheKey = `product:media:${String(req.params.id ?? "").trim()}`;
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+      return res.json(cached);
+    }
     const [rows] = await pool.query(
       `
       SELECT id, image, images_json
@@ -4072,8 +4198,12 @@ app.get("/api/products/:id/media", async (req, res) => {
     }
     const sources = parseProductImageSources(rows[0]);
     const images = (sources.length > 0 ? sources : [rows[0].image])
-      .map((_, index) => buildProductImageProxyPath(rows[0].id, index));
-    return res.json({ images });
+      .map((source, index) => buildResolvedProductImagePath(rows[0].id, source, index))
+      .filter(Boolean);
+    const payload = { images };
+    setCachedResponse(cacheKey, payload, CACHE_TTL_MS.productMedia);
+    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+    return res.json(payload);
   } catch (error) {
     return res.status(500).json({ message: "Failed to fetch product media." });
   }
@@ -4275,6 +4405,7 @@ app.delete("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
       return res.status(404).json({ message: "Ürün bulunamadı." });
     }
 
+    invalidateProductCaches();
     return res.json({ ok: true });
   } catch (error) {
     return res.status(500).json({ message: "Admin product delete failed." });

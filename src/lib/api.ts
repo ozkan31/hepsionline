@@ -67,6 +67,7 @@ export async function fetchProducts(params?: {
   category?: string;
   sort?: string;
   limit?: number;
+  offset?: number;
 }): Promise<Product[]> {
   const query = new URLSearchParams();
   if (params?.search) query.set("search", params.search);
@@ -75,9 +76,45 @@ export async function fetchProducts(params?: {
   if (typeof params?.limit === "number" && Number.isFinite(params.limit)) {
     query.set("limit", String(Math.max(1, Math.trunc(params.limit))));
   }
+  if (typeof params?.offset === "number" && Number.isFinite(params.offset) && params.offset >= 0) {
+    query.set("offset", String(Math.max(0, Math.trunc(params.offset))));
+  }
 
   const response = await fetch(`/api/products${query.toString() ? `?${query}` : ""}`);
   return parseResponse<Product[]>(response);
+}
+
+export async function fetchProductPage(params?: {
+  search?: string;
+  category?: string;
+  sort?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  products: Product[];
+  total: number;
+  hasMore: boolean;
+  nextOffset: number;
+}> {
+  const query = new URLSearchParams();
+  query.set("includeMeta", "1");
+  if (params?.search) query.set("search", params.search);
+  if (params?.category) query.set("category", params.category);
+  if (params?.sort) query.set("sort", params.sort);
+  if (typeof params?.limit === "number" && Number.isFinite(params.limit)) {
+    query.set("limit", String(Math.max(1, Math.trunc(params.limit))));
+  }
+  if (typeof params?.offset === "number" && Number.isFinite(params.offset) && params.offset >= 0) {
+    query.set("offset", String(Math.max(0, Math.trunc(params.offset))));
+  }
+
+  const response = await fetch(`/api/products?${query.toString()}`);
+  return parseResponse<{
+    products: Product[];
+    total: number;
+    hasMore: boolean;
+    nextOffset: number;
+  }>(response);
 }
 
 export async function fetchProductDetail(id: string): Promise<{

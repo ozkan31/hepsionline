@@ -40,7 +40,8 @@ function normalizeMediaPath(value: unknown): string {
   if (!raw) return '';
   if (/^(https?:)?\/\//i.test(raw)) return raw;
   if (/^(data:|blob:)/i.test(raw)) return raw;
-  return raw.startsWith('/') ? raw : `/${raw}`;
+  const normalized = raw.startsWith('/') ? raw : `/${raw}`;
+  return normalized.replace(/^\/api\/uploads\//i, '/uploads/');
 }
 
 function normalizeProductMedia(product: Product): Product {
@@ -238,6 +239,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [isWishlistSyncReady, setIsWishlistSyncReady] = useState(false);
   const syncUserIdRef = useRef<string | null>(null);
   const shouldMergeLocalCartOnNextAuthSyncRef = useRef(false);
+  const cartSyncTimeoutRef = useRef<number | null>(null);
+  const wishlistSyncTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const savedState = localStorage.getItem('parisMoveStore');
@@ -269,6 +272,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!isHydrated) return;
     localStorage.setItem('parisMoveStore', JSON.stringify(state));
   }, [state, isHydrated]);
+
+  useEffect(() => {
+    return () => {
+      if (cartSyncTimeoutRef.current != null) {
+        window.clearTimeout(cartSyncTimeoutRef.current);
+      }
+      if (wishlistSyncTimeoutRef.current != null) {
+        window.clearTimeout(wishlistSyncTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -334,31 +348,49 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isHydrated || !isCartSyncReady) return;
     if (!state.isAuthenticated || !state.user) return;
+    const cartSnapshot = state.cart;
 
-    const sync = async () => {
+    if (cartSyncTimeoutRef.current != null) {
+      window.clearTimeout(cartSyncTimeoutRef.current);
+    }
+
+    cartSyncTimeoutRef.current = window.setTimeout(async () => {
       try {
-        await saveCart(state.cart);
+        await saveCart(cartSnapshot);
       } catch (error) {
         console.error('Failed to sync cart to server:', error);
       }
-    };
+    }, 600);
 
-    sync();
+    return () => {
+      if (cartSyncTimeoutRef.current != null) {
+        window.clearTimeout(cartSyncTimeoutRef.current);
+      }
+    };
   }, [state.cart, state.isAuthenticated, state.user?.id, isHydrated, isCartSyncReady]);
 
   useEffect(() => {
     if (!isHydrated || !isWishlistSyncReady) return;
     if (!state.isAuthenticated || !state.user) return;
+    const wishlistSnapshot = state.wishlist;
 
-    const sync = async () => {
+    if (wishlistSyncTimeoutRef.current != null) {
+      window.clearTimeout(wishlistSyncTimeoutRef.current);
+    }
+
+    wishlistSyncTimeoutRef.current = window.setTimeout(async () => {
       try {
-        await saveWishlist(state.wishlist);
+        await saveWishlist(wishlistSnapshot);
       } catch (error) {
         console.error('Failed to sync wishlist to server:', error);
       }
-    };
+    }, 600);
 
-    sync();
+    return () => {
+      if (wishlistSyncTimeoutRef.current != null) {
+        window.clearTimeout(wishlistSyncTimeoutRef.current);
+      }
+    };
   }, [state.wishlist, state.isAuthenticated, state.user?.id, isHydrated, isWishlistSyncReady]);
 
   const cartTotal = sanitizeCartItems(state.cart).reduce(

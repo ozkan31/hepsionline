@@ -3004,6 +3004,20 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     });
   }
 
+  const createdOrder = {
+    id: orderId,
+    date: orderDate,
+    total: Math.round(orderTotal),
+    status: orderStatus,
+    items: orderItems.map((item) => ({
+      product: normalizeProductMedia(item.product),
+      quantity: Number(item.quantity),
+      color: item?.color == null ? undefined : String(item.color).trim(),
+    })),
+    shippingCompany: "",
+    shippingTrackingNo: "",
+  };
+
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -3067,8 +3081,6 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     await connection.query(`DELETE FROM user_cart_items WHERE user_id = ?`, [req.authUser.id]);
 
     await connection.commit();
-    const orders = await getUserOrders(req.authUser.id);
-    const createdOrder = orders.find((order) => order.id === orderId);
 
     const fallbackAddress =
       req.authUser.addresses.find((address) => address.isDefault) ?? req.authUser.addresses[0] ?? null;
@@ -3098,17 +3110,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
         }
       : normalizedFallbackAddress;
 
-    const fallbackOrderForNotifications =
-      createdOrder ??
-      ({
-        id: orderId,
-        date: orderDate,
-        status: orderStatus,
-        total: Math.round(orderTotal),
-        items: orderItems,
-      });
-
-    if (createdOrder && isOrderSmtpConfigured) {
+    if (isOrderSmtpConfigured) {
       sendOrderConfirmationEmail(req, {
         to: req.authUser.email,
         firstName: req.authUser.firstName,
@@ -3121,14 +3123,14 @@ app.post("/api/orders", requireAuth, async (req, res) => {
 
     if (isWhatsappConfigured) {
       sendOrderWhatsappNotification({
-        order: fallbackOrderForNotifications,
+        order: createdOrder,
         deliveryAddress,
       }).catch((error) => {
         console.error("Order WhatsApp notification failed:", error?.message || error);
       });
     }
 
-    return res.status(201).json({ order: createdOrder ?? null, orders });
+    return res.status(201).json({ order: createdOrder });
   } catch (error) {
     await connection.rollback();
     if (error?.code === "ER_DUP_ENTRY") {

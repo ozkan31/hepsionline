@@ -7,6 +7,26 @@ import { loadTurkeyLocations } from "@/lib/turkiye";
 import { trackPurchase } from "@/lib/analytics";
 import type { Order } from "@/types";
 
+const PAYTR_PREFETCH_MAX_AGE_MS = 90 * 1000;
+
+type PaytrPayload = {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  street: string;
+  province: string;
+  district: string;
+  total: number;
+  items: Array<{ name: string; unitPrice: number; quantity: number }>;
+};
+
+type PaytrPreparedIframe = {
+  iframeUrl: string;
+  token: string;
+  merchantOid: string;
+};
+
 export function Checkout() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -27,6 +47,8 @@ export function Checkout() {
   const [paytrError, setPaytrError] = useState("");
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const processedPathRef = useRef<string>("");
+  const paytrCacheRef = useRef(new Map<string, { data: PaytrPreparedIframe; createdAt: number }>());
+  const paytrInFlightRef = useRef(new Map<string, Promise<PaytrPreparedIframe>>());
   const newAddressDistrictSelectRef = useRef<HTMLSelectElement | null>(null);
   const newAddressNeighborhoodSelectRef = useRef<HTMLSelectElement | null>(null);
 
@@ -106,6 +128,84 @@ export function Checkout() {
   const savedAddresses = state.user?.addresses ?? [];
   const hasSavedAddresses = savedAddresses.length > 0;
 
+  const buildShippingInfoFromAddress = (address: (typeof savedAddresses)[number] | null) => {
+    if (!address) return null;
+    const parsedStreet = splitStreetParts(address.street);
+    return {
+      addressName: parsedStreet.addressName,
+      firstName: address.firstName,
+      lastName: address.lastName,
+      email: state.user?.email ?? "",
+      phone: address.phone || state.user?.phone || "",
+      street: parsedStreet.addressDetail || parsedStreet.addressName,
+      province: address.province,
+      district: address.district,
+      neighborhood: address.neighborhood,
+    };
+  };
+
+  const buildPaytrPayload = (info: typeof shippingInfo): PaytrPayload | null => {
+    if (
+      !info.email ||
+      !info.phone ||
+      !info.street ||
+      !info.province ||
+      !info.district ||
+      state.cart.length === 0 ||
+      !Number.isFinite(total) ||
+      total <= 0
+    ) {
+      return null;
+    }
+
+    return {
+      email: info.email,
+      firstName: info.firstName,
+      lastName: info.lastName,
+      phone: info.phone,
+      street: info.street,
+      province: info.province,
+      district: info.district,
+      total,
+      items: state.cart.map((item) => ({
+        name: item.product.name,
+        unitPrice: item.product.price,
+        quantity: item.quantity,
+      })),
+    };
+  };
+
+  const getPaytrPayloadKey = (payload: PaytrPayload | null) => {
+    if (!payload) return "";
+    return JSON.stringify(payload);
+  };
+
+  const resolvePreparedPaytrIframe = async (payload: PaytrPayload): Promise<PaytrPreparedIframe> => {
+    const key = getPaytrPayloadKey(payload);
+    const now = Date.now();
+    const cached = paytrCacheRef.current.get(key);
+    if (cached && now - cached.createdAt < PAYTR_PREFETCH_MAX_AGE_MS) {
+      return cached.data;
+    }
+
+    const inFlight = paytrInFlightRef.current.get(key);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const requestPromise = createPaytrIframe(payload)
+      .then((data) => {
+        paytrCacheRef.current.set(key, { data, createdAt: Date.now() });
+        return data;
+      })
+      .finally(() => {
+        paytrInFlightRef.current.delete(key);
+      });
+
+    paytrInFlightRef.current.set(key, requestPromise);
+    return requestPromise;
+  };
+
   useEffect(() => {
     let isMounted = true;
     loadTurkeyLocations()
@@ -149,6 +249,15 @@ export function Checkout() {
     () => savedAddresses.find((addr) => addr.id === selectedAddressId) ?? null,
     [savedAddresses, selectedAddressId]
   );
+  const selectedShippingInfo = useMemo(() => buildShippingInfoFromAddress(selectedAddress), [selectedAddress]);
+  const selectedPaytrPayload = useMemo(
+    () =>
+      distanceSaleAccepted && step === "shipping" && selectedShippingInfo
+        ? buildPaytrPayload(selectedShippingInfo)
+        : null,
+    [distanceSaleAccepted, selectedShippingInfo, state.cart, step, total]
+  );
+  const currentPaytrPayload = useMemo(() => buildPaytrPayload(shippingInfo), [shippingInfo, state.cart, total]);
 
   const isPaymentSuccessPath = location.pathname === "/odeme/basarili";
   const isPaymentFailPath = location.pathname === "/odeme/basarisiz";
@@ -295,18 +404,9 @@ export function Checkout() {
       setAddressError("Ödemeye geçmek için Mesafeli Satış Sözleşmesi'ni onaylamalısınız.");
       return;
     }
-    const parsedStreet = splitStreetParts(selectedAddress.street);
-    setShippingInfo({
-      addressName: parsedStreet.addressName,
-      firstName: selectedAddress.firstName,
-      lastName: selectedAddress.lastName,
-      email: state.user?.email ?? "",
-      phone: selectedAddress.phone || state.user?.phone || "",
-      street: parsedStreet.addressDetail || parsedStreet.addressName,
-      province: selectedAddress.province,
-      district: selectedAddress.district,
-      neighborhood: selectedAddress.neighborhood,
-    });
+    const nextShippingInfo = buildShippingInfoFromAddress(selectedAddress);
+    if (!nextShippingInfo) return;
+    setShippingInfo(nextShippingInfo);
     setStep("payment");
     window.scrollTo(0, 0);
   };
@@ -350,15 +450,15 @@ export function Checkout() {
   };
 
   useEffect(() => {
+    if (!selectedPaytrPayload || isPaymentSuccessPath || isPaymentFailPath) return;
+    resolvePreparedPaytrIframe(selectedPaytrPayload).catch(() => {
+      // Payment step will show the real error if prefetch is not ready in time.
+    });
+  }, [isPaymentFailPath, isPaymentSuccessPath, selectedPaytrPayload]);
+
+  useEffect(() => {
     if (step !== "payment" || isPaymentSuccessPath || isPaymentFailPath) return;
-    if (
-      !shippingInfo.email ||
-      !shippingInfo.phone ||
-      !shippingInfo.street ||
-      !shippingInfo.province ||
-      !shippingInfo.district ||
-      !shippingInfo.neighborhood
-    ) {
+    if (!currentPaytrPayload) {
       setPaytrError("Teslimat bilgileri eksik.");
       setPaytrIframeUrl("");
       return;
@@ -369,21 +469,7 @@ export function Checkout() {
     setPaytrError("");
     setPaytrIframeUrl("");
 
-    createPaytrIframe({
-      email: shippingInfo.email,
-      firstName: shippingInfo.firstName,
-      lastName: shippingInfo.lastName,
-      phone: shippingInfo.phone,
-      street: shippingInfo.street,
-      province: shippingInfo.province,
-      district: shippingInfo.district,
-      total,
-      items: state.cart.map((item) => ({
-        name: item.product.name,
-        unitPrice: item.product.price,
-        quantity: item.quantity,
-      })),
-    })
+    resolvePreparedPaytrIframe(currentPaytrPayload)
       .then((data) => {
         if (!isMounted) return;
         setPaytrIframeUrl(data.iframeUrl);
@@ -399,7 +485,7 @@ export function Checkout() {
     return () => {
       isMounted = false;
     };
-  }, [isPaymentFailPath, isPaymentSuccessPath, step, shippingInfo, state.cart, total]);
+  }, [currentPaytrPayload, isPaymentFailPath, isPaymentSuccessPath, step]);
 
   const confirmationEmail = shippingInfo.email || state.user?.email || "";
 

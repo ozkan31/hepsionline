@@ -180,6 +180,18 @@ export function Checkout() {
     return JSON.stringify(payload);
   };
 
+  const getCachedPreparedPaytrIframe = (payload: PaytrPayload | null) => {
+    const key = getPaytrPayloadKey(payload);
+    if (!key) return null;
+    const cached = paytrCacheRef.current.get(key);
+    if (!cached) return null;
+    if (Date.now() - cached.createdAt >= PAYTR_PREFETCH_MAX_AGE_MS) {
+      paytrCacheRef.current.delete(key);
+      return null;
+    }
+    return cached.data;
+  };
+
   const resolvePreparedPaytrIframe = async (payload: PaytrPayload): Promise<PaytrPreparedIframe> => {
     const key = getPaytrPayloadKey(payload);
     const now = Date.now();
@@ -251,11 +263,8 @@ export function Checkout() {
   );
   const selectedShippingInfo = useMemo(() => buildShippingInfoFromAddress(selectedAddress), [selectedAddress]);
   const selectedPaytrPayload = useMemo(
-    () =>
-      distanceSaleAccepted && step === "shipping" && selectedShippingInfo
-        ? buildPaytrPayload(selectedShippingInfo)
-        : null,
-    [distanceSaleAccepted, selectedShippingInfo, state.cart, step, total]
+    () => (selectedShippingInfo ? buildPaytrPayload(selectedShippingInfo) : null),
+    [selectedShippingInfo, state.cart, total]
   );
   const currentPaytrPayload = useMemo(() => buildPaytrPayload(shippingInfo), [shippingInfo, state.cart, total]);
 
@@ -465,6 +474,16 @@ export function Checkout() {
     }
 
     let isMounted = true;
+    const cachedIframe = getCachedPreparedPaytrIframe(currentPaytrPayload);
+    if (cachedIframe) {
+      setPaytrError("");
+      setPaytrIframeUrl(cachedIframe.iframeUrl);
+      setIsPaytrLoading(false);
+      return () => {
+        isMounted = false;
+      };
+    }
+
     setIsPaytrLoading(true);
     setPaytrError("");
     setPaytrIframeUrl("");

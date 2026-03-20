@@ -69,6 +69,11 @@ export function initGoogleAnalytics() {
     script.id = "ga4-script";
     script.async = true;
     script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`;
+    script.onerror = () => {
+      console.warn(
+        `[analytics] Google tag script yüklenemedi. Ölçüm kimliğini kontrol et: ${measurementId}`
+      );
+    };
     document.head.appendChild(script);
   }
 

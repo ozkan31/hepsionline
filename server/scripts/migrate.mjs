@@ -229,6 +229,18 @@ CREATE TABLE IF NOT EXISTS contact_requests (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
+async function hasIndex(tableName, indexName) {
+  const [rows] = await pool.query(`SHOW INDEX FROM \`${tableName}\``);
+  return rows.some((row) => String(row.Key_name || "") === indexName);
+}
+
+async function ensureIndex(tableName, indexName, createSql) {
+  if (await hasIndex(tableName, indexName)) {
+    return;
+  }
+  await pool.query(createSql);
+}
+
 async function migrate() {
   await pool.query(createCategoriesSql);
   await pool.query(createProductsSql);
@@ -450,6 +462,48 @@ async function migrate() {
       throw error;
     }
   }
+
+  await ensureIndex(
+    "products",
+    "idx_products_price_id",
+    `CREATE INDEX idx_products_price_id ON products (price, id)`
+  );
+  await ensureIndex(
+    "products",
+    "idx_products_is_new_id",
+    `CREATE INDEX idx_products_is_new_id ON products (is_new, id)`
+  );
+  await ensureIndex(
+    "products",
+    "idx_products_is_bestseller_id",
+    `CREATE INDEX idx_products_is_bestseller_id ON products (is_bestseller, id)`
+  );
+  await ensureIndex(
+    "products",
+    "idx_products_category_price_id",
+    `CREATE INDEX idx_products_category_price_id ON products (category_id, price, id)`
+  );
+  await ensureIndex(
+    "products",
+    "idx_products_category_new_id",
+    `CREATE INDEX idx_products_category_new_id ON products (category_id, is_new, id)`
+  );
+  await ensureIndex(
+    "user_orders",
+    "idx_user_orders_user_created_at",
+    `CREATE INDEX idx_user_orders_user_created_at ON user_orders (user_id, created_at)`
+  );
+  await ensureIndex(
+    "user_addresses",
+    "idx_user_addresses_user_default",
+    `CREATE INDEX idx_user_addresses_user_default ON user_addresses (user_id, is_default)`
+  );
+  await ensureIndex(
+    "user_sessions",
+    "idx_user_sessions_expires_at",
+    `CREATE INDEX idx_user_sessions_expires_at ON user_sessions (expires_at)`
+  );
+
   await pool.query(
     `
     INSERT INTO app_settings (setting_key, setting_value)

@@ -192,6 +192,13 @@ export function Checkout() {
     return cached.data;
   };
 
+  const invalidatePreparedPaytrIframe = (payload: PaytrPayload | null) => {
+    const key = getPaytrPayloadKey(payload);
+    if (!key) return;
+    paytrCacheRef.current.delete(key);
+    paytrInFlightRef.current.delete(key);
+  };
+
   const resolvePreparedPaytrIframe = async (payload: PaytrPayload): Promise<PaytrPreparedIframe> => {
     const key = getPaytrPayloadKey(payload);
     const now = Date.now();
@@ -420,6 +427,14 @@ export function Checkout() {
     window.scrollTo(0, 0);
   };
 
+  const handleBackToShipping = () => {
+    invalidatePreparedPaytrIframe(currentPaytrPayload);
+    setPaytrIframeUrl("");
+    setPaytrError("");
+    setIsPaytrLoading(false);
+    setStep("shipping");
+  };
+
   const handleAddAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddressError("");
@@ -476,6 +491,7 @@ export function Checkout() {
     let isMounted = true;
     const cachedIframe = getCachedPreparedPaytrIframe(currentPaytrPayload);
     if (cachedIframe) {
+      invalidatePreparedPaytrIframe(currentPaytrPayload);
       setPaytrError("");
       setPaytrIframeUrl(cachedIframe.iframeUrl);
       setIsPaytrLoading(false);
@@ -491,6 +507,7 @@ export function Checkout() {
     resolvePreparedPaytrIframe(currentPaytrPayload)
       .then((data) => {
         if (!isMounted) return;
+        invalidatePreparedPaytrIframe(currentPaytrPayload);
         setPaytrIframeUrl(data.iframeUrl);
       })
       .catch((error) => {
@@ -916,7 +933,7 @@ export function Checkout() {
 
                   <button
                     type="button"
-                    onClick={() => setStep("shipping")}
+                    onClick={handleBackToShipping}
                     className="w-full border border-gray-300 text-black py-4 rounded-full font-medium text-sm hover:border-black transition-colors"
                   >
                     Geri

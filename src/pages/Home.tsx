@@ -59,7 +59,7 @@ export function Home() {
 
     const loadData = async () => {
       try {
-        const productsData = await fetchProducts({ limit: 24 });
+        const productsData = await fetchProducts({ limit: 12 });
         if (!isMounted) return;
         setProducts(productsData);
       } catch (error) {

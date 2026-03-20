@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { JWT, OAuth2Client } from "google-auth-library";
+import { createClient } from "redis";
 import sharp from "sharp";
 import { pool } from "./db.mjs";
 
@@ -25,12 +26,17 @@ const distIndexHtml = path.join(distDir, "index.html");
 const uploadsDir = path.resolve(__dirname, "../uploads");
 const uploadVariantsDir = path.join(uploadsDir, "variants");
 const responseCache = new Map();
+const REDIS_CACHE_PREFIX = String(process.env.REDIS_CACHE_PREFIX || "stilbags-cache:");
+const REDIS_URL = String(process.env.REDIS_URL || "").trim();
+const REDIS_ENABLED = REDIS_URL.length > 0;
+let redisClient = null;
+let redisConnected = false;
 const CACHE_TTL_MS = {
-  settings: 5 * 60 * 1000,
-  categories: 15 * 60 * 1000,
-  productList: 30 * 1000,
-  productDetail: 60 * 1000,
-  productMedia: 60 * 1000,
+  settings: 15 * 60 * 1000,
+  categories: 30 * 60 * 1000,
+  productList: 2 * 60 * 1000,
+  productDetail: 5 * 60 * 1000,
+  productMedia: 5 * 60 * 1000,
 };
 const IMAGE_VARIANT_SPECS = {
   thumb: { width: 200, quality: 72 },
@@ -45,40 +51,138 @@ if (!fs.existsSync(uploadVariantsDir)) {
   fs.mkdirSync(uploadVariantsDir, { recursive: true });
 }
 
-function getCachedResponse(cacheKey) {
+function getRedisCacheKey(cacheKey) {
+  return `${REDIS_CACHE_PREFIX}${cacheKey}`;
+}
+
+async function initializeRedisCache() {
+  if (!REDIS_ENABLED) {
+    return;
+  }
+
+  try {
+    redisClient = createClient({
+      url: REDIS_URL,
+      socket: {
+        reconnectStrategy: (retries) => Math.min(retries * 100, 3000),
+      },
+    });
+
+    redisClient.on("error", (error) => {
+      redisConnected = false;
+      console.warn("Redis cache error:", error instanceof Error ? error.message : error);
+    });
+
+    redisClient.on("ready", () => {
+      redisConnected = true;
+      console.info("Redis cache connected.");
+    });
+
+    redisClient.on("end", () => {
+      redisConnected = false;
+      console.warn("Redis cache disconnected.");
+    });
+
+    await redisClient.connect();
+  } catch (error) {
+    redisClient = null;
+    redisConnected = false;
+    console.warn("Redis cache disabled, falling back to memory cache.", error instanceof Error ? error.message : error);
+  }
+}
+
+async function getCachedResponse(cacheKey) {
   const entry = responseCache.get(cacheKey);
   if (!entry) return null;
   if (entry.expiresAt <= Date.now()) {
     responseCache.delete(cacheKey);
+  } else {
+    return entry.value;
+  }
+
+  if (!redisClient || !redisConnected) {
     return null;
   }
-  return entry.value;
+
+  try {
+    const raw = await redisClient.get(getRedisCacheKey(cacheKey));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    if (Number(parsed.expiresAt || 0) <= Date.now()) {
+      await redisClient.del(getRedisCacheKey(cacheKey));
+      return null;
+    }
+    responseCache.set(cacheKey, {
+      value: parsed.value,
+      expiresAt: Number(parsed.expiresAt),
+    });
+    return parsed.value ?? null;
+  } catch (error) {
+    console.warn("Redis cache read failed:", error instanceof Error ? error.message : error);
+    return null;
+  }
 }
 
-function setCachedResponse(cacheKey, value, ttlMs) {
-  responseCache.set(cacheKey, {
+async function setCachedResponse(cacheKey, value, ttlMs) {
+  const expiresAt = Date.now() + ttlMs;
+  const payload = {
     value,
-    expiresAt: Date.now() + ttlMs,
-  });
+    expiresAt,
+  };
+
+  responseCache.set(cacheKey, payload);
+
+  if (redisClient && redisConnected) {
+    try {
+      await redisClient.set(getRedisCacheKey(cacheKey), JSON.stringify(payload), {
+        EX: Math.max(1, Math.ceil(ttlMs / 1000)),
+      });
+    } catch (error) {
+      console.warn("Redis cache write failed:", error instanceof Error ? error.message : error);
+    }
+  }
+
   return value;
 }
 
-function invalidateCacheByPrefix(prefix) {
+async function invalidateCacheByPrefix(prefix) {
   for (const cacheKey of responseCache.keys()) {
     if (cacheKey.startsWith(prefix)) {
       responseCache.delete(cacheKey);
     }
   }
+
+  if (!redisClient || !redisConnected) {
+    return;
+  }
+
+  try {
+    const keysToDelete = [];
+    for await (const key of redisClient.scanIterator({
+      MATCH: `${getRedisCacheKey(prefix)}*`,
+      COUNT: 100,
+    })) {
+      keysToDelete.push(key);
+    }
+    if (keysToDelete.length > 0) {
+      await redisClient.del(keysToDelete);
+    }
+  } catch (error) {
+    console.warn("Redis cache invalidation failed:", error instanceof Error ? error.message : error);
+  }
 }
 
-function invalidateProductCaches() {
-  invalidateCacheByPrefix("products:list:");
-  invalidateCacheByPrefix("product:detail:");
-  invalidateCacheByPrefix("product:media:");
+async function invalidateProductCaches() {
+  await Promise.all([
+    invalidateCacheByPrefix("products:list:"),
+    invalidateCacheByPrefix("product:detail:"),
+    invalidateCacheByPrefix("product:media:"),
+  ]);
 }
 
-function invalidateSettingsCache() {
-  invalidateCacheByPrefix("settings:");
+async function invalidateSettingsCache() {
+  await invalidateCacheByPrefix("settings:");
 }
 
 function isGoogleCrawlerRequest(userAgent = "") {
@@ -3338,13 +3442,13 @@ app.get("/api/admin/me", async (req, res) => {
 app.get("/api/settings", async (_req, res) => {
   try {
     const cacheKey = "settings:public";
-    const cached = getCachedResponse(cacheKey);
+    const cached = await getCachedResponse(cacheKey);
     if (cached) {
       res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
       return res.json(cached);
     }
     const siteName = await getSiteNameSetting();
-    const payload = setCachedResponse(cacheKey, { siteName }, CACHE_TTL_MS.settings);
+    const payload = await setCachedResponse(cacheKey, { siteName }, CACHE_TTL_MS.settings);
     res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
     return res.json(payload);
   } catch (error) {
@@ -3371,7 +3475,7 @@ app.put("/api/admin/settings", requireAdminAuth, async (req, res) => {
       return res.status(400).json({ message: "Site ismi en fazla 80 karakter olabilir." });
     }
     await setSiteNameSetting(siteName);
-    invalidateSettingsCache();
+    await invalidateSettingsCache();
     return res.json({ siteName });
   } catch (error) {
     return res.status(500).json({ message: "Admin settings update failed." });
@@ -3937,7 +4041,7 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
       return res.status(500).json({ message: "Urun olusturuldu ancak okunamadi." });
     }
 
-    invalidateProductCaches();
+    await invalidateProductCaches();
     return res.status(201).json({ product: mapProductRow(rows[0]) });
   } catch (error) {
     if (error?.code === "ER_BAD_FIELD_ERROR") {
@@ -4097,7 +4201,7 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
       return res.status(404).json({ message: "Ürün bulunamadı." });
     }
 
-    invalidateProductCaches();
+    await invalidateProductCaches();
     return res.json({ product: mapProductRow(rows[0]) });
   } catch (error) {
     if (error?.code === "ER_BAD_FIELD_ERROR") {
@@ -4113,16 +4217,16 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
 app.get("/api/categories", async (_req, res) => {
   try {
     const cacheKey = "categories:list";
-    const cached = getCachedResponse(cacheKey);
+    const cached = await getCachedResponse(cacheKey);
     if (cached) {
-      res.setHeader("Cache-Control", "public, max-age=900, stale-while-revalidate=1800");
+      res.setHeader("Cache-Control", "public, max-age=1800, stale-while-revalidate=3600");
       return res.json(cached);
     }
     const [rows] = await pool.query(
       `SELECT id, name, image, description FROM categories ORDER BY name ASC`
     );
-    const payload = setCachedResponse(cacheKey, rows, CACHE_TTL_MS.categories);
-    res.setHeader("Cache-Control", "public, max-age=900, stale-while-revalidate=1800");
+    const payload = await setCachedResponse(cacheKey, rows, CACHE_TTL_MS.categories);
+    res.setHeader("Cache-Control", "public, max-age=1800, stale-while-revalidate=3600");
     res.json(payload);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch categories." });
@@ -4163,9 +4267,9 @@ app.get("/api/products", async (req, res) => {
     const parsedOffset = Number(req.query?.offset);
     const safeOffset = Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
     const cacheKey = `products:list:${String(search ?? "").trim()}|${String(category ?? "").trim()}|${String(sort ?? "").trim()}|${safeLimit}|${safeOffset}|${includeMeta ? "1" : "0"}`;
-    const cached = getCachedResponse(cacheKey);
+    const cached = await getCachedResponse(cacheKey);
     if (cached) {
-      res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=120");
+      res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
       return res.json(cached);
     }
 
@@ -4203,8 +4307,8 @@ app.get("/api/products", async (req, res) => {
       };
     }
 
-    setCachedResponse(cacheKey, payload, CACHE_TTL_MS.productList);
-    res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=120");
+    await setCachedResponse(cacheKey, payload, CACHE_TTL_MS.productList);
+    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
     res.json(payload);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch products." });
@@ -4214,9 +4318,9 @@ app.get("/api/products", async (req, res) => {
 app.get("/api/products/:id", async (req, res) => {
   try {
     const cacheKey = `product:detail:${String(req.params.id ?? "").trim()}`;
-    const cached = getCachedResponse(cacheKey);
+    const cached = await getCachedResponse(cacheKey);
     if (cached) {
-      res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
       return res.json(cached);
     }
     const [rows] = await pool.query(
@@ -4264,8 +4368,8 @@ app.get("/api/products/:id", async (req, res) => {
       relatedProducts: relatedRows.map(mapProductListRow),
     };
 
-    setCachedResponse(cacheKey, payload, CACHE_TTL_MS.productDetail);
-    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+    await setCachedResponse(cacheKey, payload, CACHE_TTL_MS.productDetail);
+    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
     return res.json(payload);
   } catch (error) {
     return res.status(500).json({ message: "Failed to fetch product." });
@@ -4275,9 +4379,9 @@ app.get("/api/products/:id", async (req, res) => {
 app.get("/api/products/:id/media", async (req, res) => {
   try {
     const cacheKey = `product:media:${String(req.params.id ?? "").trim()}`;
-    const cached = getCachedResponse(cacheKey);
+    const cached = await getCachedResponse(cacheKey);
     if (cached) {
-      res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
       return res.json(cached);
     }
     const [rows] = await pool.query(
@@ -4297,8 +4401,8 @@ app.get("/api/products/:id/media", async (req, res) => {
       .map((source, index) => buildResolvedProductImagePath(rows[0].id, source, index, "detail"))
       .filter(Boolean);
     const payload = { images };
-    setCachedResponse(cacheKey, payload, CACHE_TTL_MS.productMedia);
-    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+    await setCachedResponse(cacheKey, payload, CACHE_TTL_MS.productMedia);
+    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
     return res.json(payload);
   } catch (error) {
     return res.status(500).json({ message: "Failed to fetch product media." });
@@ -4511,7 +4615,7 @@ app.delete("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
       return res.status(404).json({ message: "Ürün bulunamadı." });
     }
 
-    invalidateProductCaches();
+    await invalidateProductCaches();
     return res.json({ ok: true });
   } catch (error) {
     return res.status(500).json({ message: "Admin product delete failed." });
@@ -4587,6 +4691,8 @@ if (fs.existsSync(distIndexHtml)) {
     res.sendFile(distIndexHtml);
   });
 }
+
+await initializeRedisCache();
 
 app.listen(port, () => {
   console.log(`API server running on http://localhost:${port}`);

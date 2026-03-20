@@ -8,7 +8,7 @@ import { fetchCategories, fetchProductPage } from '@/lib/api';
 import { queuePendingWishlistProduct } from '@/lib/pendingWishlist';
 import { trackAddToCart } from '@/lib/analytics';
 
-const PAGE_SIZE = 24;
+const PAGE_SIZE = 12;
 
 export function Shop() {
   const navigate = useNavigate();

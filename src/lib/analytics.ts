@@ -2,6 +2,7 @@ declare global {
   interface Window {
     dataLayer?: unknown[];
     gtag?: (...args: unknown[]) => void;
+    __gaInitializedMeasurementId?: string;
     fbq?: ((...args: unknown[]) => void) & {
       callMethod?: (...args: unknown[]) => void;
       queue?: unknown[];
@@ -52,6 +53,10 @@ function getMeasurementId() {
 export function initGoogleAnalytics() {
   const measurementId = getMeasurementId();
   if (!measurementId) return;
+  if (window.__gaInitializedMeasurementId === measurementId) {
+    initializedMeasurementId = measurementId;
+    return;
+  }
   if (initializedMeasurementId === measurementId && window.gtag) return;
 
   if (!window.dataLayer) {
@@ -124,6 +129,7 @@ export function trackPageView(path: string) {
 
   if (measurementId && window.gtag) {
     window.gtag("event", "page_view", {
+      send_to: measurementId,
       page_path: path,
       page_location: pageLocation,
       page_title: document.title,
@@ -168,7 +174,9 @@ export function trackAddToCart(input: { product: AnalyticsProduct; quantity?: nu
   const value = Number(input.product.price ?? 0) * quantity;
 
   if (window.gtag && getMeasurementId()) {
+    const measurementId = getMeasurementId();
     window.gtag("event", "add_to_cart", {
+      send_to: measurementId,
       currency: "TRY",
       value,
       items: [item],
@@ -193,7 +201,9 @@ export function trackBeginCheckout(input: { items: AnalyticsCartLine[]; total: n
   const items = (input.items ?? []).map(mapCartLineToGtagItem);
 
   if (window.gtag && getMeasurementId()) {
+    const measurementId = getMeasurementId();
     window.gtag("event", "begin_checkout", {
+      send_to: measurementId,
       currency: "TRY",
       value: total,
       items,
@@ -216,7 +226,9 @@ export function trackPurchase(order: AnalyticsOrder) {
   const items = (order.items ?? []).map(mapCartLineToGtagItem);
 
   if (window.gtag && getMeasurementId()) {
+    const measurementId = getMeasurementId();
     window.gtag("event", "purchase", {
+      send_to: measurementId,
       transaction_id: String(order.id ?? ""),
       currency: "TRY",
       value: total,
@@ -237,6 +249,24 @@ export function trackPurchase(order: AnalyticsOrder) {
 
 export function trackViewContent(product: AnalyticsProduct) {
   const value = Number(product.price ?? 0);
+
+  if (window.gtag && getMeasurementId()) {
+    const measurementId = getMeasurementId();
+    window.gtag("event", "view_item", {
+      send_to: measurementId,
+      currency: "TRY",
+      value,
+      items: [
+        {
+          item_id: String(product.id ?? ""),
+          item_name: String(product.name ?? ""),
+          item_category: String(product.category ?? ""),
+          price: value,
+          quantity: 1,
+        },
+      ],
+    });
+  }
 
   if (window.fbq) {
     window.fbq("track", "ViewContent", {

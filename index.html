@@ -68,6 +68,20 @@
           !GA_ID.includes("VITE_GA_MEASUREMENT_ID");
 
         if (isValidGaId) {
+          const searchParams = new URLSearchParams(window.location.search);
+          const debugMode =
+            searchParams.get("ga_debug") === "1" ||
+            searchParams.get("ga_debug") === "true" ||
+            window.localStorage.getItem("ga_debug") === "1";
+
+          if (searchParams.get("ga_debug") === "1" || searchParams.get("ga_debug") === "true") {
+            window.localStorage.setItem("ga_debug", "1");
+          }
+
+          if (searchParams.get("ga_debug") === "0") {
+            window.localStorage.removeItem("ga_debug");
+          }
+
           window.dataLayer = window.dataLayer || [];
           window.gtag =
             window.gtag ||
@@ -84,12 +98,18 @@
           document.head.appendChild(gaScript);
 
           window.gtag("js", new Date());
+          if (debugMode) {
+            window.gtag("set", "debug_mode", true);
+          }
           window.gtag("config", GA_ID, {
             page_location: window.location.href,
             page_path: window.location.pathname + window.location.search + window.location.hash,
             page_title: document.title,
+            send_page_view: true,
+            debug_mode: debugMode || undefined,
           });
           window.__gaInitializedMeasurementId = GA_ID;
+          window.__gaDebugMode = debugMode;
         }
 
       })();

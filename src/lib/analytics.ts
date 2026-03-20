@@ -3,6 +3,7 @@ declare global {
     dataLayer?: unknown[];
     gtag?: (...args: unknown[]) => void;
     __gaInitializedMeasurementId?: string;
+    __gaDebugMode?: boolean;
     fbq?: ((...args: unknown[]) => void) & {
       callMethod?: (...args: unknown[]) => void;
       queue?: unknown[];
@@ -50,6 +51,18 @@ function getMeasurementId() {
   return String(env.VITE_GA_MEASUREMENT_ID ?? "").trim();
 }
 
+function isGaDebugModeEnabled() {
+  if (typeof window.__gaDebugMode === "boolean") {
+    return window.__gaDebugMode;
+  }
+
+  try {
+    return window.localStorage.getItem("ga_debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function initGoogleAnalytics() {
   const measurementId = getMeasurementId();
   if (!measurementId) return;
@@ -82,8 +95,16 @@ export function initGoogleAnalytics() {
     document.head.appendChild(script);
   }
 
+  const debugMode = isGaDebugModeEnabled();
   window.gtag("js", new Date());
-  window.gtag("config", measurementId, { send_page_view: false });
+  if (debugMode) {
+    window.gtag("set", "debug_mode", true);
+  }
+  window.gtag("config", measurementId, {
+    send_page_view: false,
+    debug_mode: debugMode || undefined,
+  });
+  window.__gaDebugMode = debugMode;
   initializedMeasurementId = measurementId;
 }
 
@@ -133,6 +154,7 @@ export function trackPageView(path: string) {
       page_path: path,
       page_location: pageLocation,
       page_title: document.title,
+      debug_mode: isGaDebugModeEnabled() || undefined,
     });
   }
 
@@ -180,6 +202,7 @@ export function trackAddToCart(input: { product: AnalyticsProduct; quantity?: nu
       currency: "TRY",
       value,
       items: [item],
+      debug_mode: isGaDebugModeEnabled() || undefined,
     });
   }
 
@@ -207,6 +230,7 @@ export function trackBeginCheckout(input: { items: AnalyticsCartLine[]; total: n
       currency: "TRY",
       value: total,
       items,
+      debug_mode: isGaDebugModeEnabled() || undefined,
     });
   }
 
@@ -233,6 +257,7 @@ export function trackPurchase(order: AnalyticsOrder) {
       currency: "TRY",
       value: total,
       items,
+      debug_mode: isGaDebugModeEnabled() || undefined,
     });
   }
 
@@ -265,6 +290,7 @@ export function trackViewContent(product: AnalyticsProduct) {
           quantity: 1,
         },
       ],
+      debug_mode: isGaDebugModeEnabled() || undefined,
     });
   }
 

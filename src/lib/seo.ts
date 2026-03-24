@@ -1,4 +1,4 @@
-export const SEO_BRAND_NAME = "StilBags&Fashion";
+﻿export const SEO_BRAND_NAME = "StilBags&Fashion";
 export const SEO_DEFAULT_TITLE = "StilBags&Fashion | Kadın Çanta ve Aksesuar Modelleri";
 export const SEO_DEFAULT_DESCRIPTION =
   "StilBags&Fashion kadın çanta ve aksesuar koleksiyonlarını keşfedin. Günlük, şık ve modern modeller tek adreste.";
@@ -15,6 +15,29 @@ export interface SeoPayload {
   type?: "website" | "product" | "article";
   noindex?: boolean;
   schema?: JsonLd | JsonLd[];
+}
+
+export function normalizeSeoText(value: string) {
+  return String(value ?? "")
+    .replaceAll("Ã¼", "ü")
+    .replaceAll("Ãœ", "Ü")
+    .replaceAll("Ã¶", "ö")
+    .replaceAll("Ã–", "Ö")
+    .replaceAll("Ã§", "ç")
+    .replaceAll("Ã‡", "Ç")
+    .replaceAll("ÄŸ", "ğ")
+    .replaceAll("Äž", "Ğ")
+    .replaceAll("ÅŸ", "ş")
+    .replaceAll("Å", "Ş")
+    .replaceAll("Ä±", "ı")
+    .replaceAll("Ä°", "İ")
+    .replaceAll("â€™", "'")
+    .replaceAll("â€œ", '"')
+    .replaceAll("â€", '"')
+    .replaceAll("â€“", "-")
+    .replaceAll("â€¦", "...")
+    .replaceAll("Â", "")
+    .trim();
 }
 
 function ensureMetaByName(name: string, content: string) {
@@ -48,9 +71,9 @@ function ensureCanonical(href: string) {
 }
 
 function toSingleLine(text: string, maxLength: number) {
-  const clean = String(text ?? "").replace(/\s+/g, " ").trim();
+  const clean = normalizeSeoText(String(text ?? "")).replace(/\s+/g, " ").trim();
   if (clean.length <= maxLength) return clean;
-  return `${clean.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+  return `${clean.slice(0, Math.max(0, maxLength - 3)).trim()}...`;
 }
 
 export function getSiteOrigin() {

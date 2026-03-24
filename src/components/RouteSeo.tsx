@@ -1,7 +1,7 @@
-import { useMemo } from "react";
+﻿import { useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { Seo } from "@/components/Seo";
-import { SEO_BRAND_NAME, SEO_DEFAULT_DESCRIPTION, getSiteOrigin, type SeoPayload } from "@/lib/seo";
+import { SEO_BRAND_NAME, SEO_DEFAULT_DESCRIPTION, getSiteOrigin, normalizeSeoText, type SeoPayload } from "@/lib/seo";
 
 const CATEGORY_LABELS: Record<string, string> = {
   crossbody: "Çapraz Çantalar",
@@ -39,8 +39,8 @@ function pageSchema(path: string, title: string, description: string) {
   return {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    name: title,
-    description,
+    name: normalizeSeoText(title),
+    description: normalizeSeoText(description),
     inLanguage: "tr-TR",
     url: `${getSiteOrigin()}${path}`,
   };
@@ -93,7 +93,7 @@ export function RouteSeo() {
       }
 
       if (category) {
-        const categoryLabel = CATEGORY_LABELS[category] ?? "Ürünler";
+        const categoryLabel = normalizeSeoText(CATEGORY_LABELS[category] ?? "Ürünler");
         const title = `${categoryLabel} | ${SEO_BRAND_NAME}`;
         const description = `${categoryLabel} kategorisindeki seçili ürünleri StilBags&Fashion koleksiyonunda inceleyin.`;
         return {
@@ -183,7 +183,7 @@ export function RouteSeo() {
         description: staticSeo.description,
         canonicalPath: staticSeo.canonical,
         image: staticSeo.image || "/banner3.jpg",
-        noindex: false,
+        noindex: lowerPath !== staticSeo.canonical,
         schema: [...baseSchemas, pageSchema(staticSeo.canonical, staticSeo.title, staticSeo.description)],
       };
     }

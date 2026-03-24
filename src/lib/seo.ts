@@ -79,11 +79,19 @@ function toSingleLine(text: string, maxLength: number) {
 export function getSiteOrigin() {
   const configured = String(import.meta.env.VITE_SITE_URL ?? "").trim();
   if (configured) {
-    if (/^https?:\/\//i.test(configured)) return configured.replace(/\/+$/, "");
-    return `https://${configured.replace(/\/+$/, "")}`;
+    const normalized = /^https?:\/\//i.test(configured)
+      ? configured.replace(/\/+$/, "")
+      : `https://${configured.replace(/\/+$/, "")}`;
+    return normalized.replace(/^https?:\/\/www\.stilbagsfashion\.com$/i, "https://stilbagsfashion.com");
   }
   if (typeof window !== "undefined" && window.location?.origin) {
-    return window.location.origin.replace(/\/+$/, "");
+    const runtimeOrigin = window.location.origin.replace(/\/+$/, "");
+    if (/localhost|127\.0\.0\.1/i.test(runtimeOrigin)) {
+      return runtimeOrigin;
+    }
+    if (/^https?:\/\/(?:www\.)?stilbagsfashion\.com$/i.test(runtimeOrigin)) {
+      return "https://stilbagsfashion.com";
+    }
   }
   return "https://stilbagsfashion.com";
 }

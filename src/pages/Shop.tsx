@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Heart, SlidersHorizontal, ChevronDown, X } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
 import type { Product, Category } from '@/types';
 import { fetchCategories, fetchProductPage } from '@/lib/api';
+import { getCategoryPageById, getCategoryPageBySlug, getCategoryPagePath } from '@/lib/categoryPages';
 import { queuePendingWishlistProduct } from '@/lib/pendingWishlist';
 import { trackAddToCart } from '@/lib/analytics';
 
@@ -12,6 +12,7 @@ const PAGE_SIZE = 12;
 
 export function Shop() {
   const navigate = useNavigate();
+  const { categorySlug } = useParams<{ categorySlug?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
@@ -23,9 +24,16 @@ export function Shop() {
   const [totalProducts, setTotalProducts] = useState(0);
   const { dispatch, state } = useStore();
 
+  const categoryPage = useMemo(() => getCategoryPageBySlug(categorySlug), [categorySlug]);
   const searchQuery = searchParams.get('search') || '';
-  const categoryFilter = searchParams.get('category') || '';
+  const categoryFilter = categoryPage?.id || searchParams.get('category') || '';
   const sortBy = searchParams.get('sort') || 'featured';
+
+  useEffect(() => {
+    if (categorySlug && !categoryPage) {
+      navigate('/shop/', { replace: true });
+    }
+  }, [categoryPage, categorySlug, navigate]);
 
   useEffect(() => {
     let isMounted = true;
@@ -83,17 +91,21 @@ export function Shop() {
   }, [searchQuery, categoryFilter, sortBy]);
 
   const updateFilter = (key: string, value: string) => {
-    const newParams = new URLSearchParams(searchParams);
+    const nextParams = new URLSearchParams(searchParams);
     if (value) {
-      newParams.set(key, value);
+      nextParams.set(key, value);
     } else {
-      newParams.delete(key);
+      nextParams.delete(key);
     }
-    setSearchParams(newParams);
+    setSearchParams(nextParams);
+  };
+
+  const navigateToCategory = (categoryId: string) => {
+    navigate(getCategoryPagePath(categoryId));
   };
 
   const clearFilters = () => {
-    setSearchParams(new URLSearchParams());
+    navigate('/shop/');
   };
 
   const loadMoreProducts = async () => {
@@ -134,7 +146,7 @@ export function Shop() {
   const addToCart = (product: Product) => {
     dispatch({
       type: 'ADD_TO_CART',
-      payload: { product, quantity: 1, color: product.colors[0] }
+      payload: { product, quantity: 1, color: product.colors[0] },
     });
     trackAddToCart({
       product: {
@@ -148,13 +160,13 @@ export function Shop() {
     });
   };
 
-  const isInWishlist = (productId: string) => {
-    return state.wishlist.some(item => item.id === productId);
-  };
+  const isInWishlist = (productId: string) => state.wishlist.some((item) => item.id === productId);
 
   const getCategoryName = (id: string) => {
-    const cat = categories.find(c => c.id === id);
-    return cat ? cat.name : id;
+    const mappedCategory = getCategoryPageById(id);
+    if (mappedCategory) return mappedCategory.name;
+    const category = categories.find((item) => item.id === id);
+    return category ? category.name : id;
   };
 
   const getProductTags = (product: Product) => {
@@ -173,12 +185,10 @@ export function Shop() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div>
             <h1 className="text-2xl md:text-3xl font-light mb-2">
-              {searchQuery ? `Arama: "${searchQuery}"` :
-               categoryFilter ? getCategoryName(categoryFilter) :
-               'Tüm Ürünler'}
+              {searchQuery ? `Arama: "${searchQuery}"` : categoryFilter ? getCategoryName(categoryFilter) : 'Tüm Ürünler'}
             </h1>
             <p className="text-sm text-gray-500">
-              {totalProducts} ürün
+              {categoryPage ? categoryPage.introDescription : `${totalProducts} ürün`}
             </p>
           </div>
 
@@ -221,7 +231,7 @@ export function Shop() {
 
               <div className="space-y-2">
                 <button
-                  onClick={() => updateFilter('category', '')}
+                  onClick={clearFilters}
                   className={`block w-full text-left text-sm py-2 transition-colors ${
                     categoryFilter === '' ? 'text-black font-medium' : 'text-gray-500 hover:text-black'
                   }`}
@@ -231,7 +241,7 @@ export function Shop() {
                 {categories.map((cat) => (
                   <button
                     key={cat.id}
-                    onClick={() => updateFilter('category', cat.id)}
+                    onClick={() => navigateToCategory(cat.id)}
                     className={`block w-full text-left text-sm py-2 transition-colors ${
                       categoryFilter === cat.id ? 'text-black font-medium' : 'text-gray-500 hover:text-black'
                     }`}
@@ -280,9 +290,7 @@ export function Shop() {
                         <button
                           onClick={() => addToWishlist(product)}
                           className={`absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-                            isInWishlist(product.id)
-                              ? 'bg-white text-black'
-                              : 'bg-white/80 hover:bg-white'
+                            isInWishlist(product.id) ? 'bg-white text-black' : 'bg-white/80 hover:bg-white'
                           }`}
                         >
                           <Heart className={`w-4 h-4 ${isInWishlist(product.id) ? 'fill-current' : ''}`} />
@@ -297,9 +305,7 @@ export function Shop() {
                       </div>
 
                       <Link to={`/product/${product.id}`}>
-                        <h3 className="text-sm font-medium text-gray-900 mb-1 line-clamp-1">
-                          {product.name}
-                        </h3>
+                        <h3 className="text-sm font-medium text-gray-900 mb-1 line-clamp-1">{product.name}</h3>
                         <p className="text-sm text-gray-600">{product.price.toLocaleString('tr-TR')} TL</p>
                       </Link>
                     </div>
@@ -337,7 +343,10 @@ export function Shop() {
 
             <div className="space-y-2">
               <button
-                onClick={() => { updateFilter('category', ''); setIsFilterOpen(false); }}
+                onClick={() => {
+                  clearFilters();
+                  setIsFilterOpen(false);
+                }}
                 className={`block w-full text-left text-sm py-3 border-b ${
                   categoryFilter === '' ? 'text-black font-medium' : 'text-gray-500'
                 }`}
@@ -347,7 +356,10 @@ export function Shop() {
               {categories.map((cat) => (
                 <button
                   key={cat.id}
-                  onClick={() => { updateFilter('category', cat.id); setIsFilterOpen(false); }}
+                  onClick={() => {
+                    navigateToCategory(cat.id);
+                    setIsFilterOpen(false);
+                  }}
                   className={`block w-full text-left text-sm py-3 border-b ${
                     categoryFilter === cat.id ? 'text-black font-medium' : 'text-gray-500'
                   }`}

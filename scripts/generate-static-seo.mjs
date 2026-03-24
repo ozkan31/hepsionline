@@ -28,6 +28,40 @@ const categoryLabels = {
   new: "Yeni Gelenler",
 };
 
+const categoryPages = {
+  crossbody: {
+    slug: "capraz-cantalar",
+    name: "Çapraz Çantalar",
+    title: `Çapraz Çantalar | ${BRAND}`,
+    description:
+      "Günlük kullanım, şehir stili ve zarif kombinler için seçilen çapraz çanta modellerini StilBags&Fashion koleksiyonunda keşfedin.",
+    image: "/cat_crossbody.jpg",
+  },
+  mini: {
+    slug: "mini-cantalar",
+    name: "Mini Çantalar",
+    title: `Mini Çantalar | ${BRAND}`,
+    description:
+      "Özel davetlerden günlük kombinlere kadar her stile uyum sağlayan mini çanta modellerini StilBags&Fashion ile inceleyin.",
+    image: "/cat_mini.jpg",
+  },
+  shoulder: {
+    slug: "omuz-cantalari",
+    name: "Omuz Çantaları",
+    title: `Omuz Çantaları | ${BRAND}`,
+    description:
+      "Şıklık ve konforu bir araya getiren omuz çantası modellerini StilBags&Fashion koleksiyonunda keşfedin.",
+    image: "/cat_shoulder.jpg",
+  },
+  new: {
+    slug: "yeni-gelenler",
+    name: "Yeni Gelenler",
+    title: `Yeni Gelenler | ${BRAND}`,
+    description: "Sezonun öne çıkan yeni çanta modellerini ve en güncel StilBags&Fashion seçkisini keşfedin.",
+    image: "/cat_new.jpg",
+  },
+};
+
 function normalizeText(value) {
   return String(value ?? "")
     .replaceAll("Ã¼", "ü")
@@ -427,6 +461,67 @@ function getCategoryLabel(categoryId) {
   return categoryLabels[String(categoryId ?? "").trim()] ?? "Kadın Çanta";
 }
 
+function getCategoryPageConfig(categoryId) {
+  return categoryPages[String(categoryId ?? "").trim()] ?? null;
+}
+
+function buildCategorySeo(row) {
+  const categoryId = String(row.id ?? "").trim();
+  const config = getCategoryPageConfig(categoryId);
+  if (!config) return null;
+
+  const canonicalPath = `/kategori/${config.slug}/`;
+  const title = config.title;
+  const description =
+    truncateText(normalizeText(row.description || config.description || `${config.name} koleksiyonunu keşfedin.`), 170) ||
+    config.description;
+  const breadcrumbSchema = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Ana Sayfa",
+        item: `${baseUrl}/`,
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: "Ürünler",
+        item: `${baseUrl}/shop/`,
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
+        name: config.name,
+        item: `${baseUrl}${canonicalPath}`,
+      },
+    ],
+  };
+
+  return {
+    route: `kategori/${config.slug}`,
+    title,
+    description,
+    canonicalPath,
+    image: config.image,
+    type: "website",
+    lastmod: new Date().toISOString(),
+    schema: [
+      {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        name: title,
+        description,
+        inLanguage: "tr-TR",
+        url: `${baseUrl}${canonicalPath}`,
+      },
+      breadcrumbSchema,
+    ],
+  };
+}
+
 function buildProductSeo(row) {
   const productId = String(row.id ?? "").trim();
   const route = `product/${encodeURIComponent(productId)}`;
@@ -475,7 +570,7 @@ function buildProductSeo(row) {
         "@type": "ListItem",
         position: 2,
         name: "Ürünler",
-        item: `${baseUrl}/shop`,
+        item: `${baseUrl}/shop/`,
       },
       {
         "@type": "ListItem",
@@ -498,7 +593,7 @@ function buildProductSeo(row) {
   };
 }
 
-function buildSitemapXml(staticConfigs, productConfigs, categoryRows) {
+function buildSitemapXml(staticConfigs, productConfigs, categoryConfigs) {
   const staticEntries = staticConfigs
     .filter((item) => !item.noindex)
     .map((item) => ({
@@ -508,11 +603,11 @@ function buildSitemapXml(staticConfigs, productConfigs, categoryRows) {
       lastmod: new Date().toISOString(),
     }));
 
-  const categoryEntries = categoryRows.map((row) => ({
-    loc: `${baseUrl}/shop/?category=${encodeURIComponent(String(row.id ?? "").trim())}`,
+  const categoryEntries = categoryConfigs.map((item) => ({
+    loc: toAbsoluteUrl(item.canonicalPath),
     changefreq: "daily",
     priority: "0.75",
-    lastmod: new Date().toISOString(),
+    lastmod: item.lastmod ?? new Date().toISOString(),
   }));
 
   const productEntries = productConfigs.map((item) => ({
@@ -540,6 +635,7 @@ async function main() {
   const template = fs.readFileSync(distIndexPath, "utf8");
   const staticConfigs = buildStaticPageConfigs();
   const { products, categories } = await getDatabaseRows();
+  const categoryConfigs = categories.map(buildCategorySeo).filter(Boolean);
   const productConfigs = products.map(buildProductSeo);
 
   for (const config of staticConfigs) {
@@ -552,15 +648,22 @@ async function main() {
     ensureRouteFile(config.route, html);
   }
 
+  for (const config of categoryConfigs) {
+    const html = applySeo(template, config);
+    ensureRouteFile(config.route, html);
+  }
+
   if (fs.existsSync(robotsPath)) {
     const robots = fs.readFileSync(robotsPath, "utf8");
     fs.writeFileSync(robotsPath, robots.replace(/\r\n/g, "\n"), "utf8");
   }
 
-  const sitemapXml = buildSitemapXml(staticConfigs, productConfigs, categories);
+  const sitemapXml = buildSitemapXml(staticConfigs, productConfigs, categoryConfigs);
   fs.writeFileSync(sitemapPath, sitemapXml, "utf8");
 
-  console.log(`[seo] Statik SEO sayfalari üretildi. static=${staticConfigs.length} product=${productConfigs.length}`);
+  console.log(
+    `[seo] Statik SEO sayfalari üretildi. static=${staticConfigs.length} category=${categoryConfigs.length} product=${productConfigs.length}`
+  );
 }
 
 await main();

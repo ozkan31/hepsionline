@@ -5,6 +5,7 @@ import { Heart, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
 import type { Product, Category } from '@/types';
 import { fetchProducts } from '@/lib/api';
+import { CATEGORY_PAGES, getCategoryPagePath } from '@/lib/categoryPages';
 import { queuePendingWishlistProduct } from '@/lib/pendingWishlist';
 import { trackAddToCart } from '@/lib/analytics';
 
@@ -14,28 +15,28 @@ const banners = [
   { id: 3, image: '/banner3.jpg', title: 'Şıklık ve Konfor', subtitle: 'Tarzınızı yansıtın', cta: 'Alışverişe Başla', link: '/shop' }
 ];
 
-const HOME_CATEGORIES: Category[] = [
-  { id: 'crossbody', name: 'Çapraz Çantalar', image: '/cat_crossbody.jpg', description: 'Günlük kullanıma uygun şık çapraz çantalar' },
-  { id: 'mini', name: 'Mini Çantalar', image: '/cat_mini.jpg', description: 'Kompakt ve zarif mini çantalar' },
-  { id: 'shoulder', name: 'Omuz Çantaları', image: '/cat_shoulder.jpg', description: 'Elegant omuz çantaları' },
-  { id: 'new', name: 'Yeni Gelenler', image: '/cat_new.jpg', description: 'En yeni koleksiyonumuz' }
-];
+const HOME_CATEGORIES: Category[] = CATEGORY_PAGES.map((category) => ({
+  id: category.id,
+  name: category.name,
+  image: category.image,
+  description: category.introDescription,
+}));
 
 const normalizeTurkishText = (value: string) =>
   String(value ?? '')
-    .replaceAll('Ã¼', 'ü')
-    .replaceAll('Ãœ', 'Ü')
-    .replaceAll('Ã¶', 'ö')
-    .replaceAll('Ã–', 'Ö')
-    .replaceAll('Ã§', 'ç')
-    .replaceAll('Ã‡', 'Ç')
-    .replaceAll('ÄŸ', 'ğ')
-    .replaceAll('Äž', 'Ğ')
-    .replaceAll('ÅŸ', 'ş')
-    .replaceAll('Åž', 'Ş')
-    .replaceAll('Ä±', 'ı')
-    .replaceAll('Ä°', 'İ')
-    .replaceAll('Â', '');
+    .replaceAll('ÃƒÂ¼', 'Ã¼')
+    .replaceAll('ÃƒÅ“', 'Ãœ')
+    .replaceAll('ÃƒÂ¶', 'Ã¶')
+    .replaceAll('Ãƒâ€“', 'Ã–')
+    .replaceAll('ÃƒÂ§', 'Ã§')
+    .replaceAll('Ãƒâ€¡', 'Ã‡')
+    .replaceAll('Ã„Å¸', 'ÄŸ')
+    .replaceAll('Ã„Å¾', 'Ä')
+    .replaceAll('Ã…Å¸', 'ÅŸ')
+    .replaceAll('Ã…Å¾', 'Å')
+    .replaceAll('Ã„Â±', 'Ä±')
+    .replaceAll('Ã„Â°', 'Ä°')
+    .replaceAll('Ã‚', '');
 
 export function Home() {
   const navigate = useNavigate();
@@ -211,7 +212,7 @@ export function Home() {
           {categories.map((cat) => (
             <Link
               key={cat.id}
-              to={`/shop?category=${cat.id}`}
+              to={getCategoryPagePath(cat.id)}
               className="group relative aspect-[4/3] rounded-lg overflow-hidden"
             >
               <img
@@ -297,3 +298,6 @@ export function Home() {
     </main>
   );
 }
+
+
+

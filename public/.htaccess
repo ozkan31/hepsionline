@@ -4,4 +4,36 @@ AddDefaultCharset UTF-8
   AddCharset UTF-8 .html .xml .txt .json
 </IfModule>
 
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  RewriteCond %{HTTP_HOST} ^www\.stilbagsfashion\.com$ [NC]
+  RewriteRule ^ https://stilbagsfashion.com%{REQUEST_URI} [R=301,L]
+
+  RewriteRule ^about/?$ https://stilbagsfashion.com/hakkimizda/ [R=301,L]
+  RewriteRule ^contact/?$ https://stilbagsfashion.com/iletisim/ [R=301,L]
+  RewriteRule ^urunler/?$ https://stilbagsfashion.com/shop/ [R=301,L]
+
+  RewriteCond %{REQUEST_URI} ^/(shop|urunler)/?$ [NC]
+  RewriteCond %{QUERY_STRING} (^|&)category=crossbody(&|$) [NC]
+  RewriteRule ^ https://stilbagsfashion.com/kategori/capraz-cantalar/? [R=301,L]
+
+  RewriteCond %{REQUEST_URI} ^/(shop|urunler)/?$ [NC]
+  RewriteCond %{QUERY_STRING} (^|&)category=mini(&|$) [NC]
+  RewriteRule ^ https://stilbagsfashion.com/kategori/mini-cantalar/? [R=301,L]
+
+  RewriteCond %{REQUEST_URI} ^/(shop|urunler)/?$ [NC]
+  RewriteCond %{QUERY_STRING} (^|&)category=shoulder(&|$) [NC]
+  RewriteRule ^ https://stilbagsfashion.com/kategori/omuz-cantalari/? [R=301,L]
+
+  RewriteCond %{REQUEST_URI} ^/(shop|urunler)/?$ [NC]
+  RewriteCond %{QUERY_STRING} (^|&)category=new(&|$) [NC]
+  RewriteRule ^ https://stilbagsfashion.com/kategori/yeni-gelenler/? [R=301,L]
+
+  RewriteCond %{REQUEST_URI} ^/product/[^/]+/?$ [NC]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ - [G,L]
+</IfModule>
+
 DirectoryIndex index.html

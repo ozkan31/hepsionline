@@ -98,6 +98,7 @@ function AppLayout() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/shop" element={<Shop />} />
+              <Route path="/kategori/:categorySlug" element={<Shop />} />
               <Route path="/product/:id" element={<Product />} />
               <Route path="/sepet" element={<Cart />} />
               <Route path="/favoriler" element={<Wishlist />} />
@@ -144,3 +145,4 @@ function App() {
 }
 
 export default App;
+

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Heart, Minus, Plus, ArrowLeft, Check, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
@@ -10,9 +10,9 @@ import { SEO_BRAND_NAME } from '@/lib/seo';
 import { trackAddToCart, trackViewContent } from '@/lib/analytics';
 
 const CATEGORY_LABELS: Record<string, string> = {
-  crossbody: 'Çapraz Çantalar',
-  mini: 'Mini Çantalar',
-  shoulder: 'Omuz Çantaları',
+  crossbody: 'Ã‡apraz Ã‡antalar',
+  mini: 'Mini Ã‡antalar',
+  shoulder: 'Omuz Ã‡antalarÄ±',
   new: 'Yeni Gelenler',
 };
 
@@ -107,13 +107,13 @@ export function Product() {
     return (
       <div className="min-h-screen bg-[#F8F7F4] pt-20 md:pt-24 pb-20">
         <Seo
-          title={`Ürün Detayı | ${SEO_BRAND_NAME}`}
-          description="Ürün detayları yükleniyor."
+          title={`ÃœrÃ¼n DetayÄ± | ${SEO_BRAND_NAME}`}
+          description="ÃœrÃ¼n detaylarÄ± yÃ¼kleniyor."
           canonicalPath={`/product/${encodeURIComponent(String(id ?? '').trim())}`}
           image="/banner2.jpg"
         />
         <div className="w-full px-4 md:px-8">
-          <div className="max-w-5xl mx-auto text-center py-20 text-gray-500">Yükleniyor...</div>
+          <div className="max-w-5xl mx-auto text-center py-20 text-gray-500">YÃ¼kleniyor...</div>
         </div>
       </div>
     );
@@ -123,14 +123,14 @@ export function Product() {
     return (
       <div className="min-h-screen bg-[#F8F7F4] flex items-center justify-center">
         <Seo
-          title={`Ürün Bulunamadı | ${SEO_BRAND_NAME}`}
-          description="Aradığınız ürün bulunamadı."
+          title={`ÃœrÃ¼n BulunamadÄ± | ${SEO_BRAND_NAME}`}
+          description="AradÄ±ÄŸÄ±nÄ±z Ã¼rÃ¼n bulunamadÄ±."
           canonicalPath={`/product/${encodeURIComponent(String(id ?? '').trim())}`}
           noindex
         />
         <div className="text-center">
-          <p className="text-lg text-gray-500 mb-4">Ürün bulunamadı</p>
-          <Link to="/shop" className="bg-black text-white px-6 py-2 rounded-full">Alışverişe Dön</Link>
+          <p className="text-lg text-gray-500 mb-4">ÃœrÃ¼n bulunamadÄ±</p>
+          <Link to="/shop" className="bg-black text-white px-6 py-2 rounded-full">AlÄ±ÅŸveriÅŸe DÃ¶n</Link>
         </div>
       </div>
     );
@@ -144,13 +144,13 @@ export function Product() {
   const productTags =
     Array.isArray(product.tags) && product.tags.length > 0
       ? product.tags
-      : [product.isNew ? 'Yeni' : null, product.isBestseller ? 'Çok Satan' : null].filter(
+      : [product.isNew ? 'Yeni' : null, product.isBestseller ? 'Ã‡ok Satan' : null].filter(
           (tag): tag is string => Boolean(tag)
         );
 
-  const categoryLabel = CATEGORY_LABELS[String(product.category ?? '').trim()] ?? 'Kadın Çanta';
-  const canonicalProductPath = `/product/${encodeURIComponent(product.id)}`;
-  const seoDescription = String(product.description ?? '').trim().slice(0, 155) || `${product.name} ürün detayları.`;
+  const categoryLabel = CATEGORY_LABELS[String(product.category ?? '').trim()] ?? 'KadÄ±n Ã‡anta';
+  const canonicalProductPath = `/product/${encodeURIComponent(product.id)}/`;
+  const seoDescription = String(product.description ?? '').trim().slice(0, 155) || `${product.name} Ã¼rÃ¼n detaylarÄ±.`;
   const seoImage = activeImage || product.image;
   const productSchema = {
     '@context': 'https://schema.org',
@@ -186,8 +186,8 @@ export function Product() {
       {
         '@type': 'ListItem',
         position: 2,
-        name: 'Ürünler',
-        item: `${window.location.origin}/shop`,
+        name: 'ÃœrÃ¼nler',
+        item: `${window.location.origin}/shop/`,
       },
       {
         '@type': 'ListItem',
@@ -453,7 +453,7 @@ export function Product() {
                     type="button"
                     onClick={showPrevImage}
                     className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 border border-gray-200 items-center justify-center hover:bg-white hover:border-black transition-colors"
-                    aria-label="Önceki görsel"
+                    aria-label="Ã–nceki gÃ¶rsel"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
@@ -461,7 +461,7 @@ export function Product() {
                     type="button"
                     onClick={showNextImage}
                     className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 border border-gray-200 items-center justify-center hover:bg-white hover:border-black transition-colors"
-                    aria-label="Sonraki görsel"
+                    aria-label="Sonraki gÃ¶rsel"
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
@@ -480,7 +480,7 @@ export function Product() {
                       className={`w-2 h-2 rounded-full transition-colors ${
                         selectedImageIndex === index ? "bg-black" : "bg-white/80"
                       }`}
-                      aria-label={`Görsel ${index + 1}`}
+                      aria-label={`GÃ¶rsel ${index + 1}`}
                     />
                   ))}
                 </div>
@@ -539,7 +539,7 @@ export function Product() {
                       : 'text-gray-500 border-transparent hover:text-black'
                   }`}
                 >
-                  Açıklama
+                  AÃ§Ä±klama
                 </button>
                 <button
                   type="button"
@@ -550,7 +550,7 @@ export function Product() {
                       : 'text-gray-500 border-transparent hover:text-black'
                   }`}
                 >
-                  Özellikler
+                  Ã–zellikler
                 </button>
               </div>
 
@@ -568,7 +568,7 @@ export function Product() {
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-gray-500">Bu ürün için özellik bilgisi bulunmuyor.</p>
+                <p className="text-sm text-gray-500">Bu Ã¼rÃ¼n iÃ§in Ã¶zellik bilgisi bulunmuyor.</p>
               )}
             </div>
 
@@ -651,10 +651,10 @@ export function Product() {
             {/* Additional Info */}
             <div className="pt-6 border-t border-gray-200 space-y-2">
               <p className="text-sm text-gray-500">
-                <span className="text-black font-medium">Ücretsiz kargo</span> 1500 TL üzeri siparişlerde
+                <span className="text-black font-medium">Ãœcretsiz kargo</span> 1500 TL Ã¼zeri sipariÅŸlerde
               </p>
               <p className="text-sm text-gray-500">
-                <span className="text-black font-medium">Kolay iade</span> 14 gün içinde
+                <span className="text-black font-medium">Kolay iade</span> 14 gÃ¼n iÃ§inde
               </p>
             </div>
           </div>
@@ -664,7 +664,7 @@ export function Product() {
         {relatedProducts.length > 0 && (
           <div className="mt-16 md:mt-24 max-w-5xl mx-auto">
             <h2 className="text-xl md:text-2xl font-light mb-6">
-              Benzer Ürünler
+              Benzer ÃœrÃ¼nler
             </h2>
             <div className="grid grid-cols-2 gap-4 md:gap-6 max-w-md">
               {relatedProducts.map((related) => (
@@ -693,6 +693,8 @@ export function Product() {
     </div>
   );
 }
+
+
 
 
 

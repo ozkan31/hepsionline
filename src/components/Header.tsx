@@ -99,8 +99,8 @@ export function Header() {
   const navLinks = [
     { name: 'Ana Sayfa', path: '/' },
     { name: 'Ürünler', path: '/shop' },
-    { name: 'Hakkımızda', path: '/about' },
-    { name: 'İletişim', path: '/contact' },
+    { name: 'Hakkımızda', path: '/hakkimizda' },
+    { name: 'İletişim', path: '/iletisim' },
   ];
 
   const isActive = (path: string) => location.pathname === path;

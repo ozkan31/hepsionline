@@ -1,0 +1,7 @@
+AddDefaultCharset UTF-8
+
+<IfModule mod_mime.c>
+  AddCharset UTF-8 .html .xml .txt .json
+</IfModule>
+
+DirectoryIndex index.html

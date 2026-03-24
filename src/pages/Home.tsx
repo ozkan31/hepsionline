@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
 import { Heart, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
@@ -24,19 +24,19 @@ const HOME_CATEGORIES: Category[] = CATEGORY_PAGES.map((category) => ({
 
 const normalizeTurkishText = (value: string) =>
   String(value ?? '')
-    .replaceAll('ÃƒÂ¼', 'Ã¼')
-    .replaceAll('ÃƒÅ“', 'Ãœ')
-    .replaceAll('ÃƒÂ¶', 'Ã¶')
-    .replaceAll('Ãƒâ€“', 'Ã–')
-    .replaceAll('ÃƒÂ§', 'Ã§')
-    .replaceAll('Ãƒâ€¡', 'Ã‡')
-    .replaceAll('Ã„Å¸', 'ÄŸ')
-    .replaceAll('Ã„Å¾', 'Ä')
-    .replaceAll('Ã…Å¸', 'ÅŸ')
-    .replaceAll('Ã…Å¾', 'Å')
-    .replaceAll('Ã„Â±', 'Ä±')
-    .replaceAll('Ã„Â°', 'Ä°')
-    .replaceAll('Ã‚', '');
+    .replaceAll('ÃƒÆ’Ã‚Â¼', 'ÃƒÂ¼')
+    .replaceAll('ÃƒÆ’Ã…â€œ', 'ÃƒÅ“')
+    .replaceAll('ÃƒÆ’Ã‚Â¶', 'ÃƒÂ¶')
+    .replaceAll('ÃƒÆ’Ã¢â‚¬â€œ', 'Ãƒâ€“')
+    .replaceAll('ÃƒÆ’Ã‚Â§', 'ÃƒÂ§')
+    .replaceAll('ÃƒÆ’Ã¢â‚¬Â¡', 'Ãƒâ€¡')
+    .replaceAll('Ãƒâ€Ã…Â¸', 'Ã„Å¸')
+    .replaceAll('Ãƒâ€Ã…Â¾', 'Ã„Â')
+    .replaceAll('Ãƒâ€¦Ã…Â¸', 'Ã…Å¸')
+    .replaceAll('Ãƒâ€¦Ã…Â¾', 'Ã…Â')
+    .replaceAll('Ãƒâ€Ã‚Â±', 'Ã„Â±')
+    .replaceAll('Ãƒâ€Ã‚Â°', 'Ã„Â°')
+    .replaceAll('Ãƒâ€š', '');
 
 export function Home() {
   const navigate = useNavigate();
@@ -298,6 +298,8 @@ export function Home() {
     </main>
   );
 }
+
+
 
 
 

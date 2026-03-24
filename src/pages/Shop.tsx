@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Heart, SlidersHorizontal, ChevronDown, X } from 'lucide-react';
 import { useStore } from '@/store/StoreContext';
@@ -374,3 +374,5 @@ export function Shop() {
     </div>
   );
 }
+
+

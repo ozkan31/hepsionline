@@ -1,4 +1,4 @@
-export interface CategoryPageConfig {
+﻿export interface CategoryPageConfig {
   id: string;
   slug: string;
   path: string;
@@ -78,3 +78,5 @@ export function getCategoryPageBySlug(categorySlug?: string | null) {
 export function getCategoryPagePath(categoryId?: string | null) {
   return getCategoryPageById(categoryId)?.path ?? "/shop/";
 }
+
+

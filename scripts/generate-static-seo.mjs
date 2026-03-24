@@ -84,6 +84,12 @@ function toAbsoluteUrl(value) {
   return `${baseUrl}${raw.startsWith("/") ? raw : `/${raw}`}`;
 }
 
+function toDirectoryPath(route) {
+  const normalized = String(route ?? "").trim().replace(/^\/+|\/+$/g, "");
+  if (!normalized) return "/";
+  return `/${normalized}/`;
+}
+
 function normalizeImagePath(value) {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
@@ -219,7 +225,7 @@ function buildStaticPageConfigs() {
       description: "Kadın çanta ve aksesuar koleksiyonunun tamamını StilBags&Fashion ürünler sayfasında keşfedin.",
       image: "/banner2.jpg",
       type: "website",
-      canonicalPath: "/shop",
+      canonicalPath: "/shop/",
       noindex: true,
     },
     {
@@ -235,7 +241,7 @@ function buildStaticPageConfigs() {
       description: "StilBags&Fashion markasının hikayesini, üretim yaklaşımını ve tasarım anlayışını keşfedin.",
       image: "/banner3.jpg",
       type: "website",
-      canonicalPath: "/hakkimizda",
+      canonicalPath: "/hakkimizda/",
       noindex: true,
     },
     {
@@ -251,7 +257,7 @@ function buildStaticPageConfigs() {
       description: "StilBags&Fashion müşteri destek ekibine ulaşın ve tüm soru, öneri ve taleplerinizi iletin.",
       image: "/banner3.jpg",
       type: "website",
-      canonicalPath: "/iletisim",
+      canonicalPath: "/iletisim/",
       noindex: true,
     },
     {
@@ -354,7 +360,7 @@ function buildStaticPageConfigs() {
   ];
 
   return configs.map((item) => {
-    const routePath = `/${item.route}`.replace(/\/$/, "");
+    const routePath = toDirectoryPath(item.route);
     const canonicalPath = item.canonicalPath ?? (routePath || "/");
     return {
       ...item,
@@ -431,7 +437,7 @@ function buildProductSeo(row) {
     normalizeText(row.description || `${productName} ürün detayları, fiyatı ve özellikleri.`),
     170
   );
-  const canonicalUrl = toAbsoluteUrl(`/${route}`);
+  const canonicalUrl = toAbsoluteUrl(`/${route}/`);
   const images = getProductImages(row);
   const image = images[0] || DEFAULT_IMAGE;
   const productSchema = {
@@ -484,7 +490,7 @@ function buildProductSeo(row) {
     route,
     title,
     description,
-    canonicalPath: `/${route}`,
+    canonicalPath: `/${route}/`,
     image,
     type: "product",
     lastmod: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
@@ -497,13 +503,13 @@ function buildSitemapXml(staticConfigs, productConfigs, categoryRows) {
     .filter((item) => !item.noindex)
     .map((item) => ({
       loc: toAbsoluteUrl(item.canonicalPath),
-      changefreq: item.canonicalPath === "/" ? "daily" : item.canonicalPath === "/shop" ? "daily" : "monthly",
-      priority: item.canonicalPath === "/" ? "1.0" : item.canonicalPath === "/shop" ? "0.95" : "0.7",
+      changefreq: item.canonicalPath === "/" ? "daily" : item.canonicalPath === "/shop/" ? "daily" : "monthly",
+      priority: item.canonicalPath === "/" ? "1.0" : item.canonicalPath === "/shop/" ? "0.95" : "0.7",
       lastmod: new Date().toISOString(),
     }));
 
   const categoryEntries = categoryRows.map((row) => ({
-    loc: `${baseUrl}/shop?category=${encodeURIComponent(String(row.id ?? "").trim())}`,
+    loc: `${baseUrl}/shop/?category=${encodeURIComponent(String(row.id ?? "").trim())}`,
     changefreq: "daily",
     priority: "0.75",
     lastmod: new Date().toISOString(),

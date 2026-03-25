@@ -121,6 +121,7 @@ export function Admin() {
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsError, setProductsError] = useState("");
+  const [productsMessage, setProductsMessage] = useState("");
   const [isProductsMenuOpen, setIsProductsMenuOpen] = useState(false);
   const [activeProductPanel, setActiveProductPanel] = useState<ProductPanel>("list");
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
@@ -425,6 +426,7 @@ export function Admin() {
     setStatusSavingByOrderId({});
     setProducts([]);
     setProductsError("");
+    setProductsMessage("");
     setIsProductsMenuOpen(false);
     setActiveProductPanel("list");
     setEditingProductId(null);
@@ -609,6 +611,7 @@ export function Admin() {
   const openProductEditor = async (product: Product) => {
     const token = getStoredAdminToken();
     if (!token) return;
+    setProductsMessage("");
     if (productEditor) {
       clearLocalImagePreviews(productEditor.images);
     }
@@ -719,6 +722,7 @@ export function Admin() {
   };
 
   const handleOpenCreateProduct = () => {
+    setProductsMessage("");
     setActiveSection("products");
     setActiveProductPanel("create");
     setIsProductsMenuOpen(true);
@@ -951,12 +955,14 @@ export function Admin() {
       return;
     }
     const numericPrice = Number(productEditor.price);
+    const creatingProduct = isCreatingProduct;
 
     const features = productEditor.features.map((item) => item.trim()).filter((item) => item.length > 0);
     const colors = productEditor.colors.map((item) => item.trim()).filter((item) => item.length > 0);
 
     setIsSavingProduct(true);
     setProductSaveMessage("");
+    setProductsMessage("");
     try {
       const payload = {
         id: productEditor.id.trim() || undefined,
@@ -973,40 +979,52 @@ export function Admin() {
         isBestseller: productEditor.isBestseller,
       };
 
-      const updatedProduct = isCreatingProduct
+      const updatedProduct = creatingProduct
         ? await createAdminProduct(token, payload)
         : await updateAdminProduct(token, productEditor.id, payload);
 
-      if (isCreatingProduct) {
+      if (creatingProduct) {
         setProducts((prev) => [updatedProduct, ...prev.filter((item) => item.id !== updatedProduct.id)]);
       } else {
         setProducts((prev) => prev.map((item) => (item.id === updatedProduct.id ? updatedProduct : item)));
       }
       clearLocalImagePreviews(productEditor.images);
-      setProductEditor({
-        id: updatedProduct.id,
-        name: updatedProduct.name,
-        price: String(updatedProduct.price),
-        images: (Array.isArray(updatedProduct.images) && updatedProduct.images.length > 0
-          ? updatedProduct.images
-          : updatedProduct.image
-          ? [updatedProduct.image]
-          : []
-        ).map((url, index) => ({ id: `existing-${updatedProduct.id}-${index}`, url, isLocal: false })),
-        category: updatedProduct.category,
-        description: updatedProduct.description,
-        features: updatedProduct.features ?? [],
-        colors: updatedProduct.colors ?? [],
-        tags: updatedProduct.tags ?? [],
-        isNew: Boolean(updatedProduct.isNew),
-        isBestseller: Boolean(updatedProduct.isBestseller),
-      });
-      setEditingProductId(updatedProduct.id);
-      setIsCreatingProduct(false);
-      setProductSaveMessage(isCreatingProduct ? "Ürün başarıyla eklendi." : "Ürün başarıyla güncellendi.");
+      if (creatingProduct) {
+        setEditingProductId(null);
+        setIsCreatingProduct(false);
+        setProductEditor(null);
+        setNewFeatureName("");
+        setNewColorName("");
+        setNewTagName("");
+        setProductSaveMessage("");
+        setProductsMessage("Ürün başarıyla eklendi.");
+        setActiveProductPanel("list");
+      } else {
+        setProductEditor({
+          id: updatedProduct.id,
+          name: updatedProduct.name,
+          price: String(updatedProduct.price),
+          images: (Array.isArray(updatedProduct.images) && updatedProduct.images.length > 0
+            ? updatedProduct.images
+            : updatedProduct.image
+            ? [updatedProduct.image]
+            : []
+          ).map((url, index) => ({ id: `existing-${updatedProduct.id}-${index}`, url, isLocal: false })),
+          category: updatedProduct.category,
+          description: updatedProduct.description,
+          features: updatedProduct.features ?? [],
+          colors: updatedProduct.colors ?? [],
+          tags: updatedProduct.tags ?? [],
+          isNew: Boolean(updatedProduct.isNew),
+          isBestseller: Boolean(updatedProduct.isBestseller),
+        });
+        setEditingProductId(updatedProduct.id);
+        setIsCreatingProduct(false);
+        setProductSaveMessage("Ürün başarıyla güncellendi.");
+      }
     } catch (err) {
       setProductSaveMessage(
-        err instanceof Error ? err.message : isCreatingProduct ? "Ürün eklenemedi." : "Ürün güncellenemedi."
+        err instanceof Error ? err.message : creatingProduct ? "Ürün eklenemedi." : "Ürün güncellenemedi."
       );
     } finally {
       setIsSavingProduct(false);
@@ -1023,6 +1041,7 @@ export function Admin() {
     try {
       await deleteAdminProduct(token, product.id);
       setProducts((prev) => prev.filter((item) => item.id !== product.id));
+      setProductsMessage(`"${product.name}" ürünü silindi.`);
       if (editingProductId === product.id || (productEditor && productEditor.id === product.id)) {
         closeProductEditor();
       }
@@ -1093,6 +1112,347 @@ export function Admin() {
       </div>
     );
   }
+
+  const renderProductEditorForm = (mode: "inline" | "modal") => {
+    if (!productEditor) return null;
+
+    const isInline = mode === "inline";
+    const secondaryAction = isInline ? handleOpenProductList : closeProductEditor;
+    const headerActionLabel = isInline ? "Listeye Dön" : "Kapat";
+    const footerActionLabel = isInline ? "Vazgeç ve Listeye Dön" : "Vazgeç";
+
+    return (
+      <div className={isInline ? "border border-[#E7E2D8] rounded-lg bg-[#FAF9F6] p-4 md:p-6" : "w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-[#E7E2D8] rounded-lg bg-[#FAF9F6] p-4 md:p-6"}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium">{isCreatingProduct ? "Yeni Ürün Ekle" : "Ürün Düzenleme"}</h3>
+          <button
+            type="button"
+            onClick={secondaryAction}
+            className="text-sm border border-black px-3 py-1 rounded-full hover:bg-black hover:text-white transition-colors"
+          >
+            {headerActionLabel}
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Ürün ID</label>
+            <input
+              type="text"
+              value={productEditor.id}
+              readOnly={!isCreatingProduct}
+              onChange={(e) =>
+                setProductEditor((prev) => (prev ? { ...prev, id: e.target.value } : prev))
+              }
+              placeholder={isCreatingProduct ? "Boş bırakılırsa otomatik üretilir" : ""}
+              className={`w-full border rounded-lg px-3 py-2 text-sm ${
+                isCreatingProduct
+                  ? "bg-white border-gray-300 outline-none focus:border-black"
+                  : "bg-gray-100 border-gray-300"
+              }`}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Kategori</label>
+            <input
+              type="text"
+              value={productEditor.category}
+              onChange={(e) =>
+                setProductEditor((prev) => (prev ? { ...prev, category: e.target.value } : prev))
+              }
+              className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Ürün Adı</label>
+            <input
+              type="text"
+              value={productEditor.name}
+              onChange={(e) =>
+                setProductEditor((prev) => (prev ? { ...prev, name: e.target.value } : prev))
+              }
+              className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Fiyat (TL)</label>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={productEditor.price}
+              onWheel={(e) => e.currentTarget.blur()}
+              onChange={(e) =>
+                setProductEditor((prev) =>
+                  prev ? { ...prev, price: e.target.value.replace(/[^\d]/g, "") } : prev
+                )
+              }
+              className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium mb-1">Ürün Görselleri</label>
+            <input
+              ref={imagePickerRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleImageFilesSelected}
+              className="hidden"
+            />
+            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+              {productEditor.images.map((image) => (
+                <div
+                  key={image.id}
+                  data-admin-image-id={image.id}
+                  draggable
+                  onDragStart={(e) => handleImageDragStart(image.id, e)}
+                  onDragOver={(e) => handleImageDragOver(e, image.id)}
+                  onDrop={() => handleImageDrop(image.id)}
+                  onDragEnd={() => setDraggingImageId(null)}
+                  onTouchStart={() => handleImageTouchStart(image.id)}
+                  onTouchMove={handleImageTouchMove}
+                  onTouchEnd={handleImageTouchEnd}
+                  onTouchCancel={handleImageTouchEnd}
+                  className={`relative aspect-square rounded-lg border overflow-hidden bg-white cursor-grab active:cursor-grabbing transition-all ${
+                    draggingImageId === image.id
+                      ? "border-transparent opacity-0 touch-none"
+                      : "border-gray-300"
+                  }`}
+                >
+                  <img src={image.url} alt="Ürün görseli" className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveImage(image.id)}
+                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 border border-gray-300 flex items-center justify-center hover:bg-black hover:text-white hover:border-black transition-colors"
+                    aria-label="Görseli sil"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+              {productEditor.images.length < MAX_PRODUCT_IMAGES && (
+                <button
+                  type="button"
+                  onClick={handlePickImages}
+                  className="aspect-square rounded-lg border border-dashed border-gray-400 bg-white flex items-center justify-center text-gray-500 hover:text-black hover:border-black transition-colors"
+                  aria-label="Görsel ekle"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">En fazla {MAX_PRODUCT_IMAGES} görsel seçebilirsiniz.</p>
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium mb-1">Açıklama</label>
+            <textarea
+              value={productEditor.description}
+              onChange={(e) =>
+                setProductEditor((prev) => (prev ? { ...prev, description: e.target.value } : prev))
+              }
+              rows={3}
+              className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Özellikler</label>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newFeatureName}
+                  onChange={(e) => setNewFeatureName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddFeature();
+                    }
+                  }}
+                  placeholder="Özellik adı"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddFeature}
+                  className="border border-black text-black px-3 py-2 rounded-lg text-sm hover:bg-black hover:text-white transition-colors whitespace-nowrap"
+                >
+                  Özellik Ekle
+                </button>
+              </div>
+              <div className="flex flex-col gap-2">
+                {productEditor.features.length === 0 && (
+                  <span className="text-xs text-gray-500">Henüz özellik eklenmedi.</span>
+                )}
+                {productEditor.features.map((feature) => (
+                  <span
+                    key={feature}
+                    className="inline-flex items-center justify-between gap-2 px-4 py-2 rounded-full border border-gray-300 bg-white text-sm transition-colors hover:bg-black hover:text-white hover:border-black"
+                  >
+                    <span>{feature}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveFeature(feature)}
+                      className="text-gray-500 hover:text-current"
+                      aria-label={`${feature} özelliğini kaldır`}
+                    >
+                      x
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Renkler</label>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newColorName}
+                  onChange={(e) => setNewColorName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddColor();
+                    }
+                  }}
+                  placeholder="Renk adı"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddColor}
+                  className="border border-black text-black px-3 py-2 rounded-lg text-sm hover:bg-black hover:text-white transition-colors whitespace-nowrap"
+                >
+                  Renk Ekle
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {productEditor.colors.length === 0 && (
+                  <span className="text-xs text-gray-500">Henüz renk eklenmedi.</span>
+                )}
+                {productEditor.colors.map((color) => (
+                  <span
+                    key={color}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 bg-white text-sm transition-colors hover:bg-black hover:text-white hover:border-black"
+                  >
+                    {color}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveColor(color)}
+                      className="text-gray-500 hover:text-black"
+                      aria-label={`${color} rengini kaldır`}
+                    >
+                      x
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Etiketler</label>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddTag();
+                    }
+                  }}
+                  placeholder="Etiket adı (ör. Yeni, Çok Satan)"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddTag}
+                  className="border border-black text-black px-3 py-2 rounded-lg text-sm hover:bg-black hover:text-white transition-colors whitespace-nowrap"
+                >
+                  Etiket Ekle
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {productEditor.tags.length === 0 && (
+                  <span className="text-xs text-gray-500">Henüz etiket eklenmedi.</span>
+                )}
+                {productEditor.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 bg-white text-sm transition-colors hover:bg-black hover:text-white hover:border-black"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTag(tag)}
+                      className="text-gray-500 hover:text-current"
+                      aria-label={`${tag} etiketini kaldır`}
+                    >
+                      x
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={productEditor.isNew}
+              onChange={(e) =>
+                setProductEditor((prev) => (prev ? { ...prev, isNew: e.target.checked } : prev))
+              }
+            />
+            Yeni Ürün
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={productEditor.isBestseller}
+              onChange={(e) =>
+                setProductEditor((prev) => (prev ? { ...prev, isBestseller: e.target.checked } : prev))
+              }
+            />
+            Çok Satan
+          </label>
+        </div>
+        <p className="text-xs text-gray-500 mt-4">
+          {isCreatingProduct
+            ? "Yeni ürün bilgilerini girip Kaydet butonuna basın."
+            : "Düzenleme alanında değişiklik yapıp Kaydet butonuna basın."}
+        </p>
+        {productSaveMessage && (
+          <p
+            className={`text-sm mt-3 ${
+              productSaveMessage.includes("başarıyla") ? "text-green-700" : "text-red-600"
+            }`}
+          >
+            {productSaveMessage}
+          </p>
+        )}
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleSaveProduct}
+            disabled={isSavingProduct}
+            className="bg-black text-white px-5 py-2 rounded-full text-sm disabled:opacity-50"
+          >
+            {isSavingProduct ? "Kaydediliyor..." : "Kaydet"}
+          </button>
+          <button
+            type="button"
+            onClick={secondaryAction}
+            className="text-sm border border-black px-4 py-2 rounded-full hover:bg-black hover:text-white transition-colors"
+          >
+            {footerActionLabel}
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[#F8F7F4]">
@@ -1540,31 +1900,16 @@ export function Admin() {
                 )}
               </div>
               {activeProductPanel === "create" ? (
-                <div className="border border-[#E7E2D8] rounded-lg bg-[#FAF9F6] p-5 space-y-3">
-                  <p className="text-sm text-gray-600">
-                    Yeni ürün ekleme formu açılır pencere olarak hazırlanır. Formu açmak veya tekrar görüntülemek için
-                    aşağıdaki butonu kullanabilirsiniz.
-                  </p>
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={handleOpenCreateProduct}
-                      className="bg-black text-white px-4 py-2 rounded-full text-sm hover:opacity-90 transition-opacity"
-                    >
-                      Ürün Ekle Formunu Aç
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleOpenProductList}
-                      className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
-                    >
-                      Ürün Listesine Dön
-                    </button>
-                  </div>
-                </div>
+                <>
+                  <p className="text-sm text-gray-500 mb-5">Yeni ürün formunu bu alan üzerinden doldurabilirsiniz.</p>
+                  {productEditor && isCreatingProduct ? renderProductEditorForm("inline") : null}
+                </>
               ) : (
                 <>
                   <p className="text-sm text-gray-500 mb-5">Veritabanındaki ürünler listeleniyor.</p>
+                  {productsMessage && (
+                    <p className="text-sm text-green-700 bg-green-50 rounded px-3 py-2 mb-4">{productsMessage}</p>
+                  )}
                   {productsLoading && <p className="text-sm text-gray-500">Ürünler yükleniyor...</p>}
                   {productsError && (
                     <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2 mb-4">{productsError}</p>
@@ -2032,337 +2377,9 @@ export function Admin() {
           )}
         </section>
       </div>
-      {productEditor && (
+      {productEditor && !isCreatingProduct && (
         <div className="fixed inset-0 z-[120] bg-black/35 p-4 md:p-8 flex items-center justify-center">
-          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-[#E7E2D8] rounded-lg bg-[#FAF9F6] p-4 md:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium">{isCreatingProduct ? "Yeni Ürün Ekle" : "Ürün Düzenleme"}</h3>
-              <button
-                type="button"
-                onClick={closeProductEditor}
-                className="text-sm border border-black px-3 py-1 rounded-full hover:bg-black hover:text-white transition-colors"
-              >
-                Kapat
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Ürün ID</label>
-                <input
-                  type="text"
-                  value={productEditor.id}
-                  readOnly={!isCreatingProduct}
-                  onChange={(e) =>
-                    setProductEditor((prev) => (prev ? { ...prev, id: e.target.value } : prev))
-                  }
-                  placeholder={isCreatingProduct ? "Boş bırakılırsa otomatik üretilir" : ""}
-                  className={`w-full border rounded-lg px-3 py-2 text-sm ${
-                    isCreatingProduct
-                      ? "bg-white border-gray-300 outline-none focus:border-black"
-                      : "bg-gray-100 border-gray-300"
-                  }`}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Kategori</label>
-                <input
-                  type="text"
-                  value={productEditor.category}
-                  onChange={(e) =>
-                    setProductEditor((prev) => (prev ? { ...prev, category: e.target.value } : prev))
-                  }
-                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Ürün Adı</label>
-                <input
-                  type="text"
-                  value={productEditor.name}
-                  onChange={(e) =>
-                    setProductEditor((prev) => (prev ? { ...prev, name: e.target.value } : prev))
-                  }
-                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Fiyat (TL)</label>
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={productEditor.price}
-                  onWheel={(e) => e.currentTarget.blur()}
-                  onChange={(e) =>
-                    setProductEditor((prev) =>
-                      prev ? { ...prev, price: e.target.value.replace(/[^\d]/g, "") } : prev
-                    )
-                  }
-                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-1">Ürün Görselleri</label>
-                <input
-                  ref={imagePickerRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleImageFilesSelected}
-                  className="hidden"
-                />
-                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                  {productEditor.images.map((image) => (
-                    <div
-                      key={image.id}
-                      data-admin-image-id={image.id}
-                      draggable
-                      onDragStart={(e) => handleImageDragStart(image.id, e)}
-                      onDragOver={(e) => handleImageDragOver(e, image.id)}
-                      onDrop={() => handleImageDrop(image.id)}
-                      onDragEnd={() => setDraggingImageId(null)}
-                      onTouchStart={() => handleImageTouchStart(image.id)}
-                      onTouchMove={handleImageTouchMove}
-                      onTouchEnd={handleImageTouchEnd}
-                      onTouchCancel={handleImageTouchEnd}
-                      className={`relative aspect-square rounded-lg border overflow-hidden bg-white cursor-grab active:cursor-grabbing transition-all ${
-                        draggingImageId === image.id
-                          ? "border-transparent opacity-0 touch-none"
-                          : "border-gray-300"
-                      }`}
-                    >
-                      <img src={image.url} alt="Ürün görseli" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveImage(image.id)}
-                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 border border-gray-300 flex items-center justify-center hover:bg-black hover:text-white hover:border-black transition-colors"
-                        aria-label="Görseli sil"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                  {productEditor.images.length < MAX_PRODUCT_IMAGES && (
-                    <button
-                      type="button"
-                      onClick={handlePickImages}
-                      className="aspect-square rounded-lg border border-dashed border-gray-400 bg-white flex items-center justify-center text-gray-500 hover:text-black hover:border-black transition-colors"
-                      aria-label="Görsel ekle"
-                    >
-                      <Plus className="w-5 h-5" />
-                    </button>
-                  )}
-                </div>
-                <p className="text-xs text-gray-500 mt-2">En fazla {MAX_PRODUCT_IMAGES} görsel seçebilirsiniz.</p>
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-1">Açıklama</label>
-                <textarea
-                  value={productEditor.description}
-                  onChange={(e) =>
-                    setProductEditor((prev) => (prev ? { ...prev, description: e.target.value } : prev))
-                  }
-                  rows={3}
-                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Özellikler</label>
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newFeatureName}
-                      onChange={(e) => setNewFeatureName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          handleAddFeature();
-                        }
-                      }}
-                      placeholder="Özellik adı"
-                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddFeature}
-                      className="border border-black text-black px-3 py-2 rounded-lg text-sm hover:bg-black hover:text-white transition-colors whitespace-nowrap"
-                    >
-                      Özellik Ekle
-                    </button>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    {productEditor.features.length === 0 && (
-                      <span className="text-xs text-gray-500">Henüz özellik eklenmedi.</span>
-                    )}
-                    {productEditor.features.map((feature) => (
-                      <span
-                        key={feature}
-                        className="inline-flex items-center justify-between gap-2 px-4 py-2 rounded-full border border-gray-300 bg-white text-sm transition-colors hover:bg-black hover:text-white hover:border-black"
-                      >
-                        <span>{feature}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFeature(feature)}
-                          className="text-gray-500 hover:text-current"
-                          aria-label={`${feature} özelliğini kaldır`}
-                        >
-                          x
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Renkler</label>
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newColorName}
-                      onChange={(e) => setNewColorName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          handleAddColor();
-                        }
-                      }}
-                      placeholder="Renk adı"
-                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddColor}
-                      className="border border-black text-black px-3 py-2 rounded-lg text-sm hover:bg-black hover:text-white transition-colors whitespace-nowrap"
-                    >
-                      Renk Ekle
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {productEditor.colors.length === 0 && (
-                      <span className="text-xs text-gray-500">Henüz renk eklenmedi.</span>
-                    )}
-                    {productEditor.colors.map((color) => (
-                      <span
-                        key={color}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 bg-white text-sm transition-colors hover:bg-black hover:text-white hover:border-black"
-                      >
-                        {color}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveColor(color)}
-                          className="text-gray-500 hover:text-black"
-                          aria-label={`${color} rengini kaldır`}
-                        >
-                          x
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Etiketler</label>
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newTagName}
-                      onChange={(e) => setNewTagName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          handleAddTag();
-                        }
-                      }}
-                      placeholder="Etiket adı (ör. Yeni, Çok Satan)"
-                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddTag}
-                      className="border border-black text-black px-3 py-2 rounded-lg text-sm hover:bg-black hover:text-white transition-colors whitespace-nowrap"
-                    >
-                      Etiket Ekle
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {productEditor.tags.length === 0 && (
-                      <span className="text-xs text-gray-500">Henüz etiket eklenmedi.</span>
-                    )}
-                    {productEditor.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 bg-white text-sm transition-colors hover:bg-black hover:text-white hover:border-black"
-                      >
-                        {tag}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTag(tag)}
-                          className="text-gray-500 hover:text-current"
-                          aria-label={`${tag} etiketini kaldır`}
-                        >
-                          x
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={productEditor.isNew}
-                  onChange={(e) =>
-                    setProductEditor((prev) => (prev ? { ...prev, isNew: e.target.checked } : prev))
-                  }
-                />
-                Yeni Ürün
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={productEditor.isBestseller}
-                  onChange={(e) =>
-                    setProductEditor((prev) => (prev ? { ...prev, isBestseller: e.target.checked } : prev))
-                  }
-                />
-                Çok Satan
-              </label>
-            </div>
-            <p className="text-xs text-gray-500 mt-4">
-              {isCreatingProduct
-                ? "Yeni ürün bilgilerini girip Kaydet butonuna basın."
-                : "Düzenleme alanında değişiklik yapıp Kaydet butonuna basın."}
-            </p>
-            {productSaveMessage && (
-              <p
-                className={`text-sm mt-3 ${
-                  productSaveMessage.includes("başarıyla") ? "text-green-700" : "text-red-600"
-                }`}
-              >
-                {productSaveMessage}
-              </p>
-            )}
-            <div className="mt-4 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleSaveProduct}
-                disabled={isSavingProduct}
-                className="bg-black text-white px-5 py-2 rounded-full text-sm disabled:opacity-50"
-              >
-                {isSavingProduct ? "Kaydediliyor..." : "Kaydet"}
-              </button>
-              <button
-                type="button"
-                onClick={closeProductEditor}
-                className="text-sm border border-black px-4 py-2 rounded-full hover:bg-black hover:text-white transition-colors"
-              >
-                Vazgeç
-              </button>
-            </div>
-          </div>
+          {renderProductEditorForm("modal")}
         </div>
       )}
     </div>

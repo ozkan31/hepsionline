@@ -1,4 +1,5 @@
 ﻿import {
+  Boxes,
   ChevronDown,
   List,
   LogOut,
@@ -69,7 +70,7 @@ type ProductEditorDraft = {
   isNew: boolean;
   isBestseller: boolean;
 };
-type ProductPanel = "list" | "create";
+type ProductPanel = "list" | "create" | "stock";
 type MarketingPanel = "abandonedCart" | "coupons";
 const MAX_PRODUCT_IMAGES = 15;
 const shippingCompanies = [
@@ -840,6 +841,15 @@ export function Admin() {
     setIsProductsMenuOpen(true);
     setIsMobileNavOpen(false);
     openCreateProductEditor();
+  };
+
+  const handleOpenStockManagement = () => {
+    closeProductEditor();
+    setProductsMessage("");
+    setActiveSection("products");
+    setActiveProductPanel("stock");
+    setIsProductsMenuOpen(true);
+    setIsMobileNavOpen(false);
   };
 
   const handlePickImages = () => {
@@ -1642,6 +1652,23 @@ export function Admin() {
                       <Plus className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
                       Ürün Ekle
                     </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenStockManagement}
+                      className={`relative w-full text-left pl-10 pr-4 py-2 rounded-md text-sm transition-colors ${
+                        activeSection === "products" && activeProductPanel === "stock"
+                          ? "bg-[#ECE7DC] text-black"
+                          : "text-black hover:bg-[#ECE7DC]"
+                      }`}
+                    >
+                      <span
+                        className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full ${
+                          activeSection === "products" && activeProductPanel === "stock" ? "bg-black" : "bg-transparent"
+                        }`}
+                      />
+                      <Boxes className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
+                      Stok Yönetimi
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1904,6 +1931,25 @@ export function Admin() {
                             />
                             <Plus className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
                             Ürün Ekle
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleOpenStockManagement}
+                            className={`relative w-full text-left pl-10 pr-4 py-2 rounded-md text-sm transition-colors ${
+                              activeSection === "products" && activeProductPanel === "stock"
+                                ? "bg-[#ECE7DC] text-black"
+                                : "text-black hover:bg-[#ECE7DC]"
+                            }`}
+                          >
+                            <span
+                              className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full ${
+                                activeSection === "products" && activeProductPanel === "stock"
+                                  ? "bg-black"
+                                  : "bg-transparent"
+                              }`}
+                            />
+                            <Boxes className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
+                            Stok Yönetimi
                           </button>
                         </div>
                       </div>
@@ -2241,7 +2287,11 @@ export function Admin() {
             <div>
               <div className="flex items-center justify-between gap-3 mb-2">
                 <h2 className="text-2xl font-light">
-                  {activeProductPanel === "create" ? "Ürün Ekle" : "Ürünler"}
+                  {activeProductPanel === "create"
+                    ? "Ürün Ekle"
+                    : activeProductPanel === "stock"
+                      ? "Stok Yönetimi"
+                      : "Ürünler"}
                 </h2>
                 {activeProductPanel === "list" ? (
                   <button
@@ -2265,6 +2315,73 @@ export function Admin() {
                 <>
                   <p className="text-sm text-gray-500 mb-5">Yeni ürün formunu bu alan üzerinden doldurabilirsiniz.</p>
                   {productEditor && isCreatingProduct ? renderProductEditorForm("inline") : null}
+                </>
+              ) : activeProductPanel === "stock" ? (
+                <>
+                  <p className="text-sm text-gray-500 mb-5">
+                    Stok takibini ürün bazında bu alandan yöneteceğiz. Şimdilik ürünleri hızlıca gözden geçirip düzenleme
+                    ekranına geçebilirsiniz.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-3 mb-5">
+                    <div className="rounded-2xl border border-[#E7E2D8] bg-white p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Toplam Ürün</p>
+                      <p className="mt-2 text-2xl font-semibold text-black">{products.length}</p>
+                      <p className="mt-2 text-sm text-gray-500">Stok alanı tanımlanacak ürün sayısı.</p>
+                    </div>
+                    <div className="rounded-2xl border border-[#E7E2D8] bg-white p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Yeni Ürünler</p>
+                      <p className="mt-2 text-2xl font-semibold text-black">
+                        {products.filter((product) => product.isNew).length}
+                      </p>
+                      <p className="mt-2 text-sm text-gray-500">Öncelikli stok takibi açılabilecek ürünler.</p>
+                    </div>
+                    <div className="rounded-2xl border border-[#E7E2D8] bg-white p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Çok Satanlar</p>
+                      <p className="mt-2 text-2xl font-semibold text-black">
+                        {products.filter((product) => product.isBestseller).length}
+                      </p>
+                      <p className="mt-2 text-sm text-gray-500">Stok kontrolü kritik görünen ürünler.</p>
+                    </div>
+                  </div>
+                  {productsLoading && <p className="text-sm text-gray-500">Ürünler yükleniyor...</p>}
+                  {productsError && (
+                    <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2 mb-4">{productsError}</p>
+                  )}
+                  {!productsLoading && !productsError && products.length === 0 && (
+                    <p className="text-sm text-gray-500">Henüz stok yönetimine alınacak ürün bulunmuyor.</p>
+                  )}
+                  <div className="space-y-3">
+                    {products.map((product) => (
+                      <div
+                        key={product.id}
+                        className="border border-[#E7E2D8] rounded-2xl bg-white p-4 flex flex-col gap-4 lg:flex-row lg:items-center"
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-14 h-14 rounded-md border border-[#E7E2D8] bg-white overflow-hidden shrink-0">
+                            <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{product.name}</p>
+                            <p className="text-sm text-gray-500">
+                              {product.category} · {product.price.toLocaleString("tr-TR")} TL
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center rounded-full bg-[#F4EFE6] px-3 py-1 text-xs font-medium text-black">
+                            Takip Hazırlanıyor
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void openProductEditor(product)}
+                            className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
+                          >
+                            Ürünü Düzenle
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </>
               ) : (
                 <>

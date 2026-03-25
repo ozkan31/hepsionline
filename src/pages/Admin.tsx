@@ -480,10 +480,6 @@ export function Admin() {
 
   const handleProductsMenuToggle = () => {
     setIsProductsMenuOpen((prev) => !prev);
-    setActiveSection("products");
-    if (activeSection !== "products") {
-      setActiveProductPanel("list");
-    }
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -1490,7 +1486,9 @@ export function Admin() {
                 type="button"
                 onClick={handleProductsMenuToggle}
                 className={`w-full flex items-center justify-between px-4 py-2 rounded-md text-sm transition-colors ${
-                  activeSection === "products" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
+                  activeSection === "products" || isProductsMenuOpen
+                    ? "bg-black text-white"
+                    : "text-black hover:bg-[#ECE7DC]"
                 }`}
               >
                 <span className="inline-flex items-center gap-2">
@@ -1645,7 +1643,9 @@ export function Admin() {
                       type="button"
                       onClick={handleProductsMenuToggle}
                       className={`w-full flex items-center justify-between px-4 py-2 rounded-md text-sm transition-colors ${
-                        activeSection === "products" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
+                        activeSection === "products" || isProductsMenuOpen
+                          ? "bg-black text-white"
+                          : "text-black hover:bg-[#ECE7DC]"
                       }`}
                     >
                       <span className="inline-flex items-center gap-2">

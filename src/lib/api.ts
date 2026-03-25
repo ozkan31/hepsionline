@@ -5,6 +5,7 @@
   AdminAbandonedCartRunSummary,
   AdminAbandonedCartSettings,
   AdminContactRequest,
+  AdminCustomerCouponSettings,
   AdminOrder,
   AdminUserSummary,
   CartItem,
@@ -436,6 +437,28 @@ export async function applyAbandonedCartCoupon(code: string): Promise<AppliedAba
   return data.coupon;
 }
 
+export async function applyCustomerCoupon(
+  code: string,
+  items: CartItem[]
+): Promise<AppliedAbandonedCartCoupon> {
+  const response = await fetch("/api/coupons/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      code,
+      items: Array.isArray(items)
+        ? items.map((item) => ({
+            productId: item.product.id,
+            quantity: item.quantity,
+            color: item.color ?? "",
+          }))
+        : [],
+    }),
+  });
+  const data = await parseResponse<{ coupon: AppliedAbandonedCartCoupon }>(response);
+  return data.coupon;
+}
+
 export async function fetchOrders(): Promise<Order[]> {
   const response = await authFetch("/api/orders");
   const data = await parseResponse<{ orders: Order[] }>(response);
@@ -513,6 +536,32 @@ export async function fetchAdminAbandonedCartCampaign(
     headers: { Authorization: `Bearer ${token}` },
   });
   return parseResponse<AdminAbandonedCartCampaignResponse>(response);
+}
+
+export async function fetchAdminCustomerCouponSettings(
+  token: string
+): Promise<AdminCustomerCouponSettings> {
+  const response = await fetch("/api/admin/marketing/customer-coupon", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await parseResponse<{ settings: AdminCustomerCouponSettings }>(response);
+  return data.settings;
+}
+
+export async function updateAdminCustomerCouponSettings(
+  token: string,
+  input: AdminCustomerCouponSettings
+): Promise<AdminCustomerCouponSettings> {
+  const response = await fetch("/api/admin/marketing/customer-coupon", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(input),
+  });
+  const data = await parseResponse<{ settings: AdminCustomerCouponSettings }>(response);
+  return data.settings;
 }
 
 export async function updateAdminAbandonedCartCampaign(

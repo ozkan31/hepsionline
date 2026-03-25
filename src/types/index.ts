@@ -155,6 +155,15 @@ export interface AdminAbandonedCartCampaignResponse {
   stats: AdminAbandonedCartStats;
 }
 
+export interface AdminCustomerCouponSettings {
+  enabled: boolean;
+  code: string;
+  type: DiscountType;
+  value: number;
+  minimumSubtotal: number;
+  description: string;
+}
+
 export interface AdminAbandonedCartRunSummary {
   enabled: boolean;
   scanned: number;

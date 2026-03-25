@@ -21,6 +21,7 @@ import {
   adminLogout,
   deleteAdminProduct,
   fetchAdminAbandonedCartCampaign,
+  fetchAdminCustomerCouponSettings,
   fetchAdminContactRequests,
   fetchAdminProductById,
   fetchAdminGoogleMerchantStatus,
@@ -33,6 +34,7 @@ import {
   syncAdminGoogleMerchant,
   updateAdminOrderStatus,
   updateAdminAbandonedCartCampaign,
+  updateAdminCustomerCouponSettings,
   updateAdminProduct,
   uploadAdminProductImages,
   runAdminAbandonedCartCampaign,
@@ -40,6 +42,7 @@ import {
 import type {
   AdminAbandonedCartSettings,
   AdminContactRequest,
+  AdminCustomerCouponSettings,
   AdminOrder,
   AdminUserSummary,
   Product,
@@ -91,6 +94,14 @@ const defaultMarketingSettings: AdminAbandonedCartSettings = {
   couponValue: 10,
   couponMinimumSubtotal: 750,
   couponDescription: "Sepetinize özel indirim kodunuz hazır.",
+};
+const defaultCustomerCouponSettings: AdminCustomerCouponSettings = {
+  enabled: false,
+  code: "",
+  type: "percentage",
+  value: 10,
+  minimumSubtotal: 750,
+  description: "Müşterilerinize özel indirim kodunuz hazır.",
 };
 
 function generateAdminCouponCode() {
@@ -164,6 +175,9 @@ export function Admin() {
   const [marketingSettings, setMarketingSettings] = useState<AdminAbandonedCartSettings>(defaultMarketingSettings);
   const [marketingLoading, setMarketingLoading] = useState(false);
   const [marketingMessage, setMarketingMessage] = useState("");
+  const [customerCouponSettings, setCustomerCouponSettings] =
+    useState<AdminCustomerCouponSettings>(defaultCustomerCouponSettings);
+  const [customerCouponMessage, setCustomerCouponMessage] = useState("");
   const [isMarketingMenuOpen, setIsMarketingMenuOpen] = useState(false);
   const [activeMarketingPanel, setActiveMarketingPanel] = useState<MarketingPanel>("abandonedCart");
   const [marketingStats, setMarketingStats] = useState<{
@@ -173,6 +187,7 @@ export function Admin() {
     mailConfigured: boolean;
   } | null>(null);
   const [isSavingMarketing, setIsSavingMarketing] = useState(false);
+  const [isSavingCustomerCoupon, setIsSavingCustomerCoupon] = useState(false);
   const [isRunningMarketing, setIsRunningMarketing] = useState(false);
   const [merchantStatus, setMerchantStatus] = useState<{
     enabled: boolean;
@@ -398,11 +413,16 @@ export function Admin() {
     const loadMarketing = async () => {
       setMarketingLoading(true);
       setMarketingMessage("");
+      setCustomerCouponMessage("");
       try {
-        const data = await fetchAdminAbandonedCartCampaign(token);
+        const [abandonedCartData, customerCouponData] = await Promise.all([
+          fetchAdminAbandonedCartCampaign(token),
+          fetchAdminCustomerCouponSettings(token),
+        ]);
         if (!mounted) return;
-        setMarketingSettings(data.settings);
-        setMarketingStats(data.stats);
+        setMarketingSettings(abandonedCartData.settings);
+        setMarketingStats(abandonedCartData.stats);
+        setCustomerCouponSettings(customerCouponData);
       } catch (err) {
         if (!mounted) return;
         setMarketingMessage(err instanceof Error ? err.message : "Pazarlama ayarları alınamadı.");
@@ -465,10 +485,13 @@ export function Admin() {
     setMarketingSettings(defaultMarketingSettings);
     setMarketingLoading(false);
     setMarketingMessage("");
+    setCustomerCouponSettings(defaultCustomerCouponSettings);
+    setCustomerCouponMessage("");
     setIsMarketingMenuOpen(false);
     setActiveMarketingPanel("abandonedCart");
     setMarketingStats(null);
     setIsSavingMarketing(false);
+    setIsSavingCustomerCoupon(false);
     setIsRunningMarketing(false);
     setMerchantStatus(null);
     setMerchantLoading(false);
@@ -524,12 +547,12 @@ export function Admin() {
   };
 
   const handleGenerateCouponCode = () => {
-    setMarketingSettings((prev) => ({
+    setCustomerCouponSettings((prev) => ({
       ...prev,
-      couponEnabled: true,
-      couponCode: generateAdminCouponCode(),
+      enabled: true,
+      code: generateAdminCouponCode(),
     }));
-    setMarketingMessage("Kupon kodu oluşturuldu. Kaydetmeyi unutmayın.");
+    setCustomerCouponMessage("Kupon kodu oluşturuldu. Kaydetmeyi unutmayın.");
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -571,6 +594,24 @@ export function Admin() {
       setMarketingMessage(err instanceof Error ? err.message : "Pazarlama ayarları kaydedilemedi.");
     } finally {
       setIsSavingMarketing(false);
+    }
+  };
+
+  const handleSaveCustomerCouponSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = getStoredAdminToken();
+    if (!token) return;
+
+    setIsSavingCustomerCoupon(true);
+    setCustomerCouponMessage("");
+    try {
+      const settings = await updateAdminCustomerCouponSettings(token, customerCouponSettings);
+      setCustomerCouponSettings(settings);
+      setCustomerCouponMessage("Müşteri kuponu kaydedildi.");
+    } catch (err) {
+      setCustomerCouponMessage(err instanceof Error ? err.message : "Kupon kaydedilemedi.");
+    } finally {
+      setIsSavingCustomerCoupon(false);
     }
   };
 
@@ -2493,28 +2534,28 @@ export function Admin() {
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
                           <p className="text-[11px] uppercase tracking-wide text-gray-500">Durum</p>
-                          <p className={`mt-2 text-sm font-medium ${marketingSettings.couponEnabled ? "text-green-700" : "text-gray-600"}`}>
-                            {marketingSettings.couponEnabled ? "Aktif" : "Pasif"}
+                          <p className={`mt-2 text-sm font-medium ${customerCouponSettings.enabled ? "text-green-700" : "text-gray-600"}`}>
+                            {customerCouponSettings.enabled ? "Aktif" : "Pasif"}
                           </p>
                         </div>
                         <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
                           <p className="text-[11px] uppercase tracking-wide text-gray-500">Kod</p>
                           <p className="mt-2 text-sm font-medium text-black">
-                            {marketingSettings.couponCode || "Henüz oluşturulmadı"}
+                            {customerCouponSettings.code || "Henüz oluşturulmadı"}
                           </p>
                         </div>
                         <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
                           <p className="text-[11px] uppercase tracking-wide text-gray-500">İndirim</p>
                           <p className="mt-2 text-sm font-medium text-black">
-                            {marketingSettings.couponType === "fixed"
-                              ? `${Number(marketingSettings.couponValue || 0).toLocaleString("tr-TR")} TL`
-                              : `%${Number(marketingSettings.couponValue || 0).toLocaleString("tr-TR")}`}
+                            {customerCouponSettings.type === "fixed"
+                              ? `${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} TL`
+                              : `%${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")}`}
                           </p>
                         </div>
                         <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
                           <p className="text-[11px] uppercase tracking-wide text-gray-500">Minimum Sepet</p>
                           <p className="mt-2 text-sm font-medium text-black">
-                            {Number(marketingSettings.couponMinimumSubtotal || 0).toLocaleString("tr-TR")} TL
+                            {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL
                           </p>
                         </div>
                       </div>
@@ -2523,39 +2564,39 @@ export function Admin() {
                         <p className="text-xs uppercase tracking-wide text-gray-500">Aktif Kupon Özeti</p>
                         <div className="mt-3 flex flex-wrap items-center gap-3">
                           <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-medium tracking-[0.2em] text-white">
-                            {marketingSettings.couponCode || "KUPON-KODU"}
+                            {customerCouponSettings.code || "KUPON-KODU"}
                           </span>
                           <span className="text-sm text-gray-700">
-                            {marketingSettings.couponType === "fixed"
-                              ? `${Number(marketingSettings.couponValue || 0).toLocaleString("tr-TR")} TL indirim`
-                              : `%${Number(marketingSettings.couponValue || 0).toLocaleString("tr-TR")} indirim`}
+                            {customerCouponSettings.type === "fixed"
+                              ? `${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} TL indirim`
+                              : `%${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} indirim`}
                           </span>
                         </div>
                         <p className="mt-3 text-sm text-gray-700">
-                          {marketingSettings.couponDescription || "Henüz bir kupon açıklaması girilmedi."}
+                          {customerCouponSettings.description || "Henüz bir kupon açıklaması girilmedi."}
                         </p>
                         <p className="mt-2 text-xs text-gray-500">
-                          Müşteri bu kodu minimum {Number(marketingSettings.couponMinimumSubtotal || 0).toLocaleString("tr-TR")} TL sepette kullanabilir.
+                          Müşteri bu kodu minimum {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL sepette kullanabilir.
                         </p>
                       </div>
 
-                      {marketingMessage ? (
+                      {customerCouponMessage ? (
                         <p
                           className={`text-sm ${
-                            marketingMessage.includes("tamamlandı") ||
-                            marketingMessage.includes("kaydedildi") ||
-                            marketingMessage.includes("oluşturuldu")
+                            customerCouponMessage.includes("tamamlandı") ||
+                            customerCouponMessage.includes("kaydedildi") ||
+                            customerCouponMessage.includes("oluşturuldu")
                               ? "text-green-700"
                               : "text-red-600"
                           }`}
                         >
-                          {marketingMessage}
+                          {customerCouponMessage}
                         </p>
                       ) : null}
                     </div>
                   ) : (
                     <form
-                      onSubmit={handleSaveMarketingSettings}
+                      onSubmit={handleSaveCustomerCouponSettings}
                       className="bg-white border border-[#E7E2D8] rounded-lg p-4 space-y-4"
                     >
                       <div className="rounded-xl border border-[#E7E2D8] bg-[#FAF9F6] p-4 space-y-3">
@@ -2563,7 +2604,7 @@ export function Admin() {
                           <div>
                             <h3 className="text-sm font-medium">Kupon Oluştur</h3>
                             <p className="text-xs text-gray-500 mt-1">
-                              Sepeti terk eden müşterilere gidecek indirim kodunu buradan hazırlayabilirsiniz.
+                              Tüm müşterilerinizin sepette kullanabileceği indirim kodunu buradan hazırlayabilirsiniz.
                             </p>
                           </div>
                           <button
@@ -2578,28 +2619,28 @@ export function Admin() {
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                           <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
                             <p className="text-[11px] uppercase tracking-wide text-gray-500">Durum</p>
-                            <p className={`mt-2 text-sm font-medium ${marketingSettings.couponEnabled ? "text-green-700" : "text-gray-600"}`}>
-                              {marketingSettings.couponEnabled ? "Aktif" : "Pasif"}
+                            <p className={`mt-2 text-sm font-medium ${customerCouponSettings.enabled ? "text-green-700" : "text-gray-600"}`}>
+                              {customerCouponSettings.enabled ? "Aktif" : "Pasif"}
                             </p>
                           </div>
                           <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
                             <p className="text-[11px] uppercase tracking-wide text-gray-500">Kod</p>
                             <p className="mt-2 text-sm font-medium text-black">
-                              {marketingSettings.couponCode || "Henüz oluşturulmadı"}
+                              {customerCouponSettings.code || "Henüz oluşturulmadı"}
                             </p>
                           </div>
                           <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
                             <p className="text-[11px] uppercase tracking-wide text-gray-500">İndirim</p>
                             <p className="mt-2 text-sm font-medium text-black">
-                              {marketingSettings.couponType === "fixed"
-                                ? `${Number(marketingSettings.couponValue || 0).toLocaleString("tr-TR")} TL`
-                                : `%${Number(marketingSettings.couponValue || 0).toLocaleString("tr-TR")}`}
+                              {customerCouponSettings.type === "fixed"
+                                ? `${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} TL`
+                                : `%${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")}`}
                             </p>
                           </div>
                           <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
                             <p className="text-[11px] uppercase tracking-wide text-gray-500">Minimum Sepet</p>
                             <p className="mt-2 text-sm font-medium text-black">
-                              {Number(marketingSettings.couponMinimumSubtotal || 0).toLocaleString("tr-TR")} TL
+                              {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL
                             </p>
                           </div>
                         </div>
@@ -2609,15 +2650,15 @@ export function Admin() {
                         <div>
                           <h3 className="text-sm font-medium">Kupon Ayarları</h3>
                           <p className="text-xs text-gray-500 mt-1">
-                            Buradaki kupon ayarları sepete terk e-postasında gösterilen indirimi belirler.
+                            Buradaki kupon ayarları müşterilerin sepette manuel kullanacağı indirim kodunu belirler.
                           </p>
                         </div>
                         <label className="inline-flex items-center gap-2 text-sm">
                           <input
                             type="checkbox"
-                            checked={marketingSettings.couponEnabled}
+                            checked={customerCouponSettings.enabled}
                             onChange={(e) =>
-                              setMarketingSettings((prev) => ({ ...prev, couponEnabled: e.target.checked }))
+                              setCustomerCouponSettings((prev) => ({ ...prev, enabled: e.target.checked }))
                             }
                           />
                           Kupon aktif
@@ -2630,11 +2671,11 @@ export function Admin() {
                           <input
                             type="text"
                             maxLength={40}
-                            value={marketingSettings.couponCode}
+                            value={customerCouponSettings.code}
                             onChange={(e) =>
-                              setMarketingSettings((prev) => ({
+                              setCustomerCouponSettings((prev) => ({
                                 ...prev,
-                                couponCode: e.target.value.toUpperCase().replace(/\s+/g, ""),
+                                code: e.target.value.toUpperCase().replace(/\s+/g, ""),
                               }))
                             }
                             className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
@@ -2643,11 +2684,11 @@ export function Admin() {
                         <div>
                           <label className="block text-sm font-medium mb-1">İndirim Tipi</label>
                           <select
-                            value={marketingSettings.couponType}
+                            value={customerCouponSettings.type}
                             onChange={(e) =>
-                              setMarketingSettings((prev) => ({
+                              setCustomerCouponSettings((prev) => ({
                                 ...prev,
-                                couponType: e.target.value === "fixed" ? "fixed" : "percentage",
+                                type: e.target.value === "fixed" ? "fixed" : "percentage",
                               }))
                             }
                             className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
@@ -2661,17 +2702,17 @@ export function Admin() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium mb-1">
-                            {marketingSettings.couponType === "fixed" ? "İndirim Tutarı (TL)" : "İndirim Oranı (%)"}
+                            {customerCouponSettings.type === "fixed" ? "İndirim Tutarı (TL)" : "İndirim Oranı (%)"}
                           </label>
                           <input
                             type="number"
                             min={1}
-                            max={marketingSettings.couponType === "fixed" ? 100000 : 95}
-                            value={marketingSettings.couponValue}
+                            max={customerCouponSettings.type === "fixed" ? 100000 : 95}
+                            value={customerCouponSettings.value}
                             onChange={(e) =>
-                              setMarketingSettings((prev) => ({
+                              setCustomerCouponSettings((prev) => ({
                                 ...prev,
-                                couponValue: Number(e.target.value || 0),
+                                value: Number(e.target.value || 0),
                               }))
                             }
                             className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
@@ -2683,11 +2724,11 @@ export function Admin() {
                             type="number"
                             min={0}
                             max={1000000}
-                            value={marketingSettings.couponMinimumSubtotal}
+                            value={customerCouponSettings.minimumSubtotal}
                             onChange={(e) =>
-                              setMarketingSettings((prev) => ({
+                              setCustomerCouponSettings((prev) => ({
                                 ...prev,
-                                couponMinimumSubtotal: Number(e.target.value || 0),
+                                minimumSubtotal: Number(e.target.value || 0),
                               }))
                             }
                             className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
@@ -2700,11 +2741,11 @@ export function Admin() {
                         <input
                           type="text"
                           maxLength={200}
-                          value={marketingSettings.couponDescription}
+                          value={customerCouponSettings.description}
                           onChange={(e) =>
-                            setMarketingSettings((prev) => ({
+                            setCustomerCouponSettings((prev) => ({
                               ...prev,
-                              couponDescription: e.target.value,
+                              description: e.target.value,
                             }))
                           }
                           className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
@@ -2715,47 +2756,47 @@ export function Admin() {
                         <p className="text-xs uppercase tracking-wide text-gray-500">Önizleme</p>
                         <div className="mt-3 flex flex-wrap items-center gap-3">
                           <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-medium tracking-[0.2em] text-white">
-                            {marketingSettings.couponCode || "KUPON-KODU"}
+                            {customerCouponSettings.code || "KUPON-KODU"}
                           </span>
                           <span className="text-sm text-gray-700">
-                            {marketingSettings.couponType === "fixed"
-                              ? `${Number(marketingSettings.couponValue || 0).toLocaleString("tr-TR")} TL indirim`
-                              : `%${Number(marketingSettings.couponValue || 0).toLocaleString("tr-TR")} indirim`}
+                            {customerCouponSettings.type === "fixed"
+                              ? `${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} TL indirim`
+                              : `%${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} indirim`}
                           </span>
                         </div>
                         <p className="mt-3 text-sm text-gray-700">
-                          {marketingSettings.couponDescription || "Sepetinize özel indirim kodunuz hazır."}
+                          {customerCouponSettings.description || "Müşterilerinize özel indirim kodunuz hazır."}
                         </p>
                         <p className="mt-2 text-xs text-gray-500">
-                          Müşteri bu kodu minimum {Number(marketingSettings.couponMinimumSubtotal || 0).toLocaleString("tr-TR")} TL sepette kullanabilir.
+                          Müşteri bu kodu minimum {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL sepette kullanabilir.
                         </p>
                       </div>
 
                       <div className="rounded-lg border border-[#E7E2D8] bg-[#F8F7F4] px-4 py-3 text-sm text-gray-600">
-                        Kupon sepette minimum tutar sağlandığında otomatik uygulanır ve ödeme sırasında sunucuda tekrar doğrulanır.
+                        Müşteri kupon kodunu sepette girdiğinde, minimum tutar sağlanıyorsa indirim uygulanır ve ödeme sırasında sunucuda tekrar doğrulanır.
                       </div>
 
-                      {marketingMessage ? (
+                      {customerCouponMessage ? (
                         <p
                           className={`text-sm ${
-                            marketingMessage.includes("tamamlandı") ||
-                            marketingMessage.includes("kaydedildi") ||
-                            marketingMessage.includes("oluşturuldu")
+                            customerCouponMessage.includes("tamamlandı") ||
+                            customerCouponMessage.includes("kaydedildi") ||
+                            customerCouponMessage.includes("oluşturuldu")
                               ? "text-green-700"
                               : "text-red-600"
                           }`}
                         >
-                          {marketingMessage}
+                          {customerCouponMessage}
                         </p>
                       ) : null}
 
                       <div className="flex flex-col sm:flex-row gap-3">
                         <button
                           type="submit"
-                          disabled={isSavingMarketing}
+                          disabled={isSavingCustomerCoupon}
                           className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
                         >
-                          {isSavingMarketing ? "Kaydediliyor..." : "Kuponları Kaydet"}
+                          {isSavingCustomerCoupon ? "Kaydediliyor..." : "Kuponları Kaydet"}
                         </button>
                       </div>
                     </form>

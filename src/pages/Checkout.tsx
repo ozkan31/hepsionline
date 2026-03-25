@@ -2,7 +2,7 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { Check, ChevronRight, Truck } from "lucide-react";
 import { useStore } from "@/store/StoreContext";
-import { applyAbandonedCartCoupon, createOrder, createPaytrIframe, saveAddress } from "@/lib/api";
+import { applyCustomerCoupon, createOrder, createPaytrIframe, saveAddress } from "@/lib/api";
 import {
   clearStoredAbandonedCartCoupon,
   getCouponDiscountAmount,
@@ -307,7 +307,7 @@ export function Checkout() {
     }
 
     let isMounted = true;
-    applyAbandonedCartCoupon(storedCode)
+    applyCustomerCoupon(storedCode, state.cart)
       .then((coupon) => {
         if (!isMounted) return;
         setAppliedCoupon(coupon);
@@ -324,7 +324,7 @@ export function Checkout() {
     return () => {
       isMounted = false;
     };
-  }, [cartTotal, state.cart.length, state.isAuthenticated]);
+  }, [cartTotal, state.cart, state.cart.length, state.isAuthenticated]);
 
   useEffect(() => {
     if (isPaymentSuccessPath) {

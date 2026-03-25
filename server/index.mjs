@@ -399,6 +399,7 @@ const abandonedCartMailTransporter = orderMailTransporter || mailTransporter;
 const abandonedCartMailFromName = orderMailTransporter ? ORDER_SMTP_FROM_NAME : SMTP_FROM_NAME;
 const abandonedCartMailFromEmail = orderMailTransporter ? ORDER_SMTP_FROM_EMAIL : SMTP_FROM_EMAIL;
 const ABANDONED_CART_SETTING_KEY = "marketing_abandoned_cart";
+const CUSTOMER_COUPON_SETTING_KEY = "marketing_customer_coupon";
 const ABANDONED_CART_SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const DEFAULT_ABANDONED_CART_SETTINGS = Object.freeze({
   enabled: false,
@@ -414,6 +415,14 @@ const DEFAULT_ABANDONED_CART_SETTINGS = Object.freeze({
   couponValue: 10,
   couponMinimumSubtotal: 750,
   couponDescription: "Sepetinize özel indirim kodunuz hazır.",
+});
+const DEFAULT_CUSTOMER_COUPON_SETTINGS = Object.freeze({
+  enabled: false,
+  code: "",
+  type: "percentage",
+  value: 10,
+  minimumSubtotal: 750,
+  description: "Müşterilerinize özel indirim kodunuz hazır.",
 });
 let abandonedCartScanTimeout = null;
 let abandonedCartScanInFlight = null;
@@ -2482,6 +2491,88 @@ async function getUserCartItems(userId) {
   return rows.map(mapCartRow);
 }
 
+function sanitizeCouponRequestItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => ({
+      productId: String(item?.productId ?? item?.id ?? item?.product?.id ?? "").trim(),
+      quantity: Math.max(1, Number(item?.quantity ?? 1) || 1),
+      color: String(item?.color ?? "").trim(),
+    }))
+    .filter((item) => item.productId);
+}
+
+async function getCouponRequestCartItems(items) {
+  const normalizedItems = sanitizeCouponRequestItems(items);
+  if (normalizedItems.length === 0) {
+    return [];
+  }
+
+  const productIds = Array.from(new Set(normalizedItems.map((item) => item.productId)));
+  const placeholders = productIds.map(() => "?").join(", ");
+  const [rows] = await pool.query(
+    `
+    SELECT
+      p.id,
+      p.name,
+      p.price,
+      p.image,
+      p.images_json,
+      p.category_id,
+      p.description,
+      p.features_json,
+      p.colors_json,
+      p.tags_json,
+      p.is_new,
+      p.is_bestseller
+    FROM products p
+    WHERE p.id IN (${placeholders})
+    `,
+    productIds
+  );
+
+  const productsById = new Map(rows.map((row) => [String(row.id ?? "").trim(), mapProductRow(row)]));
+
+  return normalizedItems
+    .map((item) => {
+      const product = productsById.get(item.productId);
+      if (!product) return null;
+      return {
+        product,
+        quantity: item.quantity,
+        color: item.color || undefined,
+      };
+    })
+    .filter(Boolean);
+}
+
+async function resolveAnyCoupon({ code, cartItems }) {
+  const normalizedCode = normalizeCustomerCouponCode(code);
+  if (!normalizedCode) {
+    return null;
+  }
+
+  const [customerSettings, abandonedCartSettings] = await Promise.all([
+    getCustomerCouponSettings(),
+    getAbandonedCartSettings(),
+  ]);
+
+  const customerCoupon = resolveCustomerCoupon({
+    code: normalizedCode,
+    cartItems,
+    settings: customerSettings,
+  });
+  if (customerCoupon) {
+    return customerCoupon;
+  }
+
+  return resolveAbandonedCartCoupon({
+    code: normalizedCode,
+    cartItems,
+    settings: abandonedCartSettings,
+  });
+}
+
 function buildAbandonedCartSignature(items) {
   const normalizedItems = (Array.isArray(items) ? items : [])
     .map((item) => ({
@@ -2535,6 +2626,13 @@ function normalizeAbandonedCartCouponCode(value) {
     .replace(/\s+/g, "");
 }
 
+function normalizeCustomerCouponCode(value) {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+}
+
 function getConfiguredAbandonedCartCoupon(settings) {
   const safeSettings = sanitizeAbandonedCartSettings(settings);
   if (!safeSettings.couponEnabled) {
@@ -2569,6 +2667,20 @@ function calculateAbandonedCartCouponDiscount(subtotal, coupon) {
   return Math.min(normalizedSubtotal, Math.round((normalizedSubtotal * percentage) / 100));
 }
 
+function calculateCustomerCouponDiscount(subtotal, coupon) {
+  const normalizedSubtotal = Math.max(0, Math.round(Number(subtotal) || 0));
+  if (!coupon || normalizedSubtotal <= 0 || normalizedSubtotal < coupon.minimumSubtotal) {
+    return 0;
+  }
+
+  if (coupon.type === "fixed") {
+    return Math.min(normalizedSubtotal, Math.max(0, Math.round(Number(coupon.value) || 0)));
+  }
+
+  const percentage = Math.max(0, Math.min(95, Number(coupon.value) || 0));
+  return Math.min(normalizedSubtotal, Math.round((normalizedSubtotal * percentage) / 100));
+}
+
 function resolveAbandonedCartCoupon({ code, cartItems, settings }) {
   const configuredCoupon = getConfiguredAbandonedCartCoupon(settings);
   const normalizedCode = normalizeAbandonedCartCouponCode(code);
@@ -2580,6 +2692,62 @@ function resolveAbandonedCartCoupon({ code, cartItems, settings }) {
   const subtotal = getCartSubtotal(cartItems);
   const shippingAmount = getCartShippingAmount(subtotal);
   const discountAmount = calculateAbandonedCartCouponDiscount(subtotal, configuredCoupon);
+  if (discountAmount <= 0) {
+    return {
+      valid: false,
+      reason:
+        subtotal < configuredCoupon.minimumSubtotal
+          ? `Kuponu kullanmak için sepet tutarı en az ${configuredCoupon.minimumSubtotal.toLocaleString("tr-TR")} TL olmalıdır.`
+          : "Kupon bu sepet için uygulanamadı.",
+    };
+  }
+
+  return {
+    valid: true,
+    code: configuredCoupon.code,
+    type: configuredCoupon.type,
+    value: configuredCoupon.value,
+    minimumSubtotal: configuredCoupon.minimumSubtotal,
+    description: configuredCoupon.description,
+    discountAmount,
+    subtotal,
+    shippingAmount,
+    totalBeforeDiscount: subtotal + shippingAmount,
+    totalAfterDiscount: Math.max(0, subtotal + shippingAmount - discountAmount),
+  };
+}
+
+function getConfiguredCustomerCoupon(settings) {
+  const safeSettings = sanitizeCustomerCouponSettings(settings);
+  if (!safeSettings.enabled) {
+    return null;
+  }
+
+  const code = normalizeCustomerCouponCode(safeSettings.code);
+  if (!code) {
+    return null;
+  }
+
+  return {
+    code,
+    type: safeSettings.type === "fixed" ? "fixed" : "percentage",
+    value: Number(safeSettings.value) || 0,
+    minimumSubtotal: Math.max(0, Number(safeSettings.minimumSubtotal) || 0),
+    description: String(safeSettings.description ?? "").trim(),
+  };
+}
+
+function resolveCustomerCoupon({ code, cartItems, settings }) {
+  const configuredCoupon = getConfiguredCustomerCoupon(settings);
+  const normalizedCode = normalizeCustomerCouponCode(code);
+
+  if (!configuredCoupon || !normalizedCode || configuredCoupon.code !== normalizedCode) {
+    return null;
+  }
+
+  const subtotal = getCartSubtotal(cartItems);
+  const shippingAmount = getCartShippingAmount(subtotal);
+  const discountAmount = calculateCustomerCouponDiscount(subtotal, configuredCoupon);
   if (discountAmount <= 0) {
     return {
       valid: false,
@@ -3176,6 +3344,46 @@ function sanitizeAbandonedCartSettings(input = {}) {
   };
 }
 
+function sanitizeCustomerCouponSettings(input = {}) {
+  const code = String(input?.code ?? DEFAULT_CUSTOMER_COUPON_SETTINGS.code)
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .slice(0, 40);
+  const type = String(input?.type ?? DEFAULT_CUSTOMER_COUPON_SETTINGS.type).trim() === "fixed"
+    ? "fixed"
+    : "percentage";
+  const valueRaw = Number(input?.value ?? DEFAULT_CUSTOMER_COUPON_SETTINGS.value);
+  const value =
+    type === "fixed"
+      ? Math.max(1, Math.min(100000, Number.isFinite(valueRaw) ? Math.round(valueRaw) : DEFAULT_CUSTOMER_COUPON_SETTINGS.value))
+      : Math.max(1, Math.min(95, Number.isFinite(valueRaw) ? Math.round(valueRaw) : DEFAULT_CUSTOMER_COUPON_SETTINGS.value));
+  const minimumSubtotalRaw = Number(
+    input?.minimumSubtotal ?? DEFAULT_CUSTOMER_COUPON_SETTINGS.minimumSubtotal
+  );
+  const minimumSubtotal = Math.max(
+    0,
+    Math.min(
+      1000000,
+      Number.isFinite(minimumSubtotalRaw)
+        ? Math.round(minimumSubtotalRaw)
+        : DEFAULT_CUSTOMER_COUPON_SETTINGS.minimumSubtotal
+    )
+  );
+  const description = String(input?.description ?? DEFAULT_CUSTOMER_COUPON_SETTINGS.description)
+    .trim()
+    .slice(0, 200);
+
+  return {
+    enabled: Boolean(input?.enabled && code),
+    code,
+    type,
+    value,
+    minimumSubtotal,
+    description: description || DEFAULT_CUSTOMER_COUPON_SETTINGS.description,
+  };
+}
+
 async function getAbandonedCartSettings() {
   const stored = await getJsonAppSetting(ABANDONED_CART_SETTING_KEY, DEFAULT_ABANDONED_CART_SETTINGS);
   return sanitizeAbandonedCartSettings(stored);
@@ -3184,6 +3392,48 @@ async function getAbandonedCartSettings() {
 async function setAbandonedCartSettings(input) {
   const normalized = sanitizeAbandonedCartSettings(input);
   await setJsonAppSetting(ABANDONED_CART_SETTING_KEY, normalized);
+  return normalized;
+}
+
+async function getCustomerCouponSettings() {
+  await ensureAppSettingsTable();
+  const [rows] = await pool.query(
+    `
+    SELECT setting_value
+    FROM app_settings
+    WHERE setting_key = ?
+    LIMIT 1
+    `,
+    [CUSTOMER_COUPON_SETTING_KEY]
+  );
+
+  if (rows.length === 0) {
+    const abandonedCartSettings = await getAbandonedCartSettings();
+    const migratedFallback = sanitizeCustomerCouponSettings({
+      enabled: abandonedCartSettings.couponEnabled,
+      code: abandonedCartSettings.couponCode,
+      type: abandonedCartSettings.couponType,
+      value: abandonedCartSettings.couponValue,
+      minimumSubtotal: abandonedCartSettings.couponMinimumSubtotal,
+      description: abandonedCartSettings.couponDescription,
+    });
+    const fallbackSettings = migratedFallback.code ? migratedFallback : DEFAULT_CUSTOMER_COUPON_SETTINGS;
+    await setJsonAppSetting(CUSTOMER_COUPON_SETTING_KEY, fallbackSettings);
+    return sanitizeCustomerCouponSettings(fallbackSettings);
+  }
+
+  try {
+    const parsed = JSON.parse(String(rows[0].setting_value ?? "").trim() || "null");
+    return sanitizeCustomerCouponSettings(parsed);
+  } catch {
+    await setJsonAppSetting(CUSTOMER_COUPON_SETTING_KEY, DEFAULT_CUSTOMER_COUPON_SETTINGS);
+    return sanitizeCustomerCouponSettings(DEFAULT_CUSTOMER_COUPON_SETTINGS);
+  }
+}
+
+async function setCustomerCouponSettings(input) {
+  const normalized = sanitizeCustomerCouponSettings(input);
+  await setJsonAppSetting(CUSTOMER_COUPON_SETTING_KEY, normalized);
   return normalized;
 }
 
@@ -4146,9 +4396,8 @@ app.post("/api/orders", requireAuth, async (req, res) => {
 
   const subtotal = getCartSubtotal(trustedOrderItems);
   const shippingTotal = getCartShippingAmount(subtotal);
-  const settings = await getAbandonedCartSettings();
-  const coupon = normalizeAbandonedCartCouponCode(couponCode)
-    ? resolveAbandonedCartCoupon({ code: couponCode, cartItems: trustedOrderItems, settings })
+  const coupon = normalizeCustomerCouponCode(couponCode)
+    ? await resolveAnyCoupon({ code: couponCode, cartItems: trustedOrderItems })
     : null;
   if (coupon && !coupon.valid) {
     return res.status(400).json({ message: coupon.reason || "Kupon geçersiz." });
@@ -4327,9 +4576,8 @@ app.post("/api/paytr/token", requireAuth, async (req, res) => {
     const orderItems = await getUserCartItems(req.authUser.id);
     const subtotal = getCartSubtotal(orderItems);
     const shippingAmount = getCartShippingAmount(subtotal);
-    const settings = await getAbandonedCartSettings();
-    const coupon = normalizeAbandonedCartCouponCode(couponCode)
-      ? resolveAbandonedCartCoupon({ code: couponCode, cartItems: orderItems, settings })
+    const coupon = normalizeCustomerCouponCode(couponCode)
+      ? await resolveAnyCoupon({ code: couponCode, cartItems: orderItems })
       : null;
     if (coupon && !coupon.valid) {
       return res.status(400).json({ message: coupon.reason || "Kupon geçersiz." });
@@ -4563,7 +4811,7 @@ app.get("/api/admin/marketing/abandoned-cart", requireAdminAuth, async (_req, re
 
 app.post("/api/marketing/abandoned-cart/coupon/apply", requireAuth, async (req, res) => {
   try {
-    const code = normalizeAbandonedCartCouponCode(req.body?.code);
+    const code = normalizeCustomerCouponCode(req.body?.code);
     if (!code) {
       return res.status(400).json({ message: "Kupon kodu zorunludur." });
     }
@@ -4573,8 +4821,7 @@ app.post("/api/marketing/abandoned-cart/coupon/apply", requireAuth, async (req, 
       return res.status(400).json({ message: "Sepetiniz boş." });
     }
 
-    const settings = await getAbandonedCartSettings();
-    const coupon = resolveAbandonedCartCoupon({ code, cartItems, settings });
+    const coupon = await resolveAnyCoupon({ code, cartItems });
     if (!coupon?.valid) {
       return res.status(400).json({
         message: coupon?.reason || "Kupon kodu geçersiz veya şu anda aktif değil.",
@@ -4584,6 +4831,61 @@ app.post("/api/marketing/abandoned-cart/coupon/apply", requireAuth, async (req, 
     return res.json({ coupon });
   } catch (error) {
     return res.status(500).json({ message: "Kupon doğrulanamadı." });
+  }
+});
+
+app.post("/api/coupons/apply", async (req, res) => {
+  try {
+    const code = normalizeCustomerCouponCode(req.body?.code);
+    if (!code) {
+      return res.status(400).json({ message: "Kupon kodu zorunludur." });
+    }
+
+    const cartItems = await getCouponRequestCartItems(req.body?.items);
+    if (cartItems.length === 0) {
+      return res.status(400).json({ message: "Sepetiniz boş." });
+    }
+
+    const coupon = await resolveAnyCoupon({ code, cartItems });
+    if (!coupon?.valid) {
+      return res.status(400).json({
+        message: coupon?.reason || "Kupon kodu geçersiz veya şu anda aktif değil.",
+      });
+    }
+
+    return res.json({ coupon });
+  } catch (error) {
+    return res.status(500).json({ message: "Kupon doğrulanamadı." });
+  }
+});
+
+app.get("/api/admin/marketing/customer-coupon", requireAdminAuth, async (_req, res) => {
+  try {
+    const settings = await getCustomerCouponSettings();
+    return res.json({ settings });
+  } catch (error) {
+    return res.status(500).json({ message: "Müşteri kupon ayarları alınamadı." });
+  }
+});
+
+app.put("/api/admin/marketing/customer-coupon", requireAdminAuth, async (req, res) => {
+  try {
+    const rawSettings = req.body ?? {};
+    const settings = sanitizeCustomerCouponSettings(rawSettings);
+
+    if (Boolean(rawSettings?.enabled)) {
+      if (!String(settings.code ?? "").trim()) {
+        return res.status(400).json({ message: "Kupon kodu zorunludur." });
+      }
+      if (!Number.isFinite(Number(settings.value)) || Number(settings.value) <= 0) {
+        return res.status(400).json({ message: "Kupon değeri 0'dan büyük olmalıdır." });
+      }
+    }
+
+    const saved = await setCustomerCouponSettings(settings);
+    return res.json({ settings: saved });
+  } catch (error) {
+    return res.status(500).json({ message: "Müşteri kupon ayarları kaydedilemedi." });
   }
 });
 

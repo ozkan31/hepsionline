@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Minus, Plus, ShoppingBag, TicketPercent, Truck, X } from "lucide-react";
 import { useStore } from "@/store/StoreContext";
 import { trackBeginCheckout } from "@/lib/analytics";
-import { applyAbandonedCartCoupon } from "@/lib/api";
+import { applyCustomerCoupon } from "@/lib/api";
 import {
   clearStoredAbandonedCartCoupon,
   describeCouponDiscount,
@@ -62,11 +62,6 @@ export function Cart() {
       return;
     }
 
-    if (!state.isAuthenticated) {
-      navigate(`/giris?redirect=${encodeURIComponent(`/sepet?kupon=${encodeURIComponent(code)}`)}`);
-      return;
-    }
-
     setIsApplyingCoupon(true);
     setCouponError("");
     if (!options?.silentSuccess) {
@@ -74,7 +69,7 @@ export function Cart() {
     }
 
     try {
-      const coupon = await applyAbandonedCartCoupon(code);
+      const coupon = await applyCustomerCoupon(code, state.cart);
       setAppliedCoupon(coupon);
       setPromoCode(coupon.code);
       storeAbandonedCartCoupon(coupon);
@@ -111,17 +106,12 @@ export function Cart() {
     if (!incomingCode || state.cart.length === 0) return;
     if (appliedCoupon?.code === incomingCode && appliedCoupon.subtotal === cartTotal) return;
 
-    if (!state.isAuthenticated && !queryCode) {
-      setPromoCode(incomingCode);
-      return;
-    }
-
     setPromoCode(incomingCode);
     void syncCoupon(incomingCode, {
       silentSuccess: appliedCoupon?.code === incomingCode,
       cleanupQuery: true,
     });
-  }, [appliedCoupon?.code, appliedCoupon?.subtotal, cartSignature, cartTotal, searchParams, state.cart.length, state.isAuthenticated]);
+  }, [appliedCoupon?.code, appliedCoupon?.subtotal, cartSignature, cartTotal, searchParams, state.cart.length, state.cart]);
 
   const updateQuantity = (productId: string, newQuantity: number) => {
     if (newQuantity < 1) {

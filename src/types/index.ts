@@ -2,6 +2,8 @@ export interface Product {
   id: string;
   name: string;
   price: number;
+  stock?: number | null;
+  barcode?: string | null;
   image: string;
   images?: string[];
   hoverImage?: string;

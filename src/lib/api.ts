@@ -725,6 +725,8 @@ export async function updateAdminProduct(
   input: {
     name: string;
     price: number;
+    stock: number | null;
+    barcode: string;
     image: string;
     images: string[];
     category: string;
@@ -762,6 +764,8 @@ export async function createAdminProduct(
     id?: string;
     name: string;
     price: number;
+    stock: number | null;
+    barcode: string;
     image: string;
     images: string[];
     category: string;

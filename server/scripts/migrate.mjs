@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS products (
   id VARCHAR(50) PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   price INT NOT NULL,
+  stock INT NULL,
+  barcode VARCHAR(120) NULL,
   image VARCHAR(255) NOT NULL,
   images_json JSON NULL,
   category_id VARCHAR(50) NOT NULL,
@@ -426,6 +428,24 @@ async function migrate() {
   try {
     await pool.query(
       `ALTER TABLE products ADD COLUMN images_json JSON NULL AFTER image`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE products ADD COLUMN stock INT NULL AFTER price`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE products ADD COLUMN barcode VARCHAR(120) NULL AFTER stock`
     );
   } catch (error) {
     if (error?.code !== "ER_DUP_FIELDNAME") {

@@ -690,7 +690,7 @@ function mapProductToGoogleMerchantEntry(req, product, index) {
       contentLanguage: GOOGLE_MERCHANT_CONTENT_LANGUAGE.toLowerCase(),
       targetCountry: GOOGLE_MERCHANT_TARGET_COUNTRY.toUpperCase(),
       channel: "online",
-      availability: "in stock",
+      availability: Number(product.stock) === 0 ? "out of stock" : "in stock",
       condition: "new",
       price: {
         value: Number.isFinite(price) ? price.toFixed(2) : "0.00",
@@ -800,7 +800,7 @@ async function listAllGoogleMerchantProducts() {
 async function syncProductsToGoogleMerchant(req) {
   const [rows] = await pool.query(
     `
-    SELECT id, name, price, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
+    SELECT id, name, price, stock, barcode, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
     FROM products
     ORDER BY id ASC
     `
@@ -2020,6 +2020,8 @@ function mapProductRow(row) {
     id: String(row.id),
     name: row.name,
     price: Number(row.price),
+    stock: row.stock == null ? null : Number(row.stock),
+    barcode: row.barcode == null ? null : String(row.barcode),
     image: resolvedImages[0] ?? buildProductImageProxyPath(row.id, 0),
     images: resolvedImages,
     category: row.category_id,
@@ -2079,6 +2081,8 @@ function mapProductListRow(row) {
     id: String(row.id),
     name: row.name,
     price: Number(row.price),
+    stock: row.stock == null ? null : Number(row.stock),
+    barcode: row.barcode == null ? null : String(row.barcode),
     image: cover,
     images: [cover],
     category: row.category_id,
@@ -2097,6 +2101,8 @@ function mapAdminProductListRow(row) {
     id: String(row.id),
     name: row.name,
     price: Number(row.price),
+    stock: row.stock == null ? null : Number(row.stock),
+    barcode: row.barcode == null ? null : String(row.barcode),
     image: proxyImage,
     images: [proxyImage],
     category: row.category_id,
@@ -3504,6 +3510,24 @@ function parseAdminPriceInput(value, fallback = 0) {
     return Number.isFinite(Number(fallback)) ? Math.max(0, Math.trunc(Number(fallback))) : 0;
   }
   return Math.max(0, Math.trunc(parsed));
+}
+
+function parseAdminStockInput(value, fallback = null) {
+  const normalized = String(value ?? "").trim().replace(/\s+/g, "");
+  if (!normalized) {
+    if (fallback == null || fallback === "") return null;
+    const parsedFallback = Number(fallback);
+    return Number.isFinite(parsedFallback) && parsedFallback >= 0 ? Math.trunc(parsedFallback) : null;
+  }
+
+  const parsed = Number(normalized.replace(",", "."));
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    if (fallback == null || fallback === "") return null;
+    const parsedFallback = Number(fallback);
+    return Number.isFinite(parsedFallback) && parsedFallback >= 0 ? Math.trunc(parsedFallback) : null;
+  }
+
+  return Math.trunc(parsed);
 }
 
 function splitFullName(name) {
@@ -5233,7 +5257,7 @@ app.get("/api/admin/products", requireAdminAuth, async (_req, res) => {
     try {
       const [rows] = await pool.query(
         `
-        SELECT id, name, price, image, category_id, is_new, is_bestseller
+        SELECT id, name, price, stock, barcode, image, category_id, is_new, is_bestseller
         FROM products
         ORDER BY id ASC
         LIMIT ?
@@ -5257,7 +5281,7 @@ app.get("/api/admin/products", requireAdminAuth, async (_req, res) => {
       }
       const [rows] = await pool.query(
         `
-        SELECT id, name, price, image, category_id, is_new, is_bestseller
+        SELECT id, name, price, stock, barcode, image, category_id, is_new, is_bestseller
         FROM products
         ORDER BY id ASC
         LIMIT ?
@@ -5420,9 +5444,11 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
     const name = String(req.body?.name ?? "").trim();
     const requestedCategory = String(req.body?.category ?? "").trim();
     const description = String(req.body?.description ?? "").trim();
+    const barcode = String(req.body?.barcode ?? "").trim();
     const image = String(req.body?.image ?? "").trim();
     const images = Array.isArray(req.body?.images) ? req.body.images : [];
     const price = parseAdminPriceInput(req.body?.price, 0);
+    const stock = parseAdminStockInput(req.body?.stock, null);
     const features = Array.isArray(req.body?.features) ? req.body.features : [];
     const colors = Array.isArray(req.body?.colors) ? req.body.colors : [];
     const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
@@ -5462,14 +5488,16 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
     await pool.query(
       `
       INSERT INTO products (
-        id, name, price, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
+        id, name, price, stock, barcode, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         productId,
         name,
         normalizedPrice,
+        stock,
+        barcode || null,
         primaryImage,
         JSON.stringify(normalizedImages.length > 0 ? normalizedImages : [primaryImage]),
         category,
@@ -5484,7 +5512,7 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
 
     const [rows] = await pool.query(
       `
-      SELECT id, name, price, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
+      SELECT id, name, price, stock, barcode, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
       FROM products
       WHERE id = ?
       LIMIT 1
@@ -5521,7 +5549,7 @@ app.get("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
 
     const [rows] = await pool.query(
       `
-      SELECT id, name, price, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
+      SELECT id, name, price, stock, barcode, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
       FROM products
       WHERE id = ?
       LIMIT 1
@@ -5545,6 +5573,7 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     const requestedName = String(req.body?.name ?? "").trim();
     const requestedCategory = String(req.body?.category ?? "").trim();
     const requestedDescription = String(req.body?.description ?? "").trim();
+    const requestedBarcode = String(req.body?.barcode ?? "").trim();
     const image = String(req.body?.image ?? "").trim();
     const images = Array.isArray(req.body?.images) ? req.body.images : [];
     const features = Array.isArray(req.body?.features) ? req.body.features : [];
@@ -5558,7 +5587,7 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     }
     const [existingRows] = await pool.query(
       `
-      SELECT id, name, price, image, images_json, category_id, description
+      SELECT id, name, price, stock, barcode, image, images_json, category_id, description
       FROM products
       WHERE id = ?
       LIMIT 1
@@ -5580,7 +5609,9 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
       return res.status(400).json({ message: "Kayitli kategori bulunamadi." });
     }
     const price = parseAdminPriceInput(req.body?.price, Number(existing.price ?? 0));
+    const stock = parseAdminStockInput(req.body?.stock, existing.stock);
     const description = requestedDescription || String(existing.description ?? "").trim();
+    const barcode = requestedBarcode || null;
     const normalizedPrice = price;
 
     const existingImageSources = parseProductImageSources(existing);
@@ -5611,6 +5642,8 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
       SET
         name = ?,
         price = ?,
+        stock = ?,
+        barcode = ?,
         image = ?,
         images_json = ?,
         category_id = ?,
@@ -5625,6 +5658,8 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
       [
         name,
         normalizedPrice,
+        stock,
+        barcode,
         primaryImage,
         JSON.stringify(normalizedImages.length > 0 ? normalizedImages : [primaryImage]),
         category,
@@ -5644,7 +5679,7 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
 
     const [rows] = await pool.query(
       `
-      SELECT id, name, price, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
+      SELECT id, name, price, stock, barcode, image, images_json, category_id, description, features_json, colors_json, tags_json, is_new, is_bestseller
       FROM products
       WHERE id = ?
       LIMIT 1
@@ -5736,7 +5771,7 @@ app.get("/api/products", async (req, res) => {
     const countParams = [...params];
 
     const sql = `
-      SELECT id, name, price, image, category_id, description, colors_json, tags_json, is_new, is_bestseller
+      SELECT id, name, price, stock, barcode, image, category_id, description, colors_json, tags_json, is_new, is_bestseller
       FROM products
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
       ORDER BY ${orderBy}
@@ -5780,7 +5815,7 @@ app.get("/api/products/:id", async (req, res) => {
     }
     const [rows] = await pool.query(
       `
-      SELECT id, name, price, image, category_id, description, features_json, colors_json, is_new, is_bestseller
+      SELECT id, name, price, stock, barcode, image, category_id, description, features_json, colors_json, is_new, is_bestseller
       , tags_json
       FROM products
       WHERE id = ?
@@ -5809,7 +5844,7 @@ app.get("/api/products/:id", async (req, res) => {
 
     const [relatedRows] = await pool.query(
       `
-      SELECT id, name, price, image, category_id, description, colors_json, tags_json, is_new, is_bestseller
+      SELECT id, name, price, stock, barcode, image, category_id, description, colors_json, tags_json, is_new, is_bestseller
       FROM products
       WHERE category_id = ? AND id <> ?
       ORDER BY id ASC
@@ -5916,7 +5951,7 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
 
     const [rows] = await pool.query(
       `
-      SELECT id, name, price, image, images_json, category_id, description
+      SELECT id, name, price, stock, barcode, image, images_json, category_id, description
       FROM products
       WHERE id = ?
       LIMIT 1

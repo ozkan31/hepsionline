@@ -61,6 +61,8 @@ type ProductEditorDraft = {
   id: string;
   name: string;
   price: string;
+  stock: string;
+  barcode: string;
   images: Array<{ id: string; url: string; isLocal: boolean }>;
   category: string;
   description: string;
@@ -752,6 +754,8 @@ export function Admin() {
         id: detailed.id,
         name: String(detailed.name ?? ""),
         price: String(detailed.price ?? ""),
+        stock: detailed.stock == null ? "" : String(detailed.stock),
+        barcode: String(detailed.barcode ?? ""),
         images: existingImages.map((url, index) => ({ id: `existing-${detailed.id}-${index}`, url, isLocal: false })),
         category: String(detailed.category ?? ""),
         description: String(detailed.description ?? ""),
@@ -798,6 +802,8 @@ export function Admin() {
       id: "",
       name: "",
       price: "",
+      stock: "",
+      barcode: "",
       images: [],
       category: "",
       description: "",
@@ -1077,10 +1083,20 @@ export function Admin() {
       return;
     }
     const numericPrice = Number(productEditor.price);
+    const normalizedStockInput = productEditor.stock.trim();
+    const numericStock =
+      normalizedStockInput.length > 0
+        ? Number(normalizedStockInput.replace(/\s+/g, "").replace(",", "."))
+        : null;
     const creatingProduct = isCreatingProduct;
 
     const features = productEditor.features.map((item) => item.trim()).filter((item) => item.length > 0);
     const colors = productEditor.colors.map((item) => item.trim()).filter((item) => item.length > 0);
+
+    if (normalizedStockInput.length > 0 && (!Number.isFinite(numericStock) || Number(numericStock) < 0)) {
+      setProductSaveMessage("Stok adedi 0 veya daha büyük bir sayı olmalıdır.");
+      return;
+    }
 
     setIsSavingProduct(true);
     setProductSaveMessage("");
@@ -1090,6 +1106,8 @@ export function Admin() {
         id: productEditor.id.trim() || undefined,
         name: productEditor.name.trim(),
         price: Number.isFinite(numericPrice) ? numericPrice : 0,
+        stock: numericStock == null ? null : Math.trunc(Number(numericStock)),
+        barcode: productEditor.barcode.trim(),
         image: primaryImage,
         images: productEditor.images.map((image) => image.url).filter((url) => url.trim().length > 0),
         category: productEditor.category.trim(),
@@ -1126,6 +1144,8 @@ export function Admin() {
           id: updatedProduct.id,
           name: updatedProduct.name,
           price: String(updatedProduct.price),
+          stock: updatedProduct.stock == null ? "" : String(updatedProduct.stock),
+          barcode: String(updatedProduct.barcode ?? ""),
           images: (Array.isArray(updatedProduct.images) && updatedProduct.images.length > 0
             ? updatedProduct.images
             : updatedProduct.image
@@ -1308,6 +1328,35 @@ export function Admin() {
                   prev ? { ...prev, price: e.target.value.replace(/[^\d]/g, "") } : prev
                 )
               }
+              className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Stok Adedi</label>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={productEditor.stock}
+              onWheel={(e) => e.currentTarget.blur()}
+              onChange={(e) =>
+                setProductEditor((prev) =>
+                  prev ? { ...prev, stock: e.target.value.replace(/[^\d]/g, "") } : prev
+                )
+              }
+              placeholder="Boş bırakılırsa stok takibi daha sonra eklenir"
+              className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Barkod</label>
+            <input
+              type="text"
+              value={productEditor.barcode}
+              onChange={(e) =>
+                setProductEditor((prev) => (prev ? { ...prev, barcode: e.target.value } : prev))
+              }
+              placeholder="Örn. 8691234567890"
               className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
             />
           </div>
@@ -2326,21 +2375,21 @@ export function Admin() {
                     <div className="rounded-2xl border border-[#E7E2D8] bg-white p-4">
                       <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Toplam Ürün</p>
                       <p className="mt-2 text-2xl font-semibold text-black">{products.length}</p>
-                      <p className="mt-2 text-sm text-gray-500">Stok alanı tanımlanacak ürün sayısı.</p>
+                      <p className="mt-2 text-sm text-gray-500">Stok takibini açabileceğiniz toplam ürün sayısı.</p>
                     </div>
                     <div className="rounded-2xl border border-[#E7E2D8] bg-white p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Yeni Ürünler</p>
+                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Takip Açık</p>
                       <p className="mt-2 text-2xl font-semibold text-black">
-                        {products.filter((product) => product.isNew).length}
+                        {products.filter((product) => product.stock != null).length}
                       </p>
-                      <p className="mt-2 text-sm text-gray-500">Öncelikli stok takibi açılabilecek ürünler.</p>
+                      <p className="mt-2 text-sm text-gray-500">Stok adedi girilmiş ve takibi aktif ürünler.</p>
                     </div>
                     <div className="rounded-2xl border border-[#E7E2D8] bg-white p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Çok Satanlar</p>
+                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Stokta Yok</p>
                       <p className="mt-2 text-2xl font-semibold text-black">
-                        {products.filter((product) => product.isBestseller).length}
+                        {products.filter((product) => product.stock === 0).length}
                       </p>
-                      <p className="mt-2 text-sm text-gray-500">Stok kontrolü kritik görünen ürünler.</p>
+                      <p className="mt-2 text-sm text-gray-500">Stok adedi 0 olan ve kontrol bekleyen ürünler.</p>
                     </div>
                   </div>
                   {productsLoading && <p className="text-sm text-gray-500">Ürünler yükleniyor...</p>}
@@ -2365,11 +2414,14 @@ export function Admin() {
                             <p className="text-sm text-gray-500">
                               {product.category} · {product.price.toLocaleString("tr-TR")} TL
                             </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Barkod: {product.barcode?.trim() ? product.barcode : "Henüz eklenmedi"}
+                            </p>
                           </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="inline-flex items-center rounded-full bg-[#F4EFE6] px-3 py-1 text-xs font-medium text-black">
-                            Takip Hazırlanıyor
+                            {product.stock == null ? "Takip Kapalı" : `Stok: ${product.stock}`}
                           </span>
                           <button
                             type="button"
@@ -2410,6 +2462,10 @@ export function Admin() {
                         <div className="min-w-0 flex-1">
                           <p className="font-medium truncate">{product.name}</p>
                           <p className="text-sm text-gray-500">{product.price.toLocaleString("tr-TR")} TL</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Stok: {product.stock == null ? "Tanımlanmadı" : product.stock} · Barkod:{" "}
+                            {product.barcode?.trim() ? product.barcode : "Yok"}
+                          </p>
                         </div>
                         <div className="flex items-center gap-2">
                           <button

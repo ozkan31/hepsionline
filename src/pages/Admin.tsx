@@ -20,10 +20,12 @@ import {
   createAdminProduct,
   adminLogin,
   adminLogout,
+  createAdminCoupon,
+  deleteAdminCoupon,
   deleteAdminProduct,
   fetchAdminAbandonedCartCampaign,
-  fetchAdminCustomerCouponSettings,
   fetchAdminContactRequests,
+  fetchAdminCoupons,
   fetchAdminProductById,
   fetchAdminGoogleMerchantStatus,
   fetchAdminSettings,
@@ -35,7 +37,7 @@ import {
   syncAdminGoogleMerchant,
   updateAdminOrderStatus,
   updateAdminAbandonedCartCampaign,
-  updateAdminCustomerCouponSettings,
+  updateAdminCoupon,
   updateAdminProduct,
   uploadAdminProductImages,
   runAdminAbandonedCartCampaign,
@@ -107,6 +109,14 @@ const defaultCustomerCouponSettings: AdminCustomerCouponSettings = {
   minimumSubtotal: 750,
   description: "Müşterilerinize özel indirim kodunuz hazır.",
 };
+
+function sortAdminCoupons(coupons: AdminCustomerCouponSettings[]) {
+  return [...coupons].sort((a, b) => {
+    const aTime = Date.parse(a.updatedAt || a.createdAt || "");
+    const bTime = Date.parse(b.updatedAt || b.createdAt || "");
+    return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+  });
+}
 
 function generateAdminCouponCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -181,6 +191,8 @@ export function Admin() {
   const [marketingMessage, setMarketingMessage] = useState("");
   const [customerCouponSettings, setCustomerCouponSettings] =
     useState<AdminCustomerCouponSettings>(defaultCustomerCouponSettings);
+  const [customerCoupons, setCustomerCoupons] = useState<AdminCustomerCouponSettings[]>([]);
+  const [customerCouponsLoading, setCustomerCouponsLoading] = useState(false);
   const [customerCouponMessage, setCustomerCouponMessage] = useState("");
   const [isMarketingMenuOpen, setIsMarketingMenuOpen] = useState(false);
   const [isCampaignsMenuOpen, setIsCampaignsMenuOpen] = useState(false);
@@ -214,6 +226,13 @@ export function Admin() {
   const [contactRequestsLoading, setContactRequestsLoading] = useState(false);
   const [contactRequestsError, setContactRequestsError] = useState("");
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const activeCustomerCoupons = customerCoupons.filter((coupon) => coupon.enabled);
+  const latestCustomerCoupon = customerCoupons[0] ?? null;
+
+  const resetCustomerCouponDraft = () => {
+    setCustomerCouponSettings(defaultCustomerCouponSettings);
+    setCustomerCouponMessage("");
+  };
 
   useEffect(() => {
     const check = async () => {
@@ -419,16 +438,11 @@ export function Admin() {
     const loadMarketing = async () => {
       setMarketingLoading(true);
       setMarketingMessage("");
-      setCustomerCouponMessage("");
       try {
-        const [abandonedCartData, customerCouponData] = await Promise.all([
-          fetchAdminAbandonedCartCampaign(token),
-          fetchAdminCustomerCouponSettings(token),
-        ]);
+        const abandonedCartData = await fetchAdminAbandonedCartCampaign(token);
         if (!mounted) return;
         setMarketingSettings(abandonedCartData.settings);
         setMarketingStats(abandonedCartData.stats);
-        setCustomerCouponSettings(customerCouponData);
       } catch (err) {
         if (!mounted) return;
         setMarketingMessage(err instanceof Error ? err.message : "Pazarlama ayarları alınamadı.");
@@ -438,6 +452,45 @@ export function Admin() {
     };
 
     void loadMarketing();
+    return () => {
+      mounted = false;
+    };
+  }, [activeSection, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || (activeSection !== "marketing" && activeSection !== "campaigns")) return;
+    const token = getStoredAdminToken();
+    if (!token) return;
+
+    let mounted = true;
+    const loadCoupons = async () => {
+      setCustomerCouponsLoading(true);
+      setCustomerCouponMessage("");
+      try {
+        const coupons = sortAdminCoupons(await fetchAdminCoupons(token));
+        if (!mounted) return;
+        setCustomerCoupons(coupons);
+        setCustomerCouponSettings((prev) => {
+          if (!prev.id) {
+            return prev;
+          }
+          const matchedCoupon = coupons.find((coupon) => coupon.id === prev.id);
+          return matchedCoupon ? matchedCoupon : defaultCustomerCouponSettings;
+        });
+      } catch (err) {
+        if (!mounted) return;
+        const message = err instanceof Error ? err.message : "Kuponlar alınamadı.";
+        if (activeSection === "marketing") {
+          setMarketingMessage(message);
+        } else {
+          setCustomerCouponMessage(message);
+        }
+      } finally {
+        if (mounted) setCustomerCouponsLoading(false);
+      }
+    };
+
+    void loadCoupons();
     return () => {
       mounted = false;
     };
@@ -492,6 +545,8 @@ export function Admin() {
     setMarketingLoading(false);
     setMarketingMessage("");
     setCustomerCouponSettings(defaultCustomerCouponSettings);
+    setCustomerCoupons([]);
+    setCustomerCouponsLoading(false);
     setCustomerCouponMessage("");
     setIsMarketingMenuOpen(false);
     setIsCampaignsMenuOpen(false);
@@ -556,6 +611,7 @@ export function Admin() {
   };
 
   const handleOpenCouponCreateCampaigns = () => {
+    resetCustomerCouponDraft();
     setActiveSection("campaigns");
     setActiveCampaignsPanel("createCoupon");
     setIsMarketingMenuOpen(false);
@@ -564,8 +620,19 @@ export function Admin() {
   };
 
   const handleOpenExistingCouponsCampaigns = () => {
+    setCustomerCouponMessage("");
     setActiveSection("campaigns");
     setActiveCampaignsPanel("existingCoupons");
+    setIsMarketingMenuOpen(false);
+    setIsCampaignsMenuOpen(true);
+    setIsMobileNavOpen(false);
+  };
+
+  const handleEditCoupon = (coupon: AdminCustomerCouponSettings) => {
+    setCustomerCouponSettings(coupon);
+    setCustomerCouponMessage("");
+    setActiveSection("campaigns");
+    setActiveCampaignsPanel("createCoupon");
     setIsMarketingMenuOpen(false);
     setIsCampaignsMenuOpen(true);
     setIsMobileNavOpen(false);
@@ -630,11 +697,45 @@ export function Admin() {
     setIsSavingCustomerCoupon(true);
     setCustomerCouponMessage("");
     try {
-      const settings = await updateAdminCustomerCouponSettings(token, customerCouponSettings);
-      setCustomerCouponSettings(settings);
-      setCustomerCouponMessage("Müşteri kuponu kaydedildi.");
+      const savingExistingCoupon = Boolean(customerCouponSettings.id);
+      const savedCoupon = savingExistingCoupon
+        ? await updateAdminCoupon(token, String(customerCouponSettings.id), customerCouponSettings)
+        : await createAdminCoupon(token, customerCouponSettings);
+
+      setCustomerCoupons((prev) => {
+        const filteredCoupons = prev.filter((coupon) => coupon.id !== savedCoupon.id);
+        return sortAdminCoupons([savedCoupon, ...filteredCoupons]);
+      });
+      setCustomerCouponSettings(savedCoupon);
+      setCustomerCouponMessage(savingExistingCoupon ? "Kupon güncellendi." : "Kupon oluşturuldu.");
     } catch (err) {
       setCustomerCouponMessage(err instanceof Error ? err.message : "Kupon kaydedilemedi.");
+    } finally {
+      setIsSavingCustomerCoupon(false);
+    }
+  };
+
+  const handleDeleteCoupon = async (coupon: AdminCustomerCouponSettings) => {
+    if (!coupon.id) return;
+    const confirmed = window.confirm(
+      `${coupon.code || "Bu kuponu"} silmek istediğinize emin misiniz?`
+    );
+    if (!confirmed) return;
+
+    const token = getStoredAdminToken();
+    if (!token) return;
+
+    setIsSavingCustomerCoupon(true);
+    setCustomerCouponMessage("");
+    try {
+      await deleteAdminCoupon(token, coupon.id);
+      setCustomerCoupons((prev) => prev.filter((item) => item.id !== coupon.id));
+      setCustomerCouponSettings((prev) =>
+        prev.id === coupon.id ? defaultCustomerCouponSettings : prev
+      );
+      setCustomerCouponMessage("Kupon silindi.");
+    } catch (err) {
+      setCustomerCouponMessage(err instanceof Error ? err.message : "Kupon silinemedi.");
     } finally {
       setIsSavingCustomerCoupon(false);
     }
@@ -2798,65 +2899,97 @@ export function Admin() {
                         <div>
                           <h3 className="text-sm font-medium">Kuponlar</h3>
                           <p className="text-xs text-gray-500 mt-1">
-                            Aktif kuponun durumunu burada görebilir, yeni kupon hazırlamak için ayrı oluşturma ekranına geçebilirsiniz.
+                            Veritabanında kayıtlı müşteri kuponlarını burada özet olarak görebilir, yeni kupon hazırlamak için ayrı oluşturma ekranına geçebilirsiniz.
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={handleOpenCouponCreateCampaigns}
-                          className="inline-flex items-center justify-center rounded-full border border-black px-4 py-2 text-sm text-black transition-colors hover:bg-black hover:text-white"
-                        >
-                          Kupon Oluştur Ekranını Aç
-                        </button>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <button
+                            type="button"
+                            onClick={handleOpenExistingCouponsCampaigns}
+                            className="inline-flex items-center justify-center rounded-full border border-black px-4 py-2 text-sm text-black transition-colors hover:bg-black hover:text-white"
+                          >
+                            Mevcut Kuponları Aç
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleOpenCouponCreateCampaigns}
+                            className="inline-flex items-center justify-center rounded-full border border-black px-4 py-2 text-sm text-black transition-colors hover:bg-black hover:text-white"
+                          >
+                            Kupon Oluştur Ekranını Aç
+                          </button>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
-                          <p className="text-[11px] uppercase tracking-wide text-gray-500">Durum</p>
-                          <p className={`mt-2 text-sm font-medium ${customerCouponSettings.enabled ? "text-green-700" : "text-gray-600"}`}>
-                            {customerCouponSettings.enabled ? "Aktif" : "Pasif"}
+                          <p className="text-[11px] uppercase tracking-wide text-gray-500">Toplam Kupon</p>
+                          <p className="mt-2 text-sm font-medium text-black">
+                            {customerCouponsLoading ? "Yükleniyor..." : customerCoupons.length.toLocaleString("tr-TR")}
                           </p>
                         </div>
                         <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
-                          <p className="text-[11px] uppercase tracking-wide text-gray-500">Kod</p>
+                          <p className="text-[11px] uppercase tracking-wide text-gray-500">Aktif Kupon</p>
                           <p className="mt-2 text-sm font-medium text-black">
-                            {customerCouponSettings.code || "Henüz oluşturulmadı"}
+                            {customerCouponsLoading
+                              ? "Yükleniyor..."
+                              : activeCustomerCoupons.length.toLocaleString("tr-TR")}
                           </p>
                         </div>
                         <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
-                          <p className="text-[11px] uppercase tracking-wide text-gray-500">İndirim</p>
+                          <p className="text-[11px] uppercase tracking-wide text-gray-500">Son Güncellenen</p>
                           <p className="mt-2 text-sm font-medium text-black">
-                            {customerCouponSettings.type === "fixed"
-                              ? `${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} TL`
-                              : `%${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")}`}
+                            {customerCouponsLoading
+                              ? "Yükleniyor..."
+                              : latestCustomerCoupon?.code || "Henüz oluşturulmadı"}
                           </p>
                         </div>
                         <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
-                          <p className="text-[11px] uppercase tracking-wide text-gray-500">Minimum Sepet</p>
+                          <p className="text-[11px] uppercase tracking-wide text-gray-500">Son İndirim</p>
                           <p className="mt-2 text-sm font-medium text-black">
-                            {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL
+                            {latestCustomerCoupon
+                              ? latestCustomerCoupon.type === "fixed"
+                                ? `${Number(latestCustomerCoupon.value || 0).toLocaleString("tr-TR")} TL`
+                                : `%${Number(latestCustomerCoupon.value || 0).toLocaleString("tr-TR")}`
+                              : "-"}
                           </p>
                         </div>
                       </div>
 
                       <div className="rounded-xl border border-dashed border-[#D7D1C3] bg-[#FCFBF8] px-4 py-4">
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Aktif Kupon Özeti</p>
-                        <div className="mt-3 flex flex-wrap items-center gap-3">
-                          <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-medium tracking-[0.2em] text-white">
-                            {customerCouponSettings.code || "KUPON-KODU"}
-                          </span>
-                          <span className="text-sm text-gray-700">
-                            {customerCouponSettings.type === "fixed"
-                              ? `${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} TL indirim`
-                              : `%${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} indirim`}
-                          </span>
-                        </div>
-                        <p className="mt-3 text-sm text-gray-700">
-                          {customerCouponSettings.description || "Henüz bir kupon açıklaması girilmedi."}
-                        </p>
-                        <p className="mt-2 text-xs text-gray-500">
-                          Müşteri bu kodu minimum {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL sepette kullanabilir.
-                        </p>
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Kupon Özeti</p>
+                        {latestCustomerCoupon ? (
+                          <>
+                            <div className="mt-3 flex flex-wrap items-center gap-3">
+                              <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-medium tracking-[0.2em] text-white">
+                                {latestCustomerCoupon.code}
+                              </span>
+                              <span className="text-sm text-gray-700">
+                                {latestCustomerCoupon.type === "fixed"
+                                  ? `${Number(latestCustomerCoupon.value || 0).toLocaleString("tr-TR")} TL indirim`
+                                  : `%${Number(latestCustomerCoupon.value || 0).toLocaleString("tr-TR")} indirim`}
+                              </span>
+                              <span
+                                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
+                                  latestCustomerCoupon.enabled
+                                    ? "bg-green-100 text-green-800"
+                                    : "bg-gray-200 text-gray-700"
+                                }`}
+                              >
+                                {latestCustomerCoupon.enabled ? "Aktif" : "Pasif"}
+                              </span>
+                            </div>
+                            <p className="mt-3 text-sm text-gray-700">
+                              {latestCustomerCoupon.description || "Henüz bir kupon açıklaması girilmedi."}
+                            </p>
+                            <p className="mt-2 text-xs text-gray-500">
+                              Müşteri bu kodu minimum {Number(latestCustomerCoupon.minimumSubtotal || 0).toLocaleString("tr-TR")} TL sepette kullanabilir.
+                            </p>
+                          </>
+                        ) : (
+                          <p className="mt-3 text-sm text-gray-600">
+                            Henüz veritabanına kaydedilmiş bir müşteri kuponu yok. Yeni bir kampanya kuponu oluşturarak başlayabilirsiniz.
+                          </p>
+                        )}
                       </div>
 
                       {customerCouponMessage ? (
@@ -2864,7 +2997,9 @@ export function Admin() {
                           className={`text-sm ${
                             customerCouponMessage.includes("tamamlandı") ||
                             customerCouponMessage.includes("kaydedildi") ||
-                            customerCouponMessage.includes("oluşturuldu")
+                            customerCouponMessage.includes("oluşturuldu") ||
+                            customerCouponMessage.includes("güncellendi") ||
+                            customerCouponMessage.includes("silindi")
                               ? "text-green-700"
                               : "text-red-600"
                           }`}
@@ -2896,7 +3031,7 @@ export function Admin() {
                     <div>
                       <h3 className="text-sm font-medium">Mevcut Kuponlar</h3>
                       <p className="text-xs text-gray-500 mt-1">
-                        Şu anda müşterilerin kullanabildiği kupon kodunu ve temel kampanya koşullarını burada görüyorsunuz.
+                        Veritabanına kaydettiğiniz müşteri kuponlarını, durumlarını ve indirim koşullarını bu alandan yönetebilirsiniz.
                       </p>
                     </div>
                     <button
@@ -2910,59 +3045,111 @@ export function Admin() {
 
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                     <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
-                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Durum</p>
-                      <p className={`mt-2 text-sm font-medium ${customerCouponSettings.enabled ? "text-green-700" : "text-gray-600"}`}>
-                        {customerCouponSettings.enabled ? "Aktif" : "Pasif"}
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Toplam Kupon</p>
+                      <p className="mt-2 text-sm font-medium text-black">
+                        {customerCouponsLoading ? "Yükleniyor..." : customerCoupons.length.toLocaleString("tr-TR")}
                       </p>
                     </div>
                     <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
-                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Kod</p>
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Aktif Kupon</p>
                       <p className="mt-2 text-sm font-medium text-black">
-                        {customerCouponSettings.code || "Henüz oluşturulmadı"}
+                        {customerCouponsLoading ? "Yükleniyor..." : activeCustomerCoupons.length.toLocaleString("tr-TR")}
                       </p>
                     </div>
                     <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
-                      <p className="text-[11px] uppercase tracking-wide text-gray-500">İndirim</p>
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Son Kod</p>
                       <p className="mt-2 text-sm font-medium text-black">
-                        {customerCouponSettings.type === "fixed"
-                          ? `${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} TL`
-                          : `%${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")}`}
+                        {customerCouponsLoading ? "Yükleniyor..." : latestCustomerCoupon?.code || "-"}
                       </p>
                     </div>
                     <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
-                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Minimum Sepet</p>
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Son Güncelleme</p>
                       <p className="mt-2 text-sm font-medium text-black">
-                        {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL
+                        {latestCustomerCoupon?.updatedAt
+                          ? formatOrderDateTime(latestCustomerCoupon.updatedAt)
+                          : "-"}
                       </p>
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-dashed border-[#D7D1C3] bg-[#FCFBF8] px-4 py-4">
-                    <p className="text-xs uppercase tracking-wide text-gray-500">Aktif Kupon Özeti</p>
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
-                      <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-medium tracking-[0.2em] text-white">
-                        {customerCouponSettings.code || "KUPON-KODU"}
-                      </span>
-                      <span className="text-sm text-gray-700">
-                        {customerCouponSettings.type === "fixed"
-                          ? `${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} TL indirim`
-                          : `%${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} indirim`}
-                      </span>
+                  {customerCouponsLoading ? (
+                    <p className="text-sm text-gray-500">Kuponlar yükleniyor...</p>
+                  ) : customerCoupons.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-[#D7D1C3] bg-[#FCFBF8] px-4 py-4 text-sm text-gray-600">
+                      Henüz veritabanına kaydedilmiş kupon bulunmuyor. İlk kuponu oluşturmak için üstteki butonu kullanabilirsiniz.
                     </div>
-                    <p className="mt-3 text-sm text-gray-700">
-                      {customerCouponSettings.description || "Henüz bir kupon açıklaması girilmedi."}
-                    </p>
-                    <p className="mt-2 text-xs text-gray-500">
-                      Müşteri bu kodu minimum {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL sepette kullanabilir.
-                    </p>
-                  </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {customerCoupons.map((coupon) => (
+                        <div
+                          key={coupon.id || coupon.code}
+                          className="rounded-xl border border-[#E7E2D8] bg-[#FCFBF8] px-4 py-4"
+                        >
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="space-y-3">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-medium tracking-[0.2em] text-white">
+                                  {coupon.code}
+                                </span>
+                                <span
+                                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
+                                    coupon.enabled
+                                      ? "bg-green-100 text-green-800"
+                                      : "bg-gray-200 text-gray-700"
+                                  }`}
+                                >
+                                  {coupon.enabled ? "Aktif" : "Pasif"}
+                                </span>
+                                <span className="text-sm text-gray-700">
+                                  {coupon.type === "fixed"
+                                    ? `${Number(coupon.value || 0).toLocaleString("tr-TR")} TL indirim`
+                                    : `%${Number(coupon.value || 0).toLocaleString("tr-TR")} indirim`}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-700">
+                                {coupon.description || "Bu kupon için açıklama girilmedi."}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500">
+                                <span>
+                                  Minimum Sepet: {Number(coupon.minimumSubtotal || 0).toLocaleString("tr-TR")} TL
+                                </span>
+                                <span>
+                                  Son Güncelleme: {coupon.updatedAt ? formatOrderDateTime(coupon.updatedAt) : "-"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => handleEditCoupon(coupon)}
+                                className="inline-flex items-center justify-center rounded-full border border-black px-4 py-2 text-sm text-black transition-colors hover:bg-black hover:text-white"
+                              >
+                                Düzenle
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCoupon(coupon)}
+                                disabled={isSavingCustomerCoupon}
+                                className="inline-flex items-center justify-center rounded-full border border-[#D5CFC3] px-4 py-2 text-sm text-gray-700 transition-colors hover:border-red-500 hover:text-red-600 disabled:opacity-50"
+                              >
+                                Sil
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {customerCouponMessage ? (
                     <p
                       className={`text-sm ${
                         customerCouponMessage.includes("tamamlandı") ||
                         customerCouponMessage.includes("kaydedildi") ||
-                        customerCouponMessage.includes("oluşturuldu")
+                        customerCouponMessage.includes("oluşturuldu") ||
+                        customerCouponMessage.includes("güncellendi") ||
+                        customerCouponMessage.includes("silindi")
                           ? "text-green-700"
                           : "text-red-600"
                       }`}
@@ -2979,18 +3166,31 @@ export function Admin() {
                   <div className="rounded-xl border border-[#E7E2D8] bg-[#FAF9F6] p-4 space-y-3">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <h3 className="text-sm font-medium">Kupon Oluştur</h3>
+                        <h3 className="text-sm font-medium">
+                          {customerCouponSettings.id ? "Kuponu Düzenle" : "Kupon Oluştur"}
+                        </h3>
                         <p className="text-xs text-gray-500 mt-1">
-                          Tüm müşterilerinizin sepette kullanabileceği indirim kodunu buradan hazırlayabilirsiniz.
+                          Tüm müşterilerinizin sepette kullanabileceği indirim kodunu buradan hazırlayabilir veya mevcut bir kuponu güncelleyebilirsiniz.
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleGenerateCouponCode}
-                        className="inline-flex items-center justify-center rounded-full border border-black px-4 py-2 text-sm text-black transition-colors hover:bg-black hover:text-white"
-                      >
-                        Otomatik Kod Üret
-                      </button>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        {customerCouponSettings.id ? (
+                          <button
+                            type="button"
+                            onClick={resetCustomerCouponDraft}
+                            className="inline-flex items-center justify-center rounded-full border border-[#D5CFC3] px-4 py-2 text-sm text-gray-700 transition-colors hover:border-black hover:text-black"
+                          >
+                            Yeni Kupon Hazırla
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={handleGenerateCouponCode}
+                          className="inline-flex items-center justify-center rounded-full border border-black px-4 py-2 text-sm text-black transition-colors hover:bg-black hover:text-white"
+                        >
+                          Otomatik Kod Üret
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
@@ -3027,7 +3227,7 @@ export function Admin() {
                     <div>
                       <h3 className="text-sm font-medium">Kupon Ayarları</h3>
                       <p className="text-xs text-gray-500 mt-1">
-                        Buradaki kupon ayarları müşterilerin sepette manuel kullanacağı indirim kodunu belirler.
+                        Buradaki kupon ayarları veritabanına kaydedilir ve müşterilerin sepette manuel kullanacağı indirim kodunu belirler.
                       </p>
                     </div>
                     <label className="inline-flex items-center gap-2 text-sm">
@@ -3158,7 +3358,9 @@ export function Admin() {
                       className={`text-sm ${
                         customerCouponMessage.includes("tamamlandı") ||
                         customerCouponMessage.includes("kaydedildi") ||
-                        customerCouponMessage.includes("oluşturuldu")
+                        customerCouponMessage.includes("oluşturuldu") ||
+                        customerCouponMessage.includes("güncellendi") ||
+                        customerCouponMessage.includes("silindi")
                           ? "text-green-700"
                           : "text-red-600"
                       }`}
@@ -3173,7 +3375,18 @@ export function Admin() {
                       disabled={isSavingCustomerCoupon}
                       className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
                     >
-                      {isSavingCustomerCoupon ? "Kaydediliyor..." : "Kuponları Kaydet"}
+                      {isSavingCustomerCoupon
+                        ? "Kaydediliyor..."
+                        : customerCouponSettings.id
+                        ? "Kuponu Güncelle"
+                        : "Kuponu Kaydet"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenExistingCouponsCampaigns}
+                      className="border border-[#D5CFC3] text-gray-700 px-4 py-2 rounded-full text-sm hover:border-black hover:text-black transition-colors"
+                    >
+                      Mevcut Kuponları Gör
                     </button>
                   </div>
                 </form>

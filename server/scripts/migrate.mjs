@@ -248,6 +248,23 @@ CREATE TABLE IF NOT EXISTS contact_requests (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
+const createCouponsSql = `
+CREATE TABLE IF NOT EXISTS coupons (
+  id CHAR(36) PRIMARY KEY,
+  code VARCHAR(40) NOT NULL,
+  type VARCHAR(20) NOT NULL,
+  value INT NOT NULL,
+  minimum_subtotal INT NOT NULL DEFAULT 0,
+  description VARCHAR(200) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_coupons_code (code),
+  KEY idx_coupons_enabled (enabled),
+  KEY idx_coupons_updated_at (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
 const createMarketingAbandonedCartEmailsSql = `
 CREATE TABLE IF NOT EXISTS marketing_abandoned_cart_emails (
   id CHAR(36) PRIMARY KEY,
@@ -295,6 +312,7 @@ async function migrate() {
   await pool.query(createUserOrderItemsSql);
   await pool.query(createAppSettingsSql);
   await pool.query(createContactRequestsSql);
+  await pool.query(createCouponsSql);
   await pool.query(createMarketingAbandonedCartEmailsSql);
 
   // Backward-compatible migration for existing databases.

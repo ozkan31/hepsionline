@@ -548,6 +548,16 @@ export async function fetchAdminCustomerCouponSettings(
   return data.settings;
 }
 
+export async function fetchAdminCoupons(
+  token: string
+): Promise<AdminCustomerCouponSettings[]> {
+  const response = await fetch("/api/admin/coupons", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await parseResponse<{ coupons: AdminCustomerCouponSettings[] }>(response);
+  return Array.isArray(data.coupons) ? data.coupons : [];
+}
+
 export async function updateAdminCustomerCouponSettings(
   token: string,
   input: AdminCustomerCouponSettings
@@ -562,6 +572,49 @@ export async function updateAdminCustomerCouponSettings(
   });
   const data = await parseResponse<{ settings: AdminCustomerCouponSettings }>(response);
   return data.settings;
+}
+
+export async function createAdminCoupon(
+  token: string,
+  input: AdminCustomerCouponSettings
+): Promise<AdminCustomerCouponSettings> {
+  const response = await fetch("/api/admin/coupons", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(input),
+  });
+  const data = await parseResponse<{ coupon: AdminCustomerCouponSettings }>(response);
+  return data.coupon;
+}
+
+export async function updateAdminCoupon(
+  token: string,
+  couponId: string,
+  input: AdminCustomerCouponSettings
+): Promise<AdminCustomerCouponSettings> {
+  const response = await fetch(`/api/admin/coupons/${couponId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(input),
+  });
+  const data = await parseResponse<{ coupon: AdminCustomerCouponSettings }>(response);
+  return data.coupon;
+}
+
+export async function deleteAdminCoupon(token: string, couponId: string): Promise<void> {
+  const response = await fetch(`/api/admin/coupons/${couponId}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  await parseResponse<{ ok: boolean }>(response);
 }
 
 export async function updateAdminAbandonedCartCampaign(

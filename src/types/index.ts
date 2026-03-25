@@ -158,12 +158,15 @@ export interface AdminAbandonedCartCampaignResponse {
 }
 
 export interface AdminCustomerCouponSettings {
+  id?: string;
   enabled: boolean;
   code: string;
   type: DiscountType;
   value: number;
   minimumSubtotal: number;
   description: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface AdminAbandonedCartRunSummary {

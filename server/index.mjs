@@ -166,7 +166,7 @@ async function invalidateCacheByPrefix(prefix) {
       keysToDelete.push(key);
     }
     if (keysToDelete.length > 0) {
-      await redisClient.del(keysToDelete);
+      await redisClient.del(...keysToDelete);
     }
   } catch (error) {
     console.warn("Redis cache invalidation failed:", error instanceof Error ? error.message : error);

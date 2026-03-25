@@ -50,7 +50,7 @@ import type {
 
 const ADMIN_TOKEN_KEY = "parisMoveAdminToken";
 const ADMIN_REMEMBER_KEY = "parisMoveAdminRemember";
-type AdminSection = "orders" | "products" | "users" | "contactRequests" | "marketing" | "settings";
+type AdminSection = "orders" | "products" | "users" | "contactRequests" | "marketing" | "campaigns" | "settings";
 type OrderStatusDraft = {
   status: "processing" | "shipped" | "delivered";
   shippingCompany: string;
@@ -70,7 +70,7 @@ type ProductEditorDraft = {
   isBestseller: boolean;
 };
 type ProductPanel = "list" | "create";
-type MarketingPanel = "abandonedCart" | "coupons" | "couponCreate";
+type MarketingPanel = "abandonedCart" | "coupons";
 const MAX_PRODUCT_IMAGES = 15;
 const shippingCompanies = [
   "Sen Kargo",
@@ -179,6 +179,7 @@ export function Admin() {
     useState<AdminCustomerCouponSettings>(defaultCustomerCouponSettings);
   const [customerCouponMessage, setCustomerCouponMessage] = useState("");
   const [isMarketingMenuOpen, setIsMarketingMenuOpen] = useState(false);
+  const [isCampaignsMenuOpen, setIsCampaignsMenuOpen] = useState(false);
   const [activeMarketingPanel, setActiveMarketingPanel] = useState<MarketingPanel>("abandonedCart");
   const [marketingStats, setMarketingStats] = useState<{
     eligibleUsers: number;
@@ -488,6 +489,7 @@ export function Admin() {
     setCustomerCouponSettings(defaultCustomerCouponSettings);
     setCustomerCouponMessage("");
     setIsMarketingMenuOpen(false);
+    setIsCampaignsMenuOpen(false);
     setActiveMarketingPanel("abandonedCart");
     setMarketingStats(null);
     setIsSavingMarketing(false);
@@ -514,6 +516,9 @@ export function Admin() {
     if (section !== "marketing") {
       setIsMarketingMenuOpen(false);
     }
+    if (section !== "campaigns") {
+      setIsCampaignsMenuOpen(false);
+    }
     setIsMobileNavOpen(false);
   };
 
@@ -525,10 +530,15 @@ export function Admin() {
     setIsMarketingMenuOpen((prev) => !prev);
   };
 
+  const handleCampaignsMenuToggle = () => {
+    setIsCampaignsMenuOpen((prev) => !prev);
+  };
+
   const handleOpenAbandonedCartMarketing = () => {
     setActiveSection("marketing");
     setActiveMarketingPanel("abandonedCart");
     setIsMarketingMenuOpen(true);
+    setIsCampaignsMenuOpen(false);
     setIsMobileNavOpen(false);
   };
 
@@ -536,13 +546,14 @@ export function Admin() {
     setActiveSection("marketing");
     setActiveMarketingPanel("coupons");
     setIsMarketingMenuOpen(true);
+    setIsCampaignsMenuOpen(false);
     setIsMobileNavOpen(false);
   };
 
-  const handleOpenCouponCreateMarketing = () => {
-    setActiveSection("marketing");
-    setActiveMarketingPanel("couponCreate");
-    setIsMarketingMenuOpen(true);
+  const handleOpenCouponCreateCampaigns = () => {
+    setActiveSection("campaigns");
+    setIsMarketingMenuOpen(false);
+    setIsCampaignsMenuOpen(true);
     setIsMobileNavOpen(false);
   };
 
@@ -1720,20 +1731,47 @@ export function Admin() {
                       <Tag className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
                       Kuponlar
                     </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={handleCampaignsMenuToggle}
+                className={`w-full flex items-center justify-between px-4 py-2 rounded-md text-sm transition-colors ${
+                  activeSection === "campaigns" || isCampaignsMenuOpen
+                    ? "bg-black text-white"
+                    : "text-black hover:bg-[#ECE7DC]"
+                }`}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Tag className="w-4 h-4" />
+                  Kampanyalar
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform ${isCampaignsMenuOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              <div
+                className={`grid transition-all duration-200 ease-out ${
+                  isCampaignsMenuOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                }`}
+              >
+                <div className="overflow-hidden">
+                  <div className="pl-4 pt-1 space-y-1">
                     <button
                       type="button"
-                      onClick={handleOpenCouponCreateMarketing}
+                      onClick={handleOpenCouponCreateCampaigns}
                       className={`relative w-full text-left pl-10 pr-4 py-2 rounded-md text-sm transition-colors ${
-                        activeSection === "marketing" && activeMarketingPanel === "couponCreate"
+                        activeSection === "campaigns"
                           ? "bg-[#ECE7DC] text-black"
                           : "text-black hover:bg-[#ECE7DC]"
                       }`}
                     >
                       <span
                         className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full ${
-                          activeSection === "marketing" && activeMarketingPanel === "couponCreate"
-                            ? "bg-black"
-                            : "bg-transparent"
+                          activeSection === "campaigns" ? "bg-black" : "bg-transparent"
                         }`}
                       />
                       <Plus className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
@@ -1956,20 +1994,47 @@ export function Admin() {
                             <Tag className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
                             Kuponlar
                           </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={handleCampaignsMenuToggle}
+                      className={`w-full flex items-center justify-between px-4 py-2 rounded-md text-sm transition-colors ${
+                        activeSection === "campaigns" || isCampaignsMenuOpen
+                          ? "bg-black text-white"
+                          : "text-black hover:bg-[#ECE7DC]"
+                      }`}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Tag className="w-4 h-4" />
+                        Kampanyalar
+                      </span>
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform ${isCampaignsMenuOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                    <div
+                      className={`grid transition-all duration-200 ease-out ${
+                        isCampaignsMenuOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                      }`}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="pl-4 pt-1 space-y-1">
                           <button
                             type="button"
-                            onClick={handleOpenCouponCreateMarketing}
+                            onClick={handleOpenCouponCreateCampaigns}
                             className={`relative w-full text-left pl-10 pr-4 py-2 rounded-md text-sm transition-colors ${
-                              activeSection === "marketing" && activeMarketingPanel === "couponCreate"
+                              activeSection === "campaigns"
                                 ? "bg-[#ECE7DC] text-black"
                                 : "text-black hover:bg-[#ECE7DC]"
                             }`}
                           >
                             <span
                               className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full ${
-                                activeSection === "marketing" && activeMarketingPanel === "couponCreate"
-                                  ? "bg-black"
-                                  : "bg-transparent"
+                                activeSection === "campaigns" ? "bg-black" : "bg-transparent"
                               }`}
                             />
                             <Plus className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
@@ -2374,18 +2439,6 @@ export function Admin() {
                       <Tag className="h-4 w-4" />
                       Kuponlar
                     </button>
-                    <button
-                      type="button"
-                      onClick={handleOpenCouponCreateMarketing}
-                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition-colors ${
-                        activeMarketingPanel === "couponCreate"
-                          ? "bg-black text-white"
-                          : "text-black hover:bg-[#ECE7DC]"
-                      }`}
-                    >
-                      <Plus className="h-4 w-4" />
-                      Kupon Oluştur
-                    </button>
                   </div>
 
                   {activeMarketingPanel === "abandonedCart" ? (
@@ -2524,7 +2577,7 @@ export function Admin() {
                         </div>
                         <button
                           type="button"
-                          onClick={handleOpenCouponCreateMarketing}
+                          onClick={handleOpenCouponCreateCampaigns}
                           className="inline-flex items-center justify-center rounded-full border border-black px-4 py-2 text-sm text-black transition-colors hover:bg-black hover:text-white"
                         >
                           Kupon Oluştur Ekranını Aç
@@ -2594,215 +2647,224 @@ export function Admin() {
                         </p>
                       ) : null}
                     </div>
-                  ) : (
-                    <form
-                      onSubmit={handleSaveCustomerCouponSettings}
-                      className="bg-white border border-[#E7E2D8] rounded-lg p-4 space-y-4"
-                    >
-                      <div className="rounded-xl border border-[#E7E2D8] bg-[#FAF9F6] p-4 space-y-3">
-                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                          <div>
-                            <h3 className="text-sm font-medium">Kupon Oluştur</h3>
-                            <p className="text-xs text-gray-500 mt-1">
-                              Tüm müşterilerinizin sepette kullanabileceği indirim kodunu buradan hazırlayabilirsiniz.
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={handleGenerateCouponCode}
-                            className="inline-flex items-center justify-center rounded-full border border-black px-4 py-2 text-sm text-black transition-colors hover:bg-black hover:text-white"
-                          >
-                            Otomatik Kod Üret
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                          <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
-                            <p className="text-[11px] uppercase tracking-wide text-gray-500">Durum</p>
-                            <p className={`mt-2 text-sm font-medium ${customerCouponSettings.enabled ? "text-green-700" : "text-gray-600"}`}>
-                              {customerCouponSettings.enabled ? "Aktif" : "Pasif"}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
-                            <p className="text-[11px] uppercase tracking-wide text-gray-500">Kod</p>
-                            <p className="mt-2 text-sm font-medium text-black">
-                              {customerCouponSettings.code || "Henüz oluşturulmadı"}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
-                            <p className="text-[11px] uppercase tracking-wide text-gray-500">İndirim</p>
-                            <p className="mt-2 text-sm font-medium text-black">
-                              {customerCouponSettings.type === "fixed"
-                                ? `${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} TL`
-                                : `%${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")}`}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
-                            <p className="text-[11px] uppercase tracking-wide text-gray-500">Minimum Sepet</p>
-                            <p className="mt-2 text-sm font-medium text-black">
-                              {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <h3 className="text-sm font-medium">Kupon Ayarları</h3>
-                          <p className="text-xs text-gray-500 mt-1">
-                            Buradaki kupon ayarları müşterilerin sepette manuel kullanacağı indirim kodunu belirler.
-                          </p>
-                        </div>
-                        <label className="inline-flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={customerCouponSettings.enabled}
-                            onChange={(e) =>
-                              setCustomerCouponSettings((prev) => ({ ...prev, enabled: e.target.checked }))
-                            }
-                          />
-                          Kupon aktif
-                        </label>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium mb-1">Kupon Kodu</label>
-                          <input
-                            type="text"
-                            maxLength={40}
-                            value={customerCouponSettings.code}
-                            onChange={(e) =>
-                              setCustomerCouponSettings((prev) => ({
-                                ...prev,
-                                code: e.target.value.toUpperCase().replace(/\s+/g, ""),
-                              }))
-                            }
-                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">İndirim Tipi</label>
-                          <select
-                            value={customerCouponSettings.type}
-                            onChange={(e) =>
-                              setCustomerCouponSettings((prev) => ({
-                                ...prev,
-                                type: e.target.value === "fixed" ? "fixed" : "percentage",
-                              }))
-                            }
-                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                          >
-                            <option value="percentage">Yüzde</option>
-                            <option value="fixed">Sabit Tutar</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium mb-1">
-                            {customerCouponSettings.type === "fixed" ? "İndirim Tutarı (TL)" : "İndirim Oranı (%)"}
-                          </label>
-                          <input
-                            type="number"
-                            min={1}
-                            max={customerCouponSettings.type === "fixed" ? 100000 : 95}
-                            value={customerCouponSettings.value}
-                            onChange={(e) =>
-                              setCustomerCouponSettings((prev) => ({
-                                ...prev,
-                                value: Number(e.target.value || 0),
-                              }))
-                            }
-                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">Minimum Sepet Tutarı</label>
-                          <input
-                            type="number"
-                            min={0}
-                            max={1000000}
-                            value={customerCouponSettings.minimumSubtotal}
-                            onChange={(e) =>
-                              setCustomerCouponSettings((prev) => ({
-                                ...prev,
-                                minimumSubtotal: Number(e.target.value || 0),
-                              }))
-                            }
-                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Kupon Açıklaması</label>
-                        <input
-                          type="text"
-                          maxLength={200}
-                          value={customerCouponSettings.description}
-                          onChange={(e) =>
-                            setCustomerCouponSettings((prev) => ({
-                              ...prev,
-                              description: e.target.value,
-                            }))
-                          }
-                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                        />
-                      </div>
-
-                      <div className="rounded-xl border border-dashed border-[#D7D1C3] bg-[#FCFBF8] px-4 py-4">
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Önizleme</p>
-                        <div className="mt-3 flex flex-wrap items-center gap-3">
-                          <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-medium tracking-[0.2em] text-white">
-                            {customerCouponSettings.code || "KUPON-KODU"}
-                          </span>
-                          <span className="text-sm text-gray-700">
-                            {customerCouponSettings.type === "fixed"
-                              ? `${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} TL indirim`
-                              : `%${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} indirim`}
-                          </span>
-                        </div>
-                        <p className="mt-3 text-sm text-gray-700">
-                          {customerCouponSettings.description || "Müşterilerinize özel indirim kodunuz hazır."}
-                        </p>
-                        <p className="mt-2 text-xs text-gray-500">
-                          Müşteri bu kodu minimum {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL sepette kullanabilir.
-                        </p>
-                      </div>
-
-                      <div className="rounded-lg border border-[#E7E2D8] bg-[#F8F7F4] px-4 py-3 text-sm text-gray-600">
-                        Müşteri kupon kodunu sepette girdiğinde, minimum tutar sağlanıyorsa indirim uygulanır ve ödeme sırasında sunucuda tekrar doğrulanır.
-                      </div>
-
-                      {customerCouponMessage ? (
-                        <p
-                          className={`text-sm ${
-                            customerCouponMessage.includes("tamamlandı") ||
-                            customerCouponMessage.includes("kaydedildi") ||
-                            customerCouponMessage.includes("oluşturuldu")
-                              ? "text-green-700"
-                              : "text-red-600"
-                          }`}
-                        >
-                          {customerCouponMessage}
-                        </p>
-                      ) : null}
-
-                      <div className="flex flex-col sm:flex-row gap-3">
-                        <button
-                          type="submit"
-                          disabled={isSavingCustomerCoupon}
-                          className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
-                        >
-                          {isSavingCustomerCoupon ? "Kaydediliyor..." : "Kuponları Kaydet"}
-                        </button>
-                      </div>
-                    </form>
-                  )}
+                  ) : null}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeSection === "campaigns" && (
+            <div>
+              <h2 className="text-2xl font-light mb-2">Kampanyalar</h2>
+              <p className="text-sm text-gray-500 mb-5">
+                Müşterilerinizin sepette kullanabileceği kampanya ve indirim kodlarını buradan hazırlayabilirsiniz.
+              </p>
+
+              <form
+                onSubmit={handleSaveCustomerCouponSettings}
+                className="bg-white border border-[#E7E2D8] rounded-lg p-4 space-y-4"
+              >
+                <div className="rounded-xl border border-[#E7E2D8] bg-[#FAF9F6] p-4 space-y-3">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium">Kupon Oluştur</h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Tüm müşterilerinizin sepette kullanabileceği indirim kodunu buradan hazırlayabilirsiniz.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleGenerateCouponCode}
+                      className="inline-flex items-center justify-center rounded-full border border-black px-4 py-2 text-sm text-black transition-colors hover:bg-black hover:text-white"
+                    >
+                      Otomatik Kod Üret
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Durum</p>
+                      <p className={`mt-2 text-sm font-medium ${customerCouponSettings.enabled ? "text-green-700" : "text-gray-600"}`}>
+                        {customerCouponSettings.enabled ? "Aktif" : "Pasif"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Kod</p>
+                      <p className="mt-2 text-sm font-medium text-black">
+                        {customerCouponSettings.code || "Henüz oluşturulmadı"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">İndirim</p>
+                      <p className="mt-2 text-sm font-medium text-black">
+                        {customerCouponSettings.type === "fixed"
+                          ? `${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} TL`
+                          : `%${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")}`}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Minimum Sepet</p>
+                      <p className="mt-2 text-sm font-medium text-black">
+                        {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-medium">Kupon Ayarları</h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Buradaki kupon ayarları müşterilerin sepette manuel kullanacağı indirim kodunu belirler.
+                    </p>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={customerCouponSettings.enabled}
+                      onChange={(e) =>
+                        setCustomerCouponSettings((prev) => ({ ...prev, enabled: e.target.checked }))
+                      }
+                    />
+                    Kupon aktif
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Kupon Kodu</label>
+                    <input
+                      type="text"
+                      maxLength={40}
+                      value={customerCouponSettings.code}
+                      onChange={(e) =>
+                        setCustomerCouponSettings((prev) => ({
+                          ...prev,
+                          code: e.target.value.toUpperCase().replace(/\s+/g, ""),
+                        }))
+                      }
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">İndirim Tipi</label>
+                    <select
+                      value={customerCouponSettings.type}
+                      onChange={(e) =>
+                        setCustomerCouponSettings((prev) => ({
+                          ...prev,
+                          type: e.target.value === "fixed" ? "fixed" : "percentage",
+                        }))
+                      }
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                    >
+                      <option value="percentage">Yüzde</option>
+                      <option value="fixed">Sabit Tutar</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      {customerCouponSettings.type === "fixed" ? "İndirim Tutarı (TL)" : "İndirim Oranı (%)"}
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={customerCouponSettings.type === "fixed" ? 100000 : 95}
+                      value={customerCouponSettings.value}
+                      onChange={(e) =>
+                        setCustomerCouponSettings((prev) => ({
+                          ...prev,
+                          value: Number(e.target.value || 0),
+                        }))
+                      }
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Minimum Sepet Tutarı</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={1000000}
+                      value={customerCouponSettings.minimumSubtotal}
+                      onChange={(e) =>
+                        setCustomerCouponSettings((prev) => ({
+                          ...prev,
+                          minimumSubtotal: Number(e.target.value || 0),
+                        }))
+                      }
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Kupon Açıklaması</label>
+                  <input
+                    type="text"
+                    maxLength={200}
+                    value={customerCouponSettings.description}
+                    onChange={(e) =>
+                      setCustomerCouponSettings((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
+                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-dashed border-[#D7D1C3] bg-[#FCFBF8] px-4 py-4">
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Önizleme</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-medium tracking-[0.2em] text-white">
+                      {customerCouponSettings.code || "KUPON-KODU"}
+                    </span>
+                    <span className="text-sm text-gray-700">
+                      {customerCouponSettings.type === "fixed"
+                        ? `${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} TL indirim`
+                        : `%${Number(customerCouponSettings.value || 0).toLocaleString("tr-TR")} indirim`}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm text-gray-700">
+                    {customerCouponSettings.description || "Müşterilerinize özel indirim kodunuz hazır."}
+                  </p>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Müşteri bu kodu minimum {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL sepette kullanabilir.
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-[#E7E2D8] bg-[#F8F7F4] px-4 py-3 text-sm text-gray-600">
+                  Müşteri kupon kodunu sepette girdiğinde, minimum tutar sağlanıyorsa indirim uygulanır ve ödeme sırasında sunucuda tekrar doğrulanır.
+                </div>
+
+                {customerCouponMessage ? (
+                  <p
+                    className={`text-sm ${
+                      customerCouponMessage.includes("tamamlandı") ||
+                      customerCouponMessage.includes("kaydedildi") ||
+                      customerCouponMessage.includes("oluşturuldu")
+                        ? "text-green-700"
+                        : "text-red-600"
+                    }`}
+                  >
+                    {customerCouponMessage}
+                  </p>
+                ) : null}
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="submit"
+                    disabled={isSavingCustomerCoupon}
+                    className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
+                  >
+                    {isSavingCustomerCoupon ? "Kaydediliyor..." : "Kuponları Kaydet"}
+                  </button>
+                </div>
+              </form>
             </div>
           )}
 

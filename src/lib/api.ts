@@ -426,7 +426,11 @@ export async function createOrder(input: Order): Promise<Order> {
   return data.order;
 }
 
-export async function adminLogin(input: { email: string; password: string }): Promise<string> {
+export async function adminLogin(input: {
+  email: string;
+  password: string;
+  rememberMe: boolean;
+}): Promise<string> {
   const response = await fetch("/api/admin/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -442,6 +446,14 @@ export async function adminValidate(token: string): Promise<boolean> {
   });
   await parseResponse<{ ok: boolean }>(response);
   return true;
+}
+
+export async function adminLogout(token: string): Promise<void> {
+  const response = await fetch("/api/admin/logout", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await parseResponse<{ ok: boolean }>(response);
 }
 
 export async function fetchAdminSettings(token: string): Promise<{ siteName: string }> {

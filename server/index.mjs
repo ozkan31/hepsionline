@@ -17,7 +17,8 @@ dotenv.config();
 
 const app = express();
 const port = Number(process.env.API_PORT || 3001);
-const adminSessions = new Map();
+const ADMIN_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const ADMIN_REMEMBER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_SITE_NAME = "StilBags&Fashion";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2916,29 +2917,100 @@ function normalizePaytrReturnUrl(rawUrl, hashPath) {
   }
 }
 
-function cleanupExpiredAdminSessions() {
-  const now = Date.now();
-  for (const [token, expiresAt] of adminSessions.entries()) {
-    if (expiresAt <= now) {
-      adminSessions.delete(token);
-    }
-  }
+async function ensureAdminSessionsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_sessions (
+      token VARCHAR(128) PRIMARY KEY,
+      admin_email VARCHAR(255) NOT NULL,
+      remember_me BOOLEAN NOT NULL DEFAULT FALSE,
+      expires_at DATETIME NOT NULL,
+      last_seen_at DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_admin_sessions_expires_at (expires_at),
+      KEY idx_admin_sessions_admin_email (admin_email)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
 }
 
-function requireAdminAuth(req, res, next) {
+function getAdminSessionTtlMs(rememberMe = false) {
+  return rememberMe ? ADMIN_REMEMBER_SESSION_TTL_MS : ADMIN_SESSION_TTL_MS;
+}
+
+async function cleanupExpiredAdminSessions() {
+  await ensureAdminSessionsTable();
+  await pool.query(`DELETE FROM admin_sessions WHERE expires_at <= NOW()`);
+}
+
+async function createAdminSession(adminEmail, { rememberMe = false } = {}) {
+  await cleanupExpiredAdminSessions();
+  const token = crypto.randomBytes(48).toString("hex");
+  const expiresAt = new Date(Date.now() + getAdminSessionTtlMs(rememberMe));
+
+  await pool.query(
+    `
+      INSERT INTO admin_sessions (token, admin_email, remember_me, expires_at, last_seen_at)
+      VALUES (?, ?, ?, ?, NOW())
+    `,
+    [token, String(adminEmail ?? "").trim().toLowerCase(), rememberMe ? 1 : 0, expiresAt]
+  );
+
+  return { token, expiresAt };
+}
+
+async function getAdminSession(token, { touch = false } = {}) {
+  await cleanupExpiredAdminSessions();
+
+  const [rows] = await pool.query(
+    `
+      SELECT token, admin_email AS adminEmail, remember_me AS rememberMe, expires_at AS expiresAt
+      FROM admin_sessions
+      WHERE token = ? AND expires_at > NOW()
+      LIMIT 1
+    `,
+    [token]
+  );
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const session = rows[0];
+
+  if (touch) {
+    const nextExpiry = new Date(Date.now() + getAdminSessionTtlMs(Boolean(session.rememberMe)));
+    await pool.query(
+      `
+        UPDATE admin_sessions
+        SET last_seen_at = NOW(), expires_at = ?
+        WHERE token = ?
+      `,
+      [nextExpiry, token]
+    );
+    session.expiresAt = nextExpiry;
+  }
+
+  return session;
+}
+
+async function deleteAdminSession(token) {
+  if (!token) return;
+  await ensureAdminSessionsTable();
+  await pool.query(`DELETE FROM admin_sessions WHERE token = ?`, [token]);
+}
+
+async function requireAdminAuth(req, res, next) {
   const token = extractBearerToken(req);
   if (!token) {
     return res.status(401).json({ message: "Unauthorized." });
   }
 
-  cleanupExpiredAdminSessions();
-  const expiresAt = adminSessions.get(token);
-  if (!expiresAt || expiresAt <= Date.now()) {
-    adminSessions.delete(token);
+  const session = await getAdminSession(token, { touch: true });
+  if (!session) {
     return res.status(401).json({ message: "Session expired or invalid." });
   }
 
   req.adminToken = token;
+  req.adminSession = session;
   return next();
 }
 
@@ -4384,9 +4456,10 @@ app.post("/api/admin/login", async (req, res) => {
     return res.status(500).json({ message: "Admin env settings are missing." });
   }
 
-  const { email, password } = req.body ?? {};
+  const { email, password, rememberMe } = req.body ?? {};
   const normalizedEmail = String(email ?? "").trim().toLowerCase();
   const normalizedPassword = String(password ?? "");
+  const normalizedRememberMe = rememberMe === undefined ? true : Boolean(rememberMe);
 
   if (!normalizedEmail || !normalizedPassword) {
     return res.status(400).json({ message: "Email and password are required." });
@@ -4400,27 +4473,23 @@ app.post("/api/admin/login", async (req, res) => {
     return res.status(401).json({ message: "Invalid admin credentials." });
   }
 
-  cleanupExpiredAdminSessions();
-  const token = crypto.randomBytes(48).toString("hex");
-  const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
-  adminSessions.set(token, expiresAt);
+  const session = await createAdminSession(normalizedEmail, {
+    rememberMe: normalizedRememberMe,
+  });
 
-  return res.json({ token });
+  return res.json({
+    token: session.token,
+    rememberMe: normalizedRememberMe,
+    expiresAt: session.expiresAt.toISOString(),
+  });
 });
 
-app.get("/api/admin/me", async (req, res) => {
-  const token = extractBearerToken(req);
-  if (!token) {
-    return res.status(401).json({ message: "Unauthorized." });
-  }
+app.get("/api/admin/me", requireAdminAuth, async (req, res) => {
+  return res.json({ ok: true, rememberMe: Boolean(req.adminSession?.rememberMe) });
+});
 
-  cleanupExpiredAdminSessions();
-  const expiresAt = adminSessions.get(token);
-  if (!expiresAt || expiresAt <= Date.now()) {
-    adminSessions.delete(token);
-    return res.status(401).json({ message: "Session expired or invalid." });
-  }
-
+app.post("/api/admin/logout", requireAdminAuth, async (req, res) => {
+  await deleteAdminSession(req.adminToken);
   return res.json({ ok: true });
 });
 
@@ -5766,6 +5835,7 @@ if (fs.existsSync(distIndexHtml)) {
   });
 }
 
+await ensureAdminSessionsTable();
 await ensureMarketingAbandonedCartEmailsTable();
 await initializeRedisCache();
 void scheduleAbandonedCartCampaignScan();

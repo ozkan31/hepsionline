@@ -85,6 +85,19 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
+const createAdminSessionsSql = `
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  token VARCHAR(128) PRIMARY KEY,
+  admin_email VARCHAR(255) NOT NULL,
+  remember_me BOOLEAN NOT NULL DEFAULT FALSE,
+  expires_at DATETIME NOT NULL,
+  last_seen_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_admin_sessions_expires_at (expires_at),
+  KEY idx_admin_sessions_admin_email (admin_email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
 const createPasswordResetTokensSql = `
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
   id CHAR(36) PRIMARY KEY,
@@ -271,6 +284,7 @@ async function migrate() {
   await pool.query(createUsersSql);
   await pool.query(createUserAddressesSql);
   await pool.query(createUserSessionsSql);
+  await pool.query(createAdminSessionsSql);
   await pool.query(createPasswordResetTokensSql);
   await pool.query(createEmailVerificationCodesSql);
   await pool.query(createUserCartItemsSql);

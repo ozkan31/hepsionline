@@ -1326,9 +1326,10 @@ async function sendWelcomeEmail(req, { to, firstName }) {
           • Favori ürünlerinizi daha sonra incelemek için kaydedebilirsiniz.<br>
           • Adres bilgilerinizi kaydedip ödeme sürecini hızlandırabilirsiniz.
         </p>
-        <p style="margin-top:24px;font-size:14px;color:#666;">
-          Hesabınızı görüntülemek için:
-          <a href="${accountUrl}" style="color:#111;">${accountUrl}</a>
+        <p style="margin-top:24px;">
+          <a href="${accountUrl}" style="display:inline-block;padding:13px 22px;background:#f3f3f3;color:#111;text-decoration:none;border-radius:999px;border:1px solid #d9d9d9;">
+            Hesabım
+          </a>
         </p>
       </div>
     </div>

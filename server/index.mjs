@@ -353,6 +353,46 @@ const orderMailTransporter = isOrderSmtpConfigured
       },
     })
   : null;
+const WELCOME_SMTP_HOST = String(process.env.WELCOME_SMTP_HOST ?? "").trim();
+const WELCOME_SMTP_PORT = Number(process.env.WELCOME_SMTP_PORT || 587);
+const WELCOME_SMTP_SECURE = String(process.env.WELCOME_SMTP_SECURE ?? "false").toLowerCase() === "true";
+const WELCOME_SMTP_USER = String(process.env.WELCOME_SMTP_USER ?? "").trim();
+const WELCOME_SMTP_PASS = String(process.env.WELCOME_SMTP_PASS ?? "").trim();
+const WELCOME_SMTP_FROM_NAME = String(process.env.WELCOME_SMTP_FROM_NAME ?? "StilBags&Fashion").trim();
+const WELCOME_SMTP_FROM_EMAIL = String(process.env.WELCOME_SMTP_FROM_EMAIL ?? WELCOME_SMTP_USER).trim();
+const WELCOME_EMAIL_SUBJECT = String(process.env.WELCOME_EMAIL_SUBJECT ?? "Aramiza Hos Geldiniz").trim();
+const WELCOME_EMAIL_BASE_URL = String(
+  process.env.WELCOME_EMAIL_BASE_URL ?? process.env.ORDER_EMAIL_BASE_URL ?? process.env.PASSWORD_RESET_BASE_URL ?? ""
+).trim();
+const isDedicatedWelcomeSmtpConfigured = Boolean(
+  WELCOME_SMTP_HOST &&
+    WELCOME_SMTP_PORT &&
+    WELCOME_SMTP_USER &&
+    WELCOME_SMTP_PASS &&
+    WELCOME_SMTP_FROM_EMAIL
+);
+const dedicatedWelcomeMailTransporter = isDedicatedWelcomeSmtpConfigured
+  ? nodemailer.createTransport({
+      host: WELCOME_SMTP_HOST,
+      port: WELCOME_SMTP_PORT,
+      secure: WELCOME_SMTP_SECURE,
+      auth: {
+        user: WELCOME_SMTP_USER,
+        pass: WELCOME_SMTP_PASS,
+      },
+    })
+  : null;
+const welcomeMailTransporter = dedicatedWelcomeMailTransporter || mailTransporter || orderMailTransporter;
+const welcomeMailFromName = dedicatedWelcomeMailTransporter
+  ? WELCOME_SMTP_FROM_NAME
+  : mailTransporter
+    ? SMTP_FROM_NAME
+    : ORDER_SMTP_FROM_NAME;
+const welcomeMailFromEmail = dedicatedWelcomeMailTransporter
+  ? WELCOME_SMTP_FROM_EMAIL
+  : mailTransporter
+    ? SMTP_FROM_EMAIL
+    : ORDER_SMTP_FROM_EMAIL;
 const abandonedCartMailTransporter = orderMailTransporter || mailTransporter;
 const abandonedCartMailFromName = orderMailTransporter ? ORDER_SMTP_FROM_NAME : SMTP_FROM_NAME;
 const abandonedCartMailFromEmail = orderMailTransporter ? ORDER_SMTP_FROM_EMAIL : SMTP_FROM_EMAIL;
@@ -475,6 +515,20 @@ function buildSitemapBaseUrl(req) {
     return withProtocol.replace(/\/+$/, "");
   }
   return `${req.protocol}://${req.get("host")}`;
+}
+
+function buildWelcomeBaseUrl(req) {
+  const rawBase = String(WELCOME_EMAIL_BASE_URL ?? "").trim();
+  if (rawBase) {
+    const hasScheme = /^https?:\/\//i.test(rawBase);
+    const normalizedBase = hasScheme
+      ? rawBase
+      : /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(rawBase)
+        ? `http://${rawBase}`
+        : `https://${rawBase}`;
+    return normalizedBase.replace(/\/+$/, "");
+  }
+  return buildPublicBaseUrl(req);
 }
 
 function escapeXml(value) {
@@ -1240,6 +1294,80 @@ async function sendEmailVerificationCodeEmail({ to, code }) {
     subject: "E-posta Do\u011frulama Kodu",
     text,
     html,
+  });
+}
+
+async function sendWelcomeEmail(req, { to, firstName }) {
+  if (!welcomeMailTransporter || !welcomeMailFromEmail) {
+    throw new Error("Welcome email transporter is not configured.");
+  }
+
+  const safeName = escapeHtml(String(firstName ?? "").trim() || "Müşterimiz");
+  const baseUrl = buildWelcomeBaseUrl(req);
+  const shopUrl = `${baseUrl}/shop/`;
+  const accountUrl = `${baseUrl}/hesabim/`;
+  const subject = WELCOME_EMAIL_SUBJECT || "Aramiza Hos Geldiniz";
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.7;color:#111;background:#f7f7f7;padding:32px 16px;">
+      <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:14px;padding:36px 32px;">
+        <div style="font-size:28px;font-weight:700;margin-bottom:8px;">StilBags&Fashion</div>
+        <h2 style="margin:0 0 18px;font-size:32px;font-weight:600;">Aramıza Hoş Geldiniz</h2>
+        <p>Merhaba ${safeName},</p>
+        <p>Hesabınız başarıyla oluşturuldu. Yeni ürünlerimizi inceleyebilir, favorilerinizi kaydedebilir ve güvenle alışverişe başlayabilirsiniz.</p>
+        <p style="margin:22px 0;">
+          <a href="${shopUrl}" style="display:inline-block;padding:14px 24px;background:#111;color:#fff;text-decoration:none;border-radius:999px;">
+            Alışverişe Başla
+          </a>
+        </p>
+        <p style="margin:0 0 8px;"><strong>Hesabınızla neler yapabilirsiniz?</strong></p>
+        <p style="margin:0;color:#444;">
+          • Siparişlerinizi tek yerden takip edebilirsiniz.<br>
+          • Favori ürünlerinizi daha sonra incelemek için kaydedebilirsiniz.<br>
+          • Adres bilgilerinizi kaydedip ödeme sürecini hızlandırabilirsiniz.
+        </p>
+        <p style="margin-top:24px;font-size:14px;color:#666;">
+          Hesabınızı görüntülemek için:
+          <a href="${accountUrl}" style="color:#111;">${accountUrl}</a>
+        </p>
+      </div>
+    </div>
+  `;
+  const text = [
+    `Merhaba ${String(firstName ?? "").trim() || "Müşterimiz"},`,
+    "",
+    "StilBags&Fashion hesabınız başarıyla oluşturuldu.",
+    "Yeni ürünleri inceleyebilir, favorilerinizi kaydedebilir ve güvenle alışverişe başlayabilirsiniz.",
+    "",
+    `Alışverişe başla: ${shopUrl}`,
+    `Hesabım: ${accountUrl}`,
+  ].join("\n");
+
+  await welcomeMailTransporter.sendMail({
+    from: `"${welcomeMailFromName}" <${welcomeMailFromEmail}>`,
+    to,
+    subject,
+    text,
+    html,
+  });
+}
+
+function queueWelcomeEmail(req, { to, firstName, source }) {
+  if (!welcomeMailTransporter || !welcomeMailFromEmail) {
+    return;
+  }
+
+  setImmediate(async () => {
+    try {
+      await sendWelcomeEmail(req, { to, firstName });
+      console.log("Welcome email sent:", { to, source });
+    } catch (error) {
+      console.error("Welcome email send failed:", {
+        to,
+        source,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
   });
 }
 
@@ -3222,6 +3350,7 @@ app.post("/api/auth/flow/verify", async (req, res) => {
     const verifiedLastName = String(verifyRow.last_name ?? "").trim();
     const verifiedPhone = String(verifyRow.phone ?? "").trim();
 
+    let createdNewUser = false;
     if (!userId) {
       const fallbackFirst = verifiedFirstName || "Uye";
       const fallbackLast = verifiedLastName || "Uye";
@@ -3242,6 +3371,7 @@ app.post("/api/auth/flow/verify", async (req, res) => {
       );
       const [fresh] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
       userId = fresh[0].id;
+      createdNewUser = true;
     } else if (verifiedFirstName && verifiedLastName) {
       const currentFirstName = String(existing[0].first_name ?? "").trim();
       const currentLastName = String(existing[0].last_name ?? "").trim();
@@ -3267,6 +3397,13 @@ app.post("/api/auth/flow/verify", async (req, res) => {
 
     const token = await createSession(userId);
     const user = await getSessionUser(token);
+    if (createdNewUser && user?.email) {
+      queueWelcomeEmail(req, {
+        to: user.email,
+        firstName: user.firstName,
+        source: "auth-flow-verify",
+      });
+    }
     return res.json({ token, user });
   } catch (error) {
     if (error?.code === "ER_NO_SUCH_TABLE") {
@@ -3314,6 +3451,13 @@ app.post("/api/auth/register", async (req, res) => {
 
     const token = await createSession(userId);
     const user = await getSessionUser(token);
+    if (user?.email) {
+      queueWelcomeEmail(req, {
+        to: user.email,
+        firstName: user.firstName,
+        source: "auth-register",
+      });
+    }
     return res.status(201).json({ token, user });
   } catch (error) {
     return res.status(500).json({ message: "Registration failed." });
@@ -3563,6 +3707,7 @@ app.post("/api/auth/google", async (req, res) => {
     const [existing] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
     let userId = existing.length > 0 ? existing[0].id : null;
 
+    let createdNewUser = false;
     if (!userId) {
       const nameFromGoogle = splitFullName(payload?.name ?? "");
       const firstName = String(payload?.given_name ?? "").trim() || nameFromGoogle.firstName;
@@ -3577,10 +3722,18 @@ app.post("/api/auth/google", async (req, res) => {
         `,
         [userId, firstName, lastName, email, "", generatedPasswordHash]
       );
+      createdNewUser = true;
     }
 
     const token = await createSession(userId);
     const user = await getSessionUser(token);
+    if (createdNewUser && user?.email) {
+      queueWelcomeEmail(req, {
+        to: user.email,
+        firstName: user.firstName,
+        source: "google-auth",
+      });
+    }
     return res.json({ token, user });
   } catch (error) {
     console.error("Google auth error:", error);

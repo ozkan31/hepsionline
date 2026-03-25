@@ -38,6 +38,7 @@ export function Checkout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { state, cartTotal, dispatch } = useStore();
+  const couponOwner = state.user?.id ?? "guest";
   const [step, setStep] = useState<"shipping" | "payment" | "confirmation">("shipping");
   const [selectedAddressId, setSelectedAddressId] = useState(
     state.user?.addresses?.[0]?.id ?? ""
@@ -299,7 +300,7 @@ export function Checkout() {
       return;
     }
 
-    const storedCode = getStoredAbandonedCartCouponCode();
+    const storedCode = getStoredAbandonedCartCouponCode(couponOwner);
     if (!storedCode) {
       setAppliedCoupon(null);
       setCouponMessage("");
@@ -312,19 +313,19 @@ export function Checkout() {
         if (!isMounted) return;
         setAppliedCoupon(coupon);
         setCouponMessage(`${coupon.code} kuponu siparişinize uygulandı.`);
-        storeAbandonedCartCoupon(coupon);
+        storeAbandonedCartCoupon(coupon, couponOwner);
       })
       .catch((error) => {
         if (!isMounted) return;
         setAppliedCoupon(null);
-        clearStoredAbandonedCartCoupon();
+        clearStoredAbandonedCartCoupon(couponOwner);
         setCouponMessage(error instanceof Error ? error.message : "Kupon artık geçerli değil.");
       });
 
     return () => {
       isMounted = false;
     };
-  }, [cartTotal, state.cart, state.cart.length, state.isAuthenticated]);
+  }, [cartTotal, couponOwner, state.cart, state.cart.length, state.isAuthenticated]);
 
   useEffect(() => {
     if (isPaymentSuccessPath) {
@@ -423,7 +424,7 @@ export function Checkout() {
               })),
             });
             dispatch({ type: "CLEAR_CART" });
-            clearStoredAbandonedCartCoupon();
+            clearStoredAbandonedCartCoupon(couponOwner);
             setAppliedCoupon(null);
           })
           .catch(() => {
@@ -445,7 +446,7 @@ export function Checkout() {
               })),
             });
             dispatch({ type: "CLEAR_CART" });
-            clearStoredAbandonedCartCoupon();
+            clearStoredAbandonedCartCoupon(couponOwner);
             setAppliedCoupon(null);
           });
       } else if (state.orders.length > 0) {

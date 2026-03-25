@@ -1,6 +1,7 @@
 import type { AppliedAbandonedCartCoupon, DiscountType } from "@/types";
 
 const STORAGE_KEY = "stilbagsAbandonedCartCoupon";
+const STORAGE_KEY_PREFIX = `${STORAGE_KEY}:`;
 
 function normalizeCouponCode(value: string) {
   return String(value ?? "")
@@ -26,10 +27,25 @@ function calculateDiscountAmount(
   return Math.min(safeSubtotal, Math.round((safeSubtotal * percentage) / 100));
 }
 
-export function getStoredAbandonedCartCouponCode() {
+function normalizeCouponOwner(owner?: string | null) {
+  const normalized = String(owner ?? "").trim();
+  return normalized ? normalized : "guest";
+}
+
+function getCouponStorageKey(owner?: string | null) {
+  return `${STORAGE_KEY_PREFIX}${normalizeCouponOwner(owner)}`;
+}
+
+function cleanupLegacyCouponStorage() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(STORAGE_KEY);
+}
+
+export function getStoredAbandonedCartCouponCode(owner?: string | null) {
   if (typeof window === "undefined") return "";
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    cleanupLegacyCouponStorage();
+    const raw = window.localStorage.getItem(getCouponStorageKey(owner));
     if (!raw) return "";
     const parsed = JSON.parse(raw);
     return normalizeCouponCode(String(parsed?.code ?? ""));
@@ -38,10 +54,11 @@ export function getStoredAbandonedCartCouponCode() {
   }
 }
 
-export function getStoredAbandonedCartCoupon() {
+export function getStoredAbandonedCartCoupon(owner?: string | null) {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    cleanupLegacyCouponStorage();
+    const raw = window.localStorage.getItem(getCouponStorageKey(owner));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     const code = normalizeCouponCode(String(parsed?.code ?? ""));
@@ -55,10 +72,11 @@ export function getStoredAbandonedCartCoupon() {
   }
 }
 
-export function storeAbandonedCartCoupon(coupon: AppliedAbandonedCartCoupon) {
+export function storeAbandonedCartCoupon(coupon: AppliedAbandonedCartCoupon, owner?: string | null) {
   if (typeof window === "undefined") return;
+  cleanupLegacyCouponStorage();
   window.localStorage.setItem(
-    STORAGE_KEY,
+    getCouponStorageKey(owner),
     JSON.stringify({
       ...coupon,
       code: normalizeCouponCode(coupon.code),
@@ -66,9 +84,25 @@ export function storeAbandonedCartCoupon(coupon: AppliedAbandonedCartCoupon) {
   );
 }
 
-export function clearStoredAbandonedCartCoupon() {
+export function clearStoredAbandonedCartCoupon(owner?: string | null) {
   if (typeof window === "undefined") return;
-  window.localStorage.removeItem(STORAGE_KEY);
+  cleanupLegacyCouponStorage();
+  window.localStorage.removeItem(getCouponStorageKey(owner));
+}
+
+export function clearAllStoredAbandonedCartCoupons() {
+  if (typeof window === "undefined") return;
+  try {
+    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.localStorage.key(index);
+      if (!key) continue;
+      if (key === STORAGE_KEY || key.startsWith(STORAGE_KEY_PREFIX)) {
+        window.localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    window.localStorage.removeItem(STORAGE_KEY);
+  }
 }
 
 export function normalizeClientCouponCode(value: string) {

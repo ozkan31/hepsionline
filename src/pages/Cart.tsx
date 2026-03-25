@@ -18,6 +18,7 @@ export function Cart() {
   const { state, dispatch, cartTotal } = useStore();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const couponOwner = state.user?.id ?? "guest";
   const [promoCode, setPromoCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedAbandonedCartCoupon | null>(null);
   const [couponMessage, setCouponMessage] = useState("");
@@ -48,7 +49,7 @@ export function Cart() {
 
   const clearCouponState = (message = "") => {
     setAppliedCoupon(null);
-    clearStoredAbandonedCartCoupon();
+    clearStoredAbandonedCartCoupon(couponOwner);
     if (!promoCode.trim()) {
       setPromoCode("");
     }
@@ -72,13 +73,13 @@ export function Cart() {
       const coupon = await applyCustomerCoupon(code, state.cart);
       setAppliedCoupon(coupon);
       setPromoCode(coupon.code);
-      storeAbandonedCartCoupon(coupon);
+      storeAbandonedCartCoupon(coupon, couponOwner);
       if (!options?.silentSuccess) {
         setCouponMessage(`${coupon.code} kuponu uygulandı.`);
       }
     } catch (error) {
       setAppliedCoupon(null);
-      clearStoredAbandonedCartCoupon();
+      clearStoredAbandonedCartCoupon(couponOwner);
       setCouponError(error instanceof Error ? error.message : "Kupon uygulanamadı.");
     } finally {
       if (options?.cleanupQuery) {
@@ -94,16 +95,22 @@ export function Cart() {
       setCouponError("");
       clearCouponState("");
     }
-  }, [state.cart.length]);
+  }, [state.cart.length, couponOwner]);
 
   useEffect(() => {
     const queryCode =
       normalizeClientCouponCode(searchParams.get("kupon") ?? "") ||
       normalizeClientCouponCode(searchParams.get("coupon") ?? "");
-    const storedCode = getStoredAbandonedCartCouponCode();
+    const storedCode = getStoredAbandonedCartCouponCode(couponOwner);
     const incomingCode = queryCode || storedCode;
 
-    if (!incomingCode || state.cart.length === 0) return;
+    if (!incomingCode || state.cart.length === 0) {
+      setAppliedCoupon(null);
+      setPromoCode("");
+      setCouponMessage("");
+      setCouponError("");
+      return;
+    }
     if (appliedCoupon?.code === incomingCode && appliedCoupon.subtotal === cartTotal) return;
 
     setPromoCode(incomingCode);
@@ -111,7 +118,7 @@ export function Cart() {
       silentSuccess: appliedCoupon?.code === incomingCode,
       cleanupQuery: true,
     });
-  }, [appliedCoupon?.code, appliedCoupon?.subtotal, cartSignature, cartTotal, searchParams, state.cart.length, state.cart]);
+  }, [appliedCoupon?.code, appliedCoupon?.subtotal, cartSignature, cartTotal, couponOwner, searchParams, state.cart.length, state.cart]);
 
   const updateQuantity = (productId: string, newQuantity: number) => {
     if (newQuantity < 1) {

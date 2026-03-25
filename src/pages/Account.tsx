@@ -20,6 +20,7 @@ import {
   updateProfile,
   verifyAuthFlowCode,
 } from "@/lib/api";
+import { clearStoredAbandonedCartCoupon } from "@/lib/abandonedCartCoupon";
 import { loadTurkeyLocations } from "@/lib/turkiye";
 import type { Address } from "@/types";
 
@@ -720,7 +721,10 @@ export function Account() {
   ]);
 
   const handleLogout = async () => {
+    const currentCouponOwner = state.user?.id ?? "guest";
     await logoutUser();
+    clearStoredAbandonedCartCoupon(currentCouponOwner);
+    clearStoredAbandonedCartCoupon("guest");
     dispatch({ type: "CLEAR_CART" });
     dispatch({ type: "SET_WISHLIST", payload: [] });
     dispatch({ type: "SET_ORDERS", payload: [] });

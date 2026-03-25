@@ -1,4 +1,18 @@
-﻿import { ChevronDown, List, Menu, Plus, Trash2, X } from "lucide-react";
+﻿import {
+  ChevronDown,
+  List,
+  LogOut,
+  Mail,
+  Megaphone,
+  Menu,
+  Package,
+  Plus,
+  Settings,
+  ShoppingBag,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   createAdminProduct,
@@ -1466,7 +1480,10 @@ export function Admin() {
                 activeSection === "orders" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
               }`}
             >
-              Siparişler
+              <span className="inline-flex items-center gap-2">
+                <ShoppingBag className="w-4 h-4" />
+                Siparişler
+              </span>
             </button>
             <div className="space-y-1">
               <button
@@ -1476,7 +1493,10 @@ export function Admin() {
                   activeSection === "products" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
                 }`}
               >
-                <span>Ürünler</span>
+                <span className="inline-flex items-center gap-2">
+                  <Package className="w-4 h-4" />
+                  Ürünler
+                </span>
                 <ChevronDown
                   className={`w-4 h-4 transition-transform ${isProductsMenuOpen ? "rotate-180" : ""}`}
                 />
@@ -1532,7 +1552,10 @@ export function Admin() {
                 activeSection === "users" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
               }`}
             >
-              Kullanıcılar
+              <span className="inline-flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                Kullanıcılar
+              </span>
             </button>
             <button
               onClick={() => handleSectionChange("contactRequests")}
@@ -1540,7 +1563,10 @@ export function Admin() {
                 activeSection === "contactRequests" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
               }`}
             >
-              İletişim Talepleri
+              <span className="inline-flex items-center gap-2">
+                <Mail className="w-4 h-4" />
+                İletişim Talepleri
+              </span>
             </button>
             <button
               onClick={() => handleSectionChange("marketing")}
@@ -1548,7 +1574,10 @@ export function Admin() {
                 activeSection === "marketing" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
               }`}
             >
-              Pazarlama
+              <span className="inline-flex items-center gap-2">
+                <Megaphone className="w-4 h-4" />
+                Pazarlama
+              </span>
             </button>
             <button
               onClick={() => handleSectionChange("settings")}
@@ -1556,13 +1585,19 @@ export function Admin() {
                 activeSection === "settings" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
               }`}
             >
-              Ayarlar
+              <span className="inline-flex items-center gap-2">
+                <Settings className="w-4 h-4" />
+                Ayarlar
+              </span>
             </button>
             <button
               onClick={handleLogout}
               className="w-full text-left px-4 py-2 rounded-md text-sm border border-black text-black hover:bg-black hover:text-white transition-colors"
             >
-              Çıkış Yap
+              <span className="inline-flex items-center gap-2">
+                <LogOut className="w-4 h-4" />
+                Çıkış Yap
+              </span>
             </button>
           </nav>
         </aside>
@@ -1600,7 +1635,10 @@ export function Admin() {
                       activeSection === "orders" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
                     }`}
                   >
-                    Siparişler
+                    <span className="inline-flex items-center gap-2">
+                      <ShoppingBag className="w-4 h-4" />
+                      Siparişler
+                    </span>
                   </button>
                   <div className="space-y-1">
                     <button
@@ -1610,7 +1648,10 @@ export function Admin() {
                         activeSection === "products" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
                       }`}
                     >
-                      <span>Ürünler</span>
+                      <span className="inline-flex items-center gap-2">
+                        <Package className="w-4 h-4" />
+                        Ürünler
+                      </span>
                       <ChevronDown
                         className={`w-4 h-4 transition-transform ${isProductsMenuOpen ? "rotate-180" : ""}`}
                       />
@@ -1670,7 +1711,10 @@ export function Admin() {
                       activeSection === "users" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
                     }`}
                   >
-                    Kullanıcılar
+                    <span className="inline-flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      Kullanıcılar
+                    </span>
                   </button>
                   <button
                     onClick={() => handleSectionChange("contactRequests")}
@@ -1678,7 +1722,10 @@ export function Admin() {
                       activeSection === "contactRequests" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
                     }`}
                   >
-                    İletişim Talepleri
+                    <span className="inline-flex items-center gap-2">
+                      <Mail className="w-4 h-4" />
+                      İletişim Talepleri
+                    </span>
                   </button>
                   <button
                     onClick={() => handleSectionChange("marketing")}
@@ -1686,7 +1733,10 @@ export function Admin() {
                       activeSection === "marketing" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
                     }`}
                   >
-                    Pazarlama
+                    <span className="inline-flex items-center gap-2">
+                      <Megaphone className="w-4 h-4" />
+                      Pazarlama
+                    </span>
                   </button>
                   <button
                     onClick={() => handleSectionChange("settings")}
@@ -1694,13 +1744,19 @@ export function Admin() {
                       activeSection === "settings" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
                     }`}
                   >
-                    Ayarlar
+                    <span className="inline-flex items-center gap-2">
+                      <Settings className="w-4 h-4" />
+                      Ayarlar
+                    </span>
                   </button>
                   <button
                     onClick={handleLogout}
                     className="w-full text-left px-4 py-2 rounded-md text-sm border border-black text-black hover:bg-black hover:text-white transition-colors"
                   >
-                    Çıkış Yap
+                    <span className="inline-flex items-center gap-2">
+                      <LogOut className="w-4 h-4" />
+                      Çıkış Yap
+                    </span>
                   </button>
                 </nav>
               </div>

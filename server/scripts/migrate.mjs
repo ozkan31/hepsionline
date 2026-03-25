@@ -174,6 +174,10 @@ CREATE TABLE IF NOT EXISTS user_orders (
   order_date DATE NOT NULL,
   total INT NOT NULL,
   status VARCHAR(20) NOT NULL,
+  subtotal_total INT NULL,
+  shipping_total INT NULL,
+  discount_total INT NULL,
+  coupon_code VARCHAR(80) NULL,
   shipping_company VARCHAR(120) NULL,
   shipping_tracking_no VARCHAR(120) NULL,
   shipping_first_name VARCHAR(120) NULL,
@@ -339,6 +343,42 @@ async function migrate() {
     );
   } catch (error) {
     if (error?.code !== "ER_BAD_FIELD_ERROR") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE user_orders ADD COLUMN subtotal_total INT NULL AFTER status`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE user_orders ADD COLUMN shipping_total INT NULL AFTER subtotal_total`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE user_orders ADD COLUMN discount_total INT NULL AFTER shipping_total`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE user_orders ADD COLUMN coupon_code VARCHAR(80) NULL AFTER discount_total`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
       throw error;
     }
   }

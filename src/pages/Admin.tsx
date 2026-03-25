@@ -66,6 +66,12 @@ const defaultMarketingSettings: AdminAbandonedCartSettings = {
   body:
     "Seçtiğiniz ürünler hâlâ sepetinizde duruyor. Tükenmeden alışverişinizi tamamlamak için sepete geri dönebilirsiniz.",
   ctaLabel: "Sepetime Dön",
+  couponEnabled: false,
+  couponCode: "",
+  couponType: "percentage",
+  couponValue: 10,
+  couponMinimumSubtotal: 750,
+  couponDescription: "Sepetinize özel indirim kodunuz hazır.",
 };
 
 export function Admin() {
@@ -1576,6 +1582,114 @@ export function Admin() {
                         }
                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black resize-y"
                       />
+                    </div>
+
+                    <div className="border border-[#E7E2D8] rounded-lg p-4 space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-medium">Kupon Kodu</h4>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Mail içindeki butonla sepete dönen kullanıcıda kupon otomatik uygulanır.
+                          </p>
+                        </div>
+                        <label className="inline-flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={marketingSettings.couponEnabled}
+                            onChange={(e) =>
+                              setMarketingSettings((prev) => ({ ...prev, couponEnabled: e.target.checked }))
+                            }
+                          />
+                          Kupon aktif
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Kupon Kodu</label>
+                          <input
+                            type="text"
+                            maxLength={40}
+                            value={marketingSettings.couponCode}
+                            onChange={(e) =>
+                              setMarketingSettings((prev) => ({
+                                ...prev,
+                                couponCode: e.target.value.toUpperCase().replace(/\s+/g, ""),
+                              }))
+                            }
+                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">İndirim Tipi</label>
+                          <select
+                            value={marketingSettings.couponType}
+                            onChange={(e) =>
+                              setMarketingSettings((prev) => ({
+                                ...prev,
+                                couponType: e.target.value === "fixed" ? "fixed" : "percentage",
+                              }))
+                            }
+                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                          >
+                            <option value="percentage">Yüzde</option>
+                            <option value="fixed">Sabit Tutar</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">
+                            {marketingSettings.couponType === "fixed" ? "İndirim Tutarı (TL)" : "İndirim Oranı (%)"}
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={marketingSettings.couponType === "fixed" ? 100000 : 95}
+                            value={marketingSettings.couponValue}
+                            onChange={(e) =>
+                              setMarketingSettings((prev) => ({
+                                ...prev,
+                                couponValue: Number(e.target.value || 0),
+                              }))
+                            }
+                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Minimum Sepet Tutarı</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={1000000}
+                            value={marketingSettings.couponMinimumSubtotal}
+                            onChange={(e) =>
+                              setMarketingSettings((prev) => ({
+                                ...prev,
+                                couponMinimumSubtotal: Number(e.target.value || 0),
+                              }))
+                            }
+                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Kupon Açıklaması</label>
+                        <input
+                          type="text"
+                          maxLength={200}
+                          value={marketingSettings.couponDescription}
+                          onChange={(e) =>
+                            setMarketingSettings((prev) => ({
+                              ...prev,
+                              couponDescription: e.target.value,
+                            }))
+                          }
+                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                        />
+                      </div>
                     </div>
 
                     {marketingMessage ? (

@@ -1,5 +1,6 @@
 ﻿import type {
   Address,
+  AppliedAbandonedCartCoupon,
   AdminAbandonedCartCampaignResponse,
   AdminAbandonedCartRunSummary,
   AdminAbandonedCartSettings,
@@ -389,13 +390,22 @@ export async function createPaytrIframe(input: {
   district: string;
   total: number;
   items: Array<{ name: string; unitPrice: number; quantity: number }>;
+  couponCode?: string | null;
 }): Promise<{ iframeUrl: string; token: string; merchantOid: string }> {
-  const response = await fetch("/api/paytr/token", {
+  const response = await authFetch("/api/paytr/token", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
   return parseResponse<{ iframeUrl: string; token: string; merchantOid: string }>(response);
+}
+
+export async function applyAbandonedCartCoupon(code: string): Promise<AppliedAbandonedCartCoupon> {
+  const response = await authFetch("/api/marketing/abandoned-cart/coupon/apply", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+  const data = await parseResponse<{ coupon: AppliedAbandonedCartCoupon }>(response);
+  return data.coupon;
 }
 
 export async function fetchOrders(): Promise<Order[]> {

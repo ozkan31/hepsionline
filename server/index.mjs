@@ -366,6 +366,12 @@ const DEFAULT_ABANDONED_CART_SETTINGS = Object.freeze({
   body:
     "Seçtiğiniz ürünler hâlâ sepetinizde duruyor. Tükenmeden alışverişinizi tamamlamak için sepete geri dönebilirsiniz.",
   ctaLabel: "Sepetime Dön",
+  couponEnabled: false,
+  couponCode: "",
+  couponType: "percentage",
+  couponValue: 10,
+  couponMinimumSubtotal: 750,
+  couponDescription: "Sepetinize özel indirim kodunuz hazır.",
 });
 let abandonedCartScanTimeout = null;
 let abandonedCartScanInFlight = null;
@@ -1264,12 +1270,20 @@ async function sendOrderConfirmationEmail(req, { to, firstName, order, deliveryA
     const unitPrice = Number(product?.price ?? 0);
     return sum + unitPrice * quantity;
   }, 0);
-  const productSubtotalText = productSubtotal.toLocaleString("tr-TR");
-  const mailGrandTotal = Number(order?.total ?? productSubtotal);
+  const resolvedSubtotal = Math.max(0, Number(order?.subtotal ?? productSubtotal));
+  const productSubtotalText = resolvedSubtotal.toLocaleString("tr-TR");
+  const mailGrandTotal = Number(order?.total ?? resolvedSubtotal);
   const safeGrandTotal = mailGrandTotal.toLocaleString("tr-TR");
-  const shippingAmountRaw = mailGrandTotal - productSubtotal;
-  const shippingAmount = shippingAmountRaw > 0 ? shippingAmountRaw : 79;
+  const discountAmount = Math.max(0, Number(order?.discountTotal ?? 0));
+  const shippingAmountRaw = mailGrandTotal - resolvedSubtotal + discountAmount;
+  const shippingAmount =
+    order?.shippingTotal != null
+      ? Math.max(0, Number(order.shippingTotal))
+      : shippingAmountRaw > 0
+        ? shippingAmountRaw
+        : 79;
   const shippingAmountText = shippingAmount.toLocaleString("tr-TR");
+  const discountAmountText = discountAmount.toLocaleString("tr-TR");
 
   const productCardsHtml = items
     .map((item, itemIndex) => {
@@ -1390,6 +1404,12 @@ ${productCardsHtml}
 <td>Kargo:</td>
 <td align="right">${shippingAmountText} TL</td>
 </tr>
+${discountAmount > 0 ? `
+<tr>
+<td>Kupon İndirimi${order?.couponCode ? ` (${escapeHtml(String(order.couponCode))})` : ""}:</td>
+<td align="right" style="color:#0f766e;">-${discountAmountText} TL</td>
+</tr>
+` : ""}
 <tr>
 <td style="font-size:20px;font-weight:600;padding-top:6px;">TOPLAM:</td>
 <td align="right" style="font-size:20px;font-weight:600;padding-top:6px;">${safeGrandTotal} TL</td>
@@ -1472,18 +1492,57 @@ async function sendAbandonedCartEmail(req, { to, firstName, cartItems, settings 
   const safeSettings = sanitizeAbandonedCartSettings(settings);
   const safeFirstName = escapeHtml(String(firstName ?? "").trim() || "Müşterimiz");
   const baseUrl = buildPublicBaseUrl(req);
-  const loginUrl = `${baseUrl}/giris?redirect=${encodeURIComponent("/sepet")}`;
   const subject = String(safeSettings.subject ?? DEFAULT_ABANDONED_CART_SETTINGS.subject).trim();
   const heading = escapeHtml(String(safeSettings.heading ?? DEFAULT_ABANDONED_CART_SETTINGS.heading).trim());
   const body = escapeHtml(String(safeSettings.body ?? DEFAULT_ABANDONED_CART_SETTINGS.body).trim());
   const ctaLabel = escapeHtml(String(safeSettings.ctaLabel ?? DEFAULT_ABANDONED_CART_SETTINGS.ctaLabel).trim());
   const items = Array.isArray(cartItems) ? cartItems : [];
   const mailAttachments = [];
-  const totalAmount = items.reduce((sum, item) => {
-    const quantity = Math.max(1, Number(item?.quantity ?? 1) || 1);
-    const price = Number(item?.product?.price ?? 0);
-    return sum + quantity * price;
-  }, 0);
+  const subtotalAmount = getCartSubtotal(items);
+  const shippingAmount = getCartShippingAmount(subtotalAmount);
+  const configuredCoupon = getConfiguredAbandonedCartCoupon(safeSettings);
+  const couponSummary =
+    configuredCoupon && configuredCoupon.code
+      ? resolveAbandonedCartCoupon({
+          code: configuredCoupon.code,
+          cartItems: items,
+          settings: safeSettings,
+        })
+      : null;
+  const discountAmount = couponSummary?.valid ? couponSummary.discountAmount : 0;
+  const totalAmount = Math.max(0, subtotalAmount + shippingAmount - discountAmount);
+  const cartRedirectPath = couponSummary?.valid
+    ? `/sepet?kupon=${encodeURIComponent(couponSummary.code)}`
+    : "/sepet";
+  const loginUrl = `${baseUrl}/giris?redirect=${encodeURIComponent(cartRedirectPath)}`;
+  const couponValueLabel =
+    couponSummary?.valid
+      ? couponSummary.type === "fixed"
+        ? `${Number(couponSummary.value).toLocaleString("tr-TR")} TL`
+        : `%${Number(couponSummary.value).toLocaleString("tr-TR")}`
+      : "";
+  const couponHtml = couponSummary?.valid
+    ? `
+          <tr>
+            <td style="padding:0 40px 25px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#111;border-radius:12px;padding:22px;">
+                <tr>
+                  <td style="color:#fff;">
+                    <div style="font-size:13px;letter-spacing:1.2px;text-transform:uppercase;color:#d6c4a4;">Size özel indirim kodu</div>
+                    <div style="margin-top:10px;font-size:28px;font-weight:700;letter-spacing:2px;">${escapeHtml(couponSummary.code)}</div>
+                    <div style="margin-top:10px;font-size:15px;color:#f1f1f1;">
+                      ${escapeHtml(couponSummary.description || "Sepetinize özel indirim kodunuz hazır.")}
+                    </div>
+                    <div style="margin-top:8px;font-size:14px;color:#d8d8d8;">
+                      İndirim: ${escapeHtml(couponValueLabel)} · Minimum sepet: ${couponSummary.minimumSubtotal.toLocaleString("tr-TR")} TL
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+      `
+    : "";
 
   const productCardsHtml = items
     .map((item, index) => {
@@ -1551,6 +1610,7 @@ async function sendAbandonedCartEmail(req, { to, firstName, cartItems, settings 
               ${body}
             </td>
           </tr>
+          ${couponHtml}
           <tr>
             <td style="padding:0 40px 10px;">
               <table width="100%" cellpadding="0" cellspacing="0">
@@ -1562,8 +1622,26 @@ async function sendAbandonedCartEmail(req, { to, firstName, cartItems, settings 
             <td style="padding:0 40px 25px;">
               <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f7;border-radius:12px;padding:20px;">
                 <tr>
-                  <td style="font-size:16px;color:#333;">Sepet Toplamı</td>
-                  <td align="right" style="font-size:18px;font-weight:700;color:#111;">${totalAmount.toLocaleString("tr-TR")} TL</td>
+                  <td style="font-size:16px;color:#333;">Ara Toplam</td>
+                  <td align="right" style="font-size:16px;font-weight:600;color:#111;">${subtotalAmount.toLocaleString("tr-TR")} TL</td>
+                </tr>
+                <tr>
+                  <td style="padding-top:8px;font-size:16px;color:#333;">Kargo</td>
+                  <td align="right" style="padding-top:8px;font-size:16px;font-weight:600;color:#111;">${shippingAmount === 0 ? "Ücretsiz" : `${shippingAmount.toLocaleString("tr-TR")} TL`}</td>
+                </tr>
+                ${
+                  discountAmount > 0
+                    ? `
+                <tr>
+                  <td style="padding-top:8px;font-size:16px;color:#333;">Kupon İndirimi</td>
+                  <td align="right" style="padding-top:8px;font-size:16px;font-weight:600;color:#0f766e;">-${discountAmount.toLocaleString("tr-TR")} TL</td>
+                </tr>
+                `
+                    : ""
+                }
+                <tr>
+                  <td style="padding-top:10px;font-size:18px;color:#333;">Toplam</td>
+                  <td align="right" style="padding-top:10px;font-size:18px;font-weight:700;color:#111;">${totalAmount.toLocaleString("tr-TR")} TL</td>
                 </tr>
               </table>
             </td>
@@ -1600,10 +1678,21 @@ async function sendAbandonedCartEmail(req, { to, firstName, cartItems, settings 
     `Merhaba ${String(firstName ?? "").trim() || "Müşterimiz"},`,
     String(safeSettings.body ?? DEFAULT_ABANDONED_CART_SETTINGS.body).trim(),
     "",
+    ...(couponSummary?.valid
+      ? [
+          `İndirim kodunuz: ${couponSummary.code}`,
+          `Kupon avantajı: ${couponValueLabel} indirim`,
+          `Minimum sepet tutarı: ${couponSummary.minimumSubtotal.toLocaleString("tr-TR")} TL`,
+          "",
+        ]
+      : []),
     "Sepetinizde kalan ürünler:",
     textItems,
     "",
-    `Sepet toplamı: ${totalAmount.toLocaleString("tr-TR")} TL`,
+    `Ara toplam: ${subtotalAmount.toLocaleString("tr-TR")} TL`,
+    `Kargo: ${shippingAmount === 0 ? "Ücretsiz" : `${shippingAmount.toLocaleString("tr-TR")} TL`}`,
+    ...(discountAmount > 0 ? [`Kupon indirimi: -${discountAmount.toLocaleString("tr-TR")} TL`] : []),
+    `Toplam: ${totalAmount.toLocaleString("tr-TR")} TL`,
     `Sepete dön: ${loginUrl}`,
   ].join("\n");
 
@@ -2286,6 +2375,101 @@ function serializeAbandonedCartSnapshot(items) {
   return JSON.stringify(snapshot);
 }
 
+function getCartSubtotal(items) {
+  return Math.max(
+    0,
+    Math.round(
+      (Array.isArray(items) ? items : []).reduce((sum, item) => {
+        const unitPrice = Number(item?.product?.price ?? 0);
+        const quantity = Math.max(1, Number(item?.quantity ?? 1) || 1);
+        return sum + unitPrice * quantity;
+      }, 0)
+    )
+  );
+}
+
+function getCartShippingAmount(subtotal) {
+  const normalizedSubtotal = Math.max(0, Math.round(Number(subtotal) || 0));
+  return normalizedSubtotal >= 1500 ? 0 : 79;
+}
+
+function normalizeAbandonedCartCouponCode(value) {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+}
+
+function getConfiguredAbandonedCartCoupon(settings) {
+  const safeSettings = sanitizeAbandonedCartSettings(settings);
+  if (!safeSettings.couponEnabled) {
+    return null;
+  }
+
+  const code = normalizeAbandonedCartCouponCode(safeSettings.couponCode);
+  if (!code) {
+    return null;
+  }
+
+  return {
+    code,
+    type: safeSettings.couponType === "fixed" ? "fixed" : "percentage",
+    value: Number(safeSettings.couponValue) || 0,
+    minimumSubtotal: Math.max(0, Number(safeSettings.couponMinimumSubtotal) || 0),
+    description: String(safeSettings.couponDescription ?? "").trim(),
+  };
+}
+
+function calculateAbandonedCartCouponDiscount(subtotal, coupon) {
+  const normalizedSubtotal = Math.max(0, Math.round(Number(subtotal) || 0));
+  if (!coupon || normalizedSubtotal <= 0 || normalizedSubtotal < coupon.minimumSubtotal) {
+    return 0;
+  }
+
+  if (coupon.type === "fixed") {
+    return Math.min(normalizedSubtotal, Math.max(0, Math.round(Number(coupon.value) || 0)));
+  }
+
+  const percentage = Math.max(0, Math.min(95, Number(coupon.value) || 0));
+  return Math.min(normalizedSubtotal, Math.round((normalizedSubtotal * percentage) / 100));
+}
+
+function resolveAbandonedCartCoupon({ code, cartItems, settings }) {
+  const configuredCoupon = getConfiguredAbandonedCartCoupon(settings);
+  const normalizedCode = normalizeAbandonedCartCouponCode(code);
+
+  if (!configuredCoupon || !normalizedCode || configuredCoupon.code !== normalizedCode) {
+    return null;
+  }
+
+  const subtotal = getCartSubtotal(cartItems);
+  const shippingAmount = getCartShippingAmount(subtotal);
+  const discountAmount = calculateAbandonedCartCouponDiscount(subtotal, configuredCoupon);
+  if (discountAmount <= 0) {
+    return {
+      valid: false,
+      reason:
+        subtotal < configuredCoupon.minimumSubtotal
+          ? `Kuponu kullanmak için sepet tutarı en az ${configuredCoupon.minimumSubtotal.toLocaleString("tr-TR")} TL olmalıdır.`
+          : "Kupon bu sepet için uygulanamadı.",
+    };
+  }
+
+  return {
+    valid: true,
+    code: configuredCoupon.code,
+    type: configuredCoupon.type,
+    value: configuredCoupon.value,
+    minimumSubtotal: configuredCoupon.minimumSubtotal,
+    description: configuredCoupon.description,
+    discountAmount,
+    subtotal,
+    shippingAmount,
+    totalBeforeDiscount: subtotal + shippingAmount,
+    totalAfterDiscount: Math.max(0, subtotal + shippingAmount - discountAmount),
+  };
+}
+
 async function hasSentAbandonedCartEmail(userId, cartSignature) {
   await ensureMarketingAbandonedCartEmailsTable();
   const [rows] = await pool.query(
@@ -2397,15 +2581,44 @@ async function getUserWishlistItems(userId) {
 }
 
 async function getUserOrders(userId) {
-  const [orderRows] = await pool.query(
-    `
-    SELECT id, order_date, total, status, shipping_company, shipping_tracking_no, created_at
-    FROM user_orders
-    WHERE user_id = ?
-    ORDER BY created_at DESC
-    `,
-    [userId]
-  );
+  let orderRows;
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT
+        id,
+        order_date,
+        total,
+        status,
+        subtotal_total,
+        shipping_total,
+        discount_total,
+        coupon_code,
+        shipping_company,
+        shipping_tracking_no,
+        created_at
+      FROM user_orders
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      `,
+      [userId]
+    );
+    orderRows = rows;
+  } catch (error) {
+    if (error?.code !== "ER_BAD_FIELD_ERROR") {
+      throw error;
+    }
+    const [rows] = await pool.query(
+      `
+      SELECT id, order_date, total, status, shipping_company, shipping_tracking_no, created_at
+      FROM user_orders
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      `,
+      [userId]
+    );
+    orderRows = rows;
+  }
 
   if (orderRows.length === 0) return [];
   const orderIds = orderRows.map((row) => row.id);
@@ -2442,6 +2655,10 @@ async function getUserOrders(userId) {
     date: row.created_at ?? row.order_date,
     items: itemsByOrderId.get(row.id) ?? [],
     total: Number(row.total),
+    subtotal: row.subtotal_total == null ? undefined : Number(row.subtotal_total),
+    shippingTotal: row.shipping_total == null ? undefined : Number(row.shipping_total),
+    discountTotal: row.discount_total == null ? undefined : Number(row.discount_total),
+    couponCode: row.coupon_code ?? "",
     status: row.status,
     shippingCompany: row.shipping_company ?? "",
     shippingTrackingNo: row.shipping_tracking_no ?? "",
@@ -2706,6 +2923,36 @@ function sanitizeAbandonedCartSettings(input = {}) {
   const heading = String(input?.heading ?? DEFAULT_ABANDONED_CART_SETTINGS.heading).trim().slice(0, 180);
   const body = String(input?.body ?? DEFAULT_ABANDONED_CART_SETTINGS.body).trim().slice(0, 2000);
   const ctaLabel = String(input?.ctaLabel ?? DEFAULT_ABANDONED_CART_SETTINGS.ctaLabel).trim().slice(0, 80);
+  const couponCode = String(input?.couponCode ?? DEFAULT_ABANDONED_CART_SETTINGS.couponCode)
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .slice(0, 40);
+  const couponType = String(input?.couponType ?? DEFAULT_ABANDONED_CART_SETTINGS.couponType).trim() === "fixed"
+    ? "fixed"
+    : "percentage";
+  const couponValueRaw = Number(input?.couponValue ?? DEFAULT_ABANDONED_CART_SETTINGS.couponValue);
+  const couponValue =
+    couponType === "fixed"
+      ? Math.max(1, Math.min(100000, Number.isFinite(couponValueRaw) ? Math.round(couponValueRaw) : DEFAULT_ABANDONED_CART_SETTINGS.couponValue))
+      : Math.max(1, Math.min(95, Number.isFinite(couponValueRaw) ? Math.round(couponValueRaw) : DEFAULT_ABANDONED_CART_SETTINGS.couponValue));
+  const couponMinimumSubtotalRaw = Number(
+    input?.couponMinimumSubtotal ?? DEFAULT_ABANDONED_CART_SETTINGS.couponMinimumSubtotal
+  );
+  const couponMinimumSubtotal = Math.max(
+    0,
+    Math.min(
+      1000000,
+      Number.isFinite(couponMinimumSubtotalRaw)
+        ? Math.round(couponMinimumSubtotalRaw)
+        : DEFAULT_ABANDONED_CART_SETTINGS.couponMinimumSubtotal
+    )
+  );
+  const couponDescription = String(
+    input?.couponDescription ?? DEFAULT_ABANDONED_CART_SETTINGS.couponDescription
+  )
+    .trim()
+    .slice(0, 200);
 
   return {
     enabled: Boolean(input?.enabled),
@@ -2714,6 +2961,12 @@ function sanitizeAbandonedCartSettings(input = {}) {
     heading: heading || DEFAULT_ABANDONED_CART_SETTINGS.heading,
     body: body || DEFAULT_ABANDONED_CART_SETTINGS.body,
     ctaLabel: ctaLabel || DEFAULT_ABANDONED_CART_SETTINGS.ctaLabel,
+    couponEnabled: Boolean(input?.couponEnabled && couponCode),
+    couponCode,
+    couponType,
+    couponValue,
+    couponMinimumSubtotal,
+    couponDescription: couponDescription || DEFAULT_ABANDONED_CART_SETTINGS.couponDescription,
   };
 }
 
@@ -3617,12 +3870,11 @@ app.get("/api/orders", requireAuth, async (req, res) => {
 });
 
 app.post("/api/orders", requireAuth, async (req, res) => {
-  const { id, date, status, total, items, shippingAddress } = req.body ?? {};
+  const { id, date, status, items, shippingAddress, couponCode } = req.body ?? {};
   const orderId = String(id ?? "").trim();
   const orderDate = String(date ?? "").trim();
   const orderStatus = String(status ?? "processing").trim();
-  const orderTotal = Number(total);
-  const orderItems = Array.isArray(items) ? items : [];
+  const inputItems = Array.isArray(items) ? items : [];
   const shipping = shippingAddress && typeof shippingAddress === "object" ? shippingAddress : {};
   const shippingAddressName = String(shipping.addressName ?? "").trim();
   const shippingFirstName = String(shipping.firstName ?? "").trim();
@@ -3633,12 +3885,18 @@ app.post("/api/orders", requireAuth, async (req, res) => {
   const shippingDistrict = String(shipping.district ?? "").trim();
   const shippingNeighborhood = String(shipping.neighborhood ?? "").trim();
 
-  if (!orderId || !orderDate || !Number.isFinite(orderTotal) || orderItems.length === 0) {
+  if (!orderId || !orderDate) {
+    return res.status(400).json({ message: "Invalid order payload." });
+  }
+
+  const serverCartItems = await getUserCartItems(req.authUser.id);
+  const trustedOrderItems = serverCartItems.length > 0 ? serverCartItems : inputItems;
+  if (trustedOrderItems.length === 0) {
     return res.status(400).json({ message: "Invalid order payload." });
   }
 
   const normalizedItems = [];
-  for (const item of orderItems) {
+  for (const item of trustedOrderItems) {
     const quantity = Number(item?.quantity);
     if (!Number.isInteger(quantity) || quantity < 1 || !item?.product) {
       return res.status(400).json({ message: "Invalid order item payload." });
@@ -3650,12 +3908,28 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     });
   }
 
+  const subtotal = getCartSubtotal(trustedOrderItems);
+  const shippingTotal = getCartShippingAmount(subtotal);
+  const settings = await getAbandonedCartSettings();
+  const coupon = normalizeAbandonedCartCouponCode(couponCode)
+    ? resolveAbandonedCartCoupon({ code: couponCode, cartItems: trustedOrderItems, settings })
+    : null;
+  if (coupon && !coupon.valid) {
+    return res.status(400).json({ message: coupon.reason || "Kupon geçersiz." });
+  }
+  const discountTotal = coupon?.valid ? coupon.discountAmount : 0;
+  const orderTotal = Math.max(0, subtotal + shippingTotal - discountTotal);
+
   const createdOrder = {
     id: orderId,
     date: orderDate,
     total: Math.round(orderTotal),
+    subtotal,
+    shippingTotal,
+    discountTotal,
+    couponCode: coupon?.valid ? coupon.code : "",
     status: orderStatus,
-    items: orderItems.map((item) => ({
+    items: trustedOrderItems.map((item) => ({
       product: normalizeProductMedia(item.product),
       quantity: Number(item.quantity),
       color: item?.color == null ? undefined : String(item.color).trim(),
@@ -3673,9 +3947,10 @@ app.post("/api/orders", requireAuth, async (req, res) => {
         `
         INSERT INTO user_orders (
           id, user_id, order_date, total, status,
+          subtotal_total, shipping_total, discount_total, coupon_code,
           shipping_first_name, shipping_last_name, shipping_phone, shipping_street, shipping_province, shipping_district, shipping_neighborhood
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           orderId,
@@ -3683,6 +3958,10 @@ app.post("/api/orders", requireAuth, async (req, res) => {
           orderDate,
           Math.round(orderTotal),
           orderStatus,
+          subtotal,
+          shippingTotal,
+          discountTotal,
+          coupon?.valid ? coupon.code : null,
           shippingFirstName,
           shippingLastName,
           shippingPhone,
@@ -3788,7 +4067,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/paytr/token", async (req, res) => {
+app.post("/api/paytr/token", requireAuth, async (req, res) => {
   try {
     const merchantId = process.env.PAYTR_MERCHANT_ID;
     const merchantKey = process.env.PAYTR_MERCHANT_KEY;
@@ -3801,7 +4080,7 @@ app.post("/api/paytr/token", async (req, res) => {
       return res.status(500).json({ message: "PAYTR env settings are missing." });
     }
 
-    const { email, firstName, lastName, phone, street, province, district, total, items } = req.body ?? {};
+    const { email, firstName, lastName, phone, street, province, district, couponCode } = req.body ?? {};
     const normalizedEmail = String(email ?? "").trim();
     const normalizedFirstName = String(firstName ?? "").trim();
     const normalizedLastName = String(lastName ?? "").trim();
@@ -3809,8 +4088,18 @@ app.post("/api/paytr/token", async (req, res) => {
     const normalizedStreet = String(street ?? "").trim();
     const normalizedProvince = String(province ?? "").trim();
     const normalizedDistrict = String(district ?? "").trim();
-    const amount = Number(total);
-    const orderItems = Array.isArray(items) ? items : [];
+    const orderItems = await getUserCartItems(req.authUser.id);
+    const subtotal = getCartSubtotal(orderItems);
+    const shippingAmount = getCartShippingAmount(subtotal);
+    const settings = await getAbandonedCartSettings();
+    const coupon = normalizeAbandonedCartCouponCode(couponCode)
+      ? resolveAbandonedCartCoupon({ code: couponCode, cartItems: orderItems, settings })
+      : null;
+    if (coupon && !coupon.valid) {
+      return res.status(400).json({ message: coupon.reason || "Kupon geçersiz." });
+    }
+    const discountAmount = coupon?.valid ? coupon.discountAmount : 0;
+    const amount = subtotal + shippingAmount - discountAmount;
 
     if (
       !normalizedEmail ||
@@ -3829,9 +4118,9 @@ app.post("/api/paytr/token", async (req, res) => {
 
     const paymentAmount = Math.round(amount * 100);
     const userBasketRaw = orderItems.map((item) => [
-      String(item?.name ?? "").slice(0, 120),
-      Number(item?.unitPrice ?? 0).toFixed(2),
-      Number(item?.quantity ?? 1),
+      String(item?.product?.name ?? "").slice(0, 120),
+      Number(item?.product?.price ?? 0).toFixed(2),
+      Math.max(1, Number(item?.quantity ?? 1) || 1),
     ]);
     const userBasket = Buffer.from(JSON.stringify(userBasketRaw), "utf8").toString("base64");
 
@@ -4039,9 +4328,36 @@ app.get("/api/admin/marketing/abandoned-cart", requireAdminAuth, async (_req, re
   }
 });
 
+app.post("/api/marketing/abandoned-cart/coupon/apply", requireAuth, async (req, res) => {
+  try {
+    const code = normalizeAbandonedCartCouponCode(req.body?.code);
+    if (!code) {
+      return res.status(400).json({ message: "Kupon kodu zorunludur." });
+    }
+
+    const cartItems = await getUserCartItems(req.authUser.id);
+    if (cartItems.length === 0) {
+      return res.status(400).json({ message: "Sepetiniz boş." });
+    }
+
+    const settings = await getAbandonedCartSettings();
+    const coupon = resolveAbandonedCartCoupon({ code, cartItems, settings });
+    if (!coupon?.valid) {
+      return res.status(400).json({
+        message: coupon?.reason || "Kupon kodu geçersiz veya şu anda aktif değil.",
+      });
+    }
+
+    return res.json({ coupon });
+  } catch (error) {
+    return res.status(500).json({ message: "Kupon doğrulanamadı." });
+  }
+});
+
 app.put("/api/admin/marketing/abandoned-cart", requireAdminAuth, async (req, res) => {
   try {
-    const settings = sanitizeAbandonedCartSettings(req.body ?? {});
+    const rawSettings = req.body ?? {};
+    const settings = sanitizeAbandonedCartSettings(rawSettings);
     if (!String(settings.subject ?? "").trim()) {
       return res.status(400).json({ message: "E-posta konusu zorunludur." });
     }
@@ -4050,6 +4366,14 @@ app.put("/api/admin/marketing/abandoned-cart", requireAdminAuth, async (req, res
     }
     if (!String(settings.body ?? "").trim()) {
       return res.status(400).json({ message: "Mesaj metni zorunludur." });
+    }
+    if (Boolean(rawSettings?.couponEnabled)) {
+      if (!String(settings.couponCode ?? "").trim()) {
+        return res.status(400).json({ message: "Kupon kodu zorunludur." });
+      }
+      if (!Number.isFinite(Number(settings.couponValue)) || Number(settings.couponValue) <= 0) {
+        return res.status(400).json({ message: "Kupon değeri 0'dan büyük olmalıdır." });
+      }
     }
     const saved = await setAbandonedCartSettings(settings);
     const stats = await getAbandonedCartCampaignStats();
@@ -4146,6 +4470,10 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
           o.order_date,
           o.total,
           o.status,
+          o.subtotal_total,
+          o.shipping_total,
+          o.discount_total,
+          o.coupon_code,
           o.shipping_company,
           o.shipping_tracking_no,
           o.shipping_first_name,
@@ -4273,6 +4601,10 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
         date: row.created_at ?? row.order_date,
         items: itemsByOrderId.get(row.id) ?? [],
         total: Number(row.total),
+        subtotal: row.subtotal_total == null ? undefined : Number(row.subtotal_total),
+        shippingTotal: row.shipping_total == null ? undefined : Number(row.shipping_total),
+        discountTotal: row.discount_total == null ? undefined : Number(row.discount_total),
+        couponCode: row.coupon_code ?? "",
         status: row.status,
         shippingCompany: row.shipping_company ?? "",
         shippingTrackingNo: row.shipping_tracking_no ?? "",

@@ -2,10 +2,16 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { Check, ChevronRight, Truck } from "lucide-react";
 import { useStore } from "@/store/StoreContext";
-import { createOrder, createPaytrIframe, saveAddress } from "@/lib/api";
+import { applyAbandonedCartCoupon, createOrder, createPaytrIframe, saveAddress } from "@/lib/api";
+import {
+  clearStoredAbandonedCartCoupon,
+  getCouponDiscountAmount,
+  getStoredAbandonedCartCouponCode,
+  storeAbandonedCartCoupon,
+} from "@/lib/abandonedCartCoupon";
 import { loadTurkeyLocations } from "@/lib/turkiye";
 import { trackPurchase } from "@/lib/analytics";
-import type { Order } from "@/types";
+import type { AppliedAbandonedCartCoupon, Order } from "@/types";
 
 const PAYTR_PREFETCH_MAX_AGE_MS = 90 * 1000;
 
@@ -19,6 +25,7 @@ type PaytrPayload = {
   district: string;
   total: number;
   items: Array<{ name: string; unitPrice: number; quantity: number }>;
+  couponCode?: string | null;
 };
 
 type PaytrPreparedIframe = {
@@ -46,6 +53,8 @@ export function Checkout() {
   const [isPaytrLoading, setIsPaytrLoading] = useState(false);
   const [paytrError, setPaytrError] = useState("");
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<AppliedAbandonedCartCoupon | null>(null);
+  const [couponMessage, setCouponMessage] = useState("");
   const processedPathRef = useRef<string>("");
   const paytrCacheRef = useRef(new Map<string, { data: PaytrPreparedIframe; createdAt: number }>());
   const paytrInFlightRef = useRef(new Map<string, Promise<PaytrPreparedIframe>>());
@@ -100,7 +109,8 @@ export function Checkout() {
   };
 
   const shippingCost = cartTotal >= 1500 ? 0 : 79;
-  const total = cartTotal + shippingCost;
+  const discountAmount = getCouponDiscountAmount(cartTotal, appliedCoupon);
+  const total = Math.max(0, cartTotal + shippingCost - discountAmount);
 
   const [shippingInfo, setShippingInfo] = useState({
     addressName: "",
@@ -167,6 +177,7 @@ export function Checkout() {
       province: info.province,
       district: info.district,
       total,
+      couponCode: appliedCoupon?.code ?? null,
       items: state.cart.map((item) => ({
         name: item.product.name,
         unitPrice: item.product.price,
@@ -271,12 +282,49 @@ export function Checkout() {
   const selectedShippingInfo = useMemo(() => buildShippingInfoFromAddress(selectedAddress), [selectedAddress]);
   const selectedPaytrPayload = useMemo(
     () => (selectedShippingInfo ? buildPaytrPayload(selectedShippingInfo) : null),
-    [selectedShippingInfo, state.cart, total]
+    [selectedShippingInfo, state.cart, total, appliedCoupon?.code]
   );
-  const currentPaytrPayload = useMemo(() => buildPaytrPayload(shippingInfo), [shippingInfo, state.cart, total]);
+  const currentPaytrPayload = useMemo(
+    () => buildPaytrPayload(shippingInfo),
+    [shippingInfo, state.cart, total, appliedCoupon?.code]
+  );
 
   const isPaymentSuccessPath = location.pathname === "/odeme/basarili";
   const isPaymentFailPath = location.pathname === "/odeme/basarisiz";
+
+  useEffect(() => {
+    if (!state.isAuthenticated || state.cart.length === 0) {
+      setAppliedCoupon(null);
+      setCouponMessage("");
+      return;
+    }
+
+    const storedCode = getStoredAbandonedCartCouponCode();
+    if (!storedCode) {
+      setAppliedCoupon(null);
+      setCouponMessage("");
+      return;
+    }
+
+    let isMounted = true;
+    applyAbandonedCartCoupon(storedCode)
+      .then((coupon) => {
+        if (!isMounted) return;
+        setAppliedCoupon(coupon);
+        setCouponMessage(`${coupon.code} kuponu siparişinize uygulandı.`);
+        storeAbandonedCartCoupon(coupon);
+      })
+      .catch((error) => {
+        if (!isMounted) return;
+        setAppliedCoupon(null);
+        clearStoredAbandonedCartCoupon();
+        setCouponMessage(error instanceof Error ? error.message : "Kupon artık geçerli değil.");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [cartTotal, state.cart.length, state.isAuthenticated]);
 
   useEffect(() => {
     if (isPaymentSuccessPath) {
@@ -291,6 +339,10 @@ export function Checkout() {
           date: new Date().toISOString().split("T")[0],
           items: [...state.cart],
           total,
+          subtotal: cartTotal,
+          shippingTotal: shippingCost,
+          discountTotal: discountAmount,
+          couponCode: appliedCoupon?.code ?? "",
           status: "processing" as const,
           // Prefer current shipping form data; if redirect wiped state, recover from selected/default address.
           shippingAddress: {
@@ -371,6 +423,8 @@ export function Checkout() {
               })),
             });
             dispatch({ type: "CLEAR_CART" });
+            clearStoredAbandonedCartCoupon();
+            setAppliedCoupon(null);
           })
           .catch(() => {
             // Fallback keeps UX working even if API fails.
@@ -391,6 +445,8 @@ export function Checkout() {
               })),
             });
             dispatch({ type: "CLEAR_CART" });
+            clearStoredAbandonedCartCoupon();
+            setAppliedCoupon(null);
           });
       } else if (state.orders.length > 0) {
         setCompletedOrder(state.orders[state.orders.length - 1]);
@@ -1013,11 +1069,21 @@ export function Checkout() {
                   <span className="text-gray-500">Kargo</span>
                   <span>{shippingCost === 0 ? "\u00dccretsiz" : `${shippingCost} TL`}</span>
                 </div>
+                {discountAmount > 0 ? (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">
+                      Kupon İndirimi{appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}
+                    </span>
+                    <span className="text-emerald-700">-{discountAmount.toLocaleString("tr-TR")} TL</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between pt-3 border-t border-gray-200">
                   <span className="font-medium">Toplam</span>
                   <span className="text-xl font-medium">{total.toLocaleString("tr-TR")} TL</span>
                 </div>
               </div>
+
+              {couponMessage ? <p className="mt-4 text-sm text-gray-600">{couponMessage}</p> : null}
 
               <div className="mt-6 flex items-center gap-2 text-sm text-gray-500">
                 <Truck className="w-4 h-4" />

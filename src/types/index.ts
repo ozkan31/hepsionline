@@ -27,11 +27,30 @@ export interface CartItem {
   color?: string;
 }
 
+export type DiscountType = "percentage" | "fixed";
+
+export interface AppliedAbandonedCartCoupon {
+  code: string;
+  type: DiscountType;
+  value: number;
+  minimumSubtotal: number;
+  description: string;
+  discountAmount: number;
+  subtotal: number;
+  shippingAmount: number;
+  totalBeforeDiscount: number;
+  totalAfterDiscount: number;
+}
+
 export interface Order {
   id: string;
   date: string;
   items: CartItem[];
   total: number;
+  subtotal?: number;
+  shippingTotal?: number;
+  discountTotal?: number;
+  couponCode?: string;
   status: 'processing' | 'shipped' | 'delivered';
   shippingCompany?: string;
   shippingTrackingNo?: string;
@@ -116,6 +135,12 @@ export interface AdminAbandonedCartSettings {
   heading: string;
   body: string;
   ctaLabel: string;
+  couponEnabled: boolean;
+  couponCode: string;
+  couponType: DiscountType;
+  couponValue: number;
+  couponMinimumSubtotal: number;
+  couponDescription: string;
 }
 
 export interface AdminAbandonedCartStats {

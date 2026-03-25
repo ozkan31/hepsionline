@@ -35,7 +35,8 @@ for (const root of roots) {
 const findings = [];
 
 for (const filePath of files) {
-  if (relative(process.cwd(), filePath) === "scripts\\check-turkish-encoding.mjs") {
+  const relativePath = relative(process.cwd(), filePath).replace(/\\/g, "/");
+  if (relativePath === "scripts/check-turkish-encoding.mjs") {
     continue;
   }
 
@@ -56,7 +57,7 @@ for (const filePath of files) {
 
     if (hasSuspiciousToken || hasControlCharacter) {
       findings.push({
-        filePath: relative(process.cwd(), filePath),
+        filePath: relativePath,
         lineNumber: index + 1,
         line,
       });

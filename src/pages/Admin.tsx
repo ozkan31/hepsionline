@@ -57,23 +57,23 @@ const shippingCompanies = [
   "Aras Kargo",
   "PTT Kargo",
   "DHL",
-  "SÃ¼rat Kargo",
-  "YurtiÃ§i Kargo",
+  "Sürat Kargo",
+  "Yurtiçi Kargo",
 ];
 const defaultMarketingSettings: AdminAbandonedCartSettings = {
   enabled: false,
   delayMinutes: 120,
   subject: "Sepetiniz sizi bekliyor",
-  heading: "Sepetinizde bÄ±raktÄ±ÄŸÄ±nÄ±z Ã¼rÃ¼nler sizi bekliyor",
+  heading: "Sepetinizde bıraktığınız ürünler sizi bekliyor",
   body:
-    "SeÃ§tiÄŸiniz Ã¼rÃ¼nler hÃ¢lÃ¢ sepetinizde duruyor. TÃ¼kenmeden alÄ±ÅŸveriÅŸinizi tamamlamak iÃ§in sepete geri dÃ¶nebilirsiniz.",
-  ctaLabel: "Sepetime DÃ¶n",
+    "Seçtiğiniz ürünler hâlâ sepetinizde duruyor. Tükenmeden alışverişinizi tamamlamak için sepete geri dönebilirsiniz.",
+  ctaLabel: "Sepetime Dön",
   couponEnabled: false,
   couponCode: "",
   couponType: "percentage",
   couponValue: 10,
   couponMinimumSubtotal: 750,
-  couponDescription: "Sepetinize Ã¶zel indirim kodunuz hazÄ±r.",
+  couponDescription: "Sepetinize özel indirim kodunuz hazır.",
 };
 
 function getStoredAdminToken() {
@@ -208,7 +208,7 @@ export function Admin() {
           return acc;
         }, {}));
       } catch (err) {
-        setOrdersError(err instanceof Error ? err.message : "SipariÅŸler alÄ±namadÄ±.");
+        setOrdersError(err instanceof Error ? err.message : "Siparişler alınamadı.");
       } finally {
         setOrdersLoading(false);
       }
@@ -251,7 +251,7 @@ export function Admin() {
         }
       } catch (err) {
         if (!mounted) return;
-        setProductsError(err instanceof Error ? err.message : "ÃœrÃ¼nler alÄ±namadÄ±.");
+        setProductsError(err instanceof Error ? err.message : "Ürünler alınamadı.");
       } finally {
         if (mounted) setProductsLoading(false);
       }
@@ -284,7 +284,7 @@ export function Admin() {
         setMerchantStatus(merchant);
       } catch (err) {
         if (!mounted) return;
-        setSettingsMessage(err instanceof Error ? err.message : "Ayarlar alÄ±namadÄ±.");
+        setSettingsMessage(err instanceof Error ? err.message : "Ayarlar alınamadı.");
       } finally {
         if (mounted) {
           setSettingsLoading(false);
@@ -316,7 +316,7 @@ export function Admin() {
         setUsers(data);
       } catch (err) {
         if (!mounted) return;
-        setUsersError(err instanceof Error ? err.message : "KullanÄ±cÄ±lar alÄ±namadÄ±.");
+        setUsersError(err instanceof Error ? err.message : "Kullanıcılar alınamadı.");
       } finally {
         if (mounted) setUsersLoading(false);
       }
@@ -351,7 +351,7 @@ export function Admin() {
         const data = await fetchAdminContactRequests(token);
         setContactRequests(data);
       } catch (err) {
-        setContactRequestsError(err instanceof Error ? err.message : "Ä°letiÅŸim talepleri alÄ±namadÄ±.");
+        setContactRequestsError(err instanceof Error ? err.message : "İletişim talepleri alınamadı.");
       } finally {
         setContactRequestsLoading(false);
       }
@@ -376,7 +376,7 @@ export function Admin() {
         setMarketingStats(data.stats);
       } catch (err) {
         if (!mounted) return;
-        setMarketingMessage(err instanceof Error ? err.message : "Pazarlama ayarlarÄ± alÄ±namadÄ±.");
+        setMarketingMessage(err instanceof Error ? err.message : "Pazarlama ayarları alınamadı.");
       } finally {
         if (mounted) setMarketingLoading(false);
       }
@@ -400,7 +400,7 @@ export function Admin() {
       setEmail("");
       setPassword("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "GiriÅŸ baÅŸarÄ±sÄ±z.");
+      setError(err instanceof Error ? err.message : "Giriş başarısız.");
     } finally {
       setSubmitting(false);
     }
@@ -469,7 +469,7 @@ export function Admin() {
     try {
       const updated = await updateAdminSettings(token, { siteName: normalized });
       setSiteNameInput(updated.siteName);
-      setSettingsMessage("Site ismi gÃ¼ncellendi.");
+      setSettingsMessage("Site ismi güncellendi.");
     } catch (err) {
       setSettingsMessage(err instanceof Error ? err.message : "Ayarlar kaydedilemedi.");
     } finally {
@@ -488,9 +488,9 @@ export function Admin() {
       const data = await updateAdminAbandonedCartCampaign(token, marketingSettings);
       setMarketingSettings(data.settings);
       setMarketingStats(data.stats);
-      setMarketingMessage("Sepeti terk eden mÃ¼ÅŸteriler kampanyasÄ± kaydedildi.");
+      setMarketingMessage("Sepeti terk eden müşteriler kampanyası kaydedildi.");
     } catch (err) {
-      setMarketingMessage(err instanceof Error ? err.message : "Pazarlama ayarlarÄ± kaydedilemedi.");
+      setMarketingMessage(err instanceof Error ? err.message : "Pazarlama ayarları kaydedilemedi.");
     } finally {
       setIsSavingMarketing(false);
     }
@@ -509,7 +509,7 @@ export function Admin() {
       setMarketingSettings(refreshed.settings);
       setMarketingStats(refreshed.stats);
     } catch (err) {
-      setMarketingMessage(err instanceof Error ? err.message : "Kampanya Ã§alÄ±ÅŸtÄ±rÄ±lamadÄ±.");
+      setMarketingMessage(err instanceof Error ? err.message : "Kampanya çalıştırılamadı.");
     } finally {
       setIsRunningMarketing(false);
     }
@@ -522,7 +522,7 @@ export function Admin() {
       case "shipped":
         return "Kargoya Verildi";
       case "processing":
-        return "HazÄ±rlanÄ±yor";
+        return "Hazırlanıyor";
       default:
         return status;
     }
@@ -584,7 +584,7 @@ export function Admin() {
         )
       );
     } catch (err) {
-      setOrdersError(err instanceof Error ? err.message : "SipariÅŸ durumu gÃ¼ncellenemedi.");
+      setOrdersError(err instanceof Error ? err.message : "Sipariş durumu güncellenemedi.");
     } finally {
       setStatusSavingByOrderId((prev) => ({ ...prev, [orderId]: false }));
     }
@@ -598,7 +598,7 @@ export function Admin() {
     }
     setIsCreatingProduct(false);
     setEditingProductId(product.id);
-    setProductSaveMessage("ÃœrÃ¼n detaylarÄ± yÃ¼kleniyor...");
+    setProductSaveMessage("Ürün detayları yükleniyor...");
     try {
       const detailed = await fetchAdminProductById(token, product.id);
       const normalizedFeatures = Array.isArray(detailed.features)
@@ -634,7 +634,7 @@ export function Admin() {
       setNewTagName("");
       setProductSaveMessage("");
     } catch (error) {
-      setProductSaveMessage(error instanceof Error ? error.message : "ÃœrÃ¼n detaylarÄ± alÄ±namadÄ±.");
+      setProductSaveMessage(error instanceof Error ? error.message : "Ürün detayları alınamadı.");
     }
   };
 
@@ -647,10 +647,10 @@ export function Admin() {
       const result = await syncAdminGoogleMerchant(token);
       setMerchantMessage(
         result?.message ||
-          `Google Merchant senkron tamamlandÄ±. BaÅŸarÄ±lÄ±: ${result.success}, Silinen: ${result.deleted}, HatalÄ±: ${result.failed}`
+          `Google Merchant senkron tamamlandı. Başarılı: ${result.success}, Silinen: ${result.deleted}, Hatalı: ${result.failed}`
       );
     } catch (err) {
-      setMerchantMessage(err instanceof Error ? err.message : "Google Merchant senkronu baÅŸarÄ±sÄ±z.");
+      setMerchantMessage(err instanceof Error ? err.message : "Google Merchant senkronu başarısız.");
     } finally {
       setMerchantSyncing(false);
     }
@@ -707,7 +707,7 @@ export function Admin() {
 
     const remaining = Math.max(0, MAX_PRODUCT_IMAGES - productEditor.images.length);
     if (remaining === 0) {
-      setProductSaveMessage(`En fazla ${MAX_PRODUCT_IMAGES} gÃ¶rsel ekleyebilirsiniz.`);
+      setProductSaveMessage(`En fazla ${MAX_PRODUCT_IMAGES} görsel ekleyebilirsiniz.`);
       return;
     }
 
@@ -718,16 +718,16 @@ export function Admin() {
       })
       .slice(0, remaining);
     if (accepted.length === 0) {
-      setProductSaveMessage("LÃ¼tfen geÃ§erli bir gÃ¶rsel dosyasÄ± seÃ§in.");
+      setProductSaveMessage("Lütfen geçerli bir görsel dosyası seçin.");
       return;
     }
     const token = getStoredAdminToken();
     if (!token) {
-      setProductSaveMessage("Admin oturumu bulunamadÄ±.");
+      setProductSaveMessage("Admin oturumu bulunamadı.");
       return;
     }
 
-    setProductSaveMessage("GÃ¶rseller yÃ¼kleniyor...");
+    setProductSaveMessage("Görseller yükleniyor...");
     try {
       const uploadedUrls = await uploadAdminProductImages(token, accepted);
       const selected = uploadedUrls.map((url, index) => ({
@@ -737,12 +737,12 @@ export function Admin() {
       }));
       setProductEditor((prev) => (prev ? { ...prev, images: [...prev.images, ...selected] } : prev));
       if (files.length > remaining) {
-        setProductSaveMessage(`En fazla ${MAX_PRODUCT_IMAGES} gÃ¶rsel ekleyebilirsiniz.`);
+        setProductSaveMessage(`En fazla ${MAX_PRODUCT_IMAGES} görsel ekleyebilirsiniz.`);
       } else {
         setProductSaveMessage("");
       }
     } catch (error) {
-      setProductSaveMessage(error instanceof Error ? error.message : "GÃ¶rseller yÃ¼klenemedi.");
+      setProductSaveMessage(error instanceof Error ? error.message : "Görseller yüklenemedi.");
     }
   };
 
@@ -910,12 +910,12 @@ export function Admin() {
     if (!token) return;
 
     if (!productEditor.name.trim()) {
-      setProductSaveMessage("ÃœrÃ¼n ismi zorunlu.");
+      setProductSaveMessage("Ürün ismi zorunlu.");
       return;
     }
     const primaryImage = productEditor.images.find((image) => image.url.trim().length > 0)?.url?.trim() ?? "";
     if (!primaryImage) {
-      setProductSaveMessage("Kaydetmek iÃ§in en az bir gÃ¶rsel zorunlu.");
+      setProductSaveMessage("Kaydetmek için en az bir görsel zorunlu.");
       return;
     }
     const numericPrice = Number(productEditor.price);
@@ -971,10 +971,10 @@ export function Admin() {
       });
       setEditingProductId(updatedProduct.id);
       setIsCreatingProduct(false);
-      setProductSaveMessage(isCreatingProduct ? "ÃœrÃ¼n baÅŸarÄ±yla eklendi." : "ÃœrÃ¼n baÅŸarÄ±yla gÃ¼ncellendi.");
+      setProductSaveMessage(isCreatingProduct ? "Ürün başarıyla eklendi." : "Ürün başarıyla güncellendi.");
     } catch (err) {
       setProductSaveMessage(
-        err instanceof Error ? err.message : isCreatingProduct ? "ÃœrÃ¼n eklenemedi." : "ÃœrÃ¼n gÃ¼ncellenemedi."
+        err instanceof Error ? err.message : isCreatingProduct ? "Ürün eklenemedi." : "Ürün güncellenemedi."
       );
     } finally {
       setIsSavingProduct(false);
@@ -984,7 +984,7 @@ export function Admin() {
   const handleDeleteProduct = async (product: Product) => {
     const token = getStoredAdminToken();
     if (!token) return;
-    const confirmText = `"${product.name}" Ã¼rÃ¼nÃ¼nÃ¼ silmek istediÄŸinize emin misiniz?`;
+    const confirmText = `"${product.name}" ürününü silmek istediğinize emin misiniz?`;
     if (!window.confirm(confirmText)) return;
 
     setProductsError("");
@@ -995,7 +995,7 @@ export function Admin() {
         closeProductEditor();
       }
     } catch (err) {
-      setProductsError(err instanceof Error ? err.message : "ÃœrÃ¼n silinemedi.");
+      setProductsError(err instanceof Error ? err.message : "Ürün silinemedi.");
     }
   };
 
@@ -1003,7 +1003,7 @@ export function Admin() {
     return (
       <div className="min-h-screen bg-[#F8F7F4] pt-24 pb-20 px-4 md:px-8">
         <div className="max-w-md mx-auto bg-white rounded-lg p-6 text-center text-gray-500">
-          YÃ¼kleniyor...
+          Yükleniyor...
         </div>
       </div>
     );
@@ -1013,7 +1013,7 @@ export function Admin() {
     return (
       <div className="min-h-screen bg-[#F8F7F4] pt-24 pb-20 px-4 md:px-8">
         <div className="max-w-md mx-auto bg-white rounded-lg p-6 md:p-8">
-          <h1 className="text-2xl font-light mb-6">Admin GiriÅŸ</h1>
+          <h1 className="text-2xl font-light mb-6">Admin Giriş</h1>
           {error && <p className="mb-4 text-sm text-red-600 bg-red-50 p-3 rounded">{error}</p>}
           <form onSubmit={handleLogin} className="space-y-4" autoComplete="on">
             <div>
@@ -1029,7 +1029,7 @@ export function Admin() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Åifre</label>
+              <label className="block text-sm font-medium mb-2">Şifre</label>
               <input
                 type="password"
                 required
@@ -1047,14 +1047,14 @@ export function Admin() {
                 onChange={(e) => setRememberMe(e.target.checked)}
                 className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
               />
-              <span>Bu cihazda beni hatirla</span>
+              <span>Bu cihazda beni hatırla</span>
             </label>
             <button
               type="submit"
               disabled={submitting}
               className="w-full bg-black text-white py-3 rounded-full text-sm disabled:opacity-50"
             >
-              {submitting ? "GiriÅŸ yapÄ±lÄ±yor..." : "GiriÅŸ Yap"}
+              {submitting ? "Giriş yapılıyor..." : "Giriş Yap"}
             </button>
           </form>
         </div>
@@ -1074,7 +1074,7 @@ export function Admin() {
                 activeSection === "orders" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
               }`}
             >
-              SipariÅŸler
+              Siparişler
             </button>
             <button
               onClick={() => handleSectionChange("products")}
@@ -1082,7 +1082,7 @@ export function Admin() {
                 activeSection === "products" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
               }`}
             >
-              ÃœrÃ¼nler
+              Ürünler
             </button>
             <button
               onClick={() => handleSectionChange("users")}
@@ -1090,7 +1090,7 @@ export function Admin() {
                 activeSection === "users" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
               }`}
             >
-              KullanÄ±cÄ±lar
+              Kullanıcılar
             </button>
             <button
               onClick={() => handleSectionChange("contactRequests")}
@@ -1098,7 +1098,7 @@ export function Admin() {
                 activeSection === "contactRequests" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
               }`}
             >
-              Ä°letiÅŸim Talepleri
+              İletişim Talepleri
             </button>
             <button
               onClick={() => handleSectionChange("marketing")}
@@ -1120,7 +1120,7 @@ export function Admin() {
               onClick={handleLogout}
               className="w-full text-left px-4 py-2 rounded-md text-sm border border-black text-black hover:bg-black hover:text-white transition-colors"
             >
-              Ã‡Ä±kÄ±ÅŸ Yap
+              Çıkış Yap
             </button>
           </nav>
         </aside>
@@ -1131,7 +1131,7 @@ export function Admin() {
               type="button"
               onClick={() => setIsMobileNavOpen(true)}
               className="inline-flex items-center justify-center w-10 h-10 border border-black rounded-md"
-              aria-label="Admin menÃ¼sÃ¼nÃ¼ aÃ§"
+              aria-label="Admin menüsünü aç"
             >
               <Menu className="w-5 h-5" />
             </button>
@@ -1146,7 +1146,7 @@ export function Admin() {
                     type="button"
                     onClick={() => setIsMobileNavOpen(false)}
                     className="inline-flex items-center justify-center w-9 h-9 border border-black rounded-md"
-                    aria-label="Admin menÃ¼sÃ¼nÃ¼ kapat"
+                    aria-label="Admin menüsünü kapat"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -1158,7 +1158,7 @@ export function Admin() {
                       activeSection === "orders" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
                     }`}
                   >
-                    SipariÅŸler
+                    Siparişler
                   </button>
                   <button
                     onClick={() => handleSectionChange("products")}
@@ -1166,7 +1166,7 @@ export function Admin() {
                       activeSection === "products" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
                     }`}
                   >
-                    ÃœrÃ¼nler
+                    Ürünler
                   </button>
                   <button
                     onClick={() => handleSectionChange("users")}
@@ -1174,7 +1174,7 @@ export function Admin() {
                       activeSection === "users" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
                     }`}
                   >
-                    KullanÄ±cÄ±lar
+                    Kullanıcılar
                   </button>
                   <button
                     onClick={() => handleSectionChange("contactRequests")}
@@ -1182,7 +1182,7 @@ export function Admin() {
                       activeSection === "contactRequests" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
                     }`}
                   >
-                    Ä°letiÅŸim Talepleri
+                    İletişim Talepleri
                   </button>
                   <button
                     onClick={() => handleSectionChange("marketing")}
@@ -1204,7 +1204,7 @@ export function Admin() {
                     onClick={handleLogout}
                     className="w-full text-left px-4 py-2 rounded-md text-sm border border-black text-black hover:bg-black hover:text-white transition-colors"
                   >
-                    Ã‡Ä±kÄ±ÅŸ Yap
+                    Çıkış Yap
                   </button>
                 </nav>
               </div>
@@ -1212,20 +1212,20 @@ export function Admin() {
           )}
           {activeSection === "orders" && (
             <div>
-              <h2 className="text-2xl font-light mb-2">SipariÅŸler</h2>
-              <p className="text-sm text-gray-500 mb-5">VeritabanÄ±ndaki sipariÅŸler listeleniyor.</p>
-              {ordersLoading && <p className="text-sm text-gray-500">SipariÅŸler yÃ¼kleniyor...</p>}
+              <h2 className="text-2xl font-light mb-2">Siparişler</h2>
+              <p className="text-sm text-gray-500 mb-5">Veritabanındaki siparişler listeleniyor.</p>
+              {ordersLoading && <p className="text-sm text-gray-500">Siparişler yükleniyor...</p>}
               {ordersError && (
                 <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2 mb-4">{ordersError}</p>
               )}
               {!ordersLoading && !ordersError && orders.length === 0 && (
-                <p className="text-sm text-gray-500">HenÃ¼z sipariÅŸ bulunmuyor.</p>
+                <p className="text-sm text-gray-500">Henüz sipariş bulunmuyor.</p>
               )}
 
               <div className="space-y-3">
                 {orders.map((order) => {
                   const firstItem = order.items[0];
-                  const productName = firstItem?.product?.name ?? "ÃœrÃ¼n adÄ± yok";
+                  const productName = firstItem?.product?.name ?? "Ürün adı yok";
                   const productImage = firstItem?.product?.image ?? "";
                   const isExpanded = expandedOrderId === order.id;
                   const draft = statusDrafts[order.id] ?? {
@@ -1244,7 +1244,7 @@ export function Admin() {
                             ) : null}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm text-gray-500">SipariÅŸ No: {order.id}</p>
+                            <p className="text-sm text-gray-500">Sipariş No: {order.id}</p>
                             <p className="text-xs text-gray-500 mt-1">
                               Tarih: {formatOrderDateTime(order.date)}
                             </p>
@@ -1262,7 +1262,7 @@ export function Admin() {
 
                       {isExpanded && (
                         <div className="border-t border-[#E7E2D8] px-4 py-4 bg-[#FAF9F6]">
-                          <h3 className="text-sm font-medium mb-3">MÃ¼ÅŸteri Ä°letiÅŸim Bilgileri</h3>
+                          <h3 className="text-sm font-medium mb-3">Müşteri İletişim Bilgileri</h3>
                           <div className="text-sm text-gray-700 space-y-1">
                             <p>
                               Ad Soyad: {order.customer.firstName} {order.customer.lastName}
@@ -1276,7 +1276,7 @@ export function Admin() {
                                 : "-"}
                             </p>
                             {order.status === "shipped" && order.shippingCompany && (
-                              <p>Kargo FirmasÄ±: {order.shippingCompany}</p>
+                              <p>Kargo Firması: {order.shippingCompany}</p>
                             )}
                             {order.status === "shipped" && order.shippingTrackingNo && (
                               <p>Takip No: {order.shippingTrackingNo}</p>
@@ -1300,7 +1300,7 @@ export function Admin() {
                               }
                               className="w-full sm:w-[240px] bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                             >
-                              <option value="processing">HazÄ±rlanÄ±yor</option>
+                              <option value="processing">Hazırlanıyor</option>
                               <option value="shipped">Kargoya Verildi</option>
                               <option value="delivered">Teslim Edildi</option>
                             </select>
@@ -1323,7 +1323,7 @@ export function Admin() {
                                   }
                                   className="w-full sm:w-[220px] bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                                 >
-                                  <option value="">Kargo FirmasÄ±</option>
+                                  <option value="">Kargo Firması</option>
                                   {shippingCompanies.map((company) => (
                                     <option key={company} value={company}>
                                       {company}
@@ -1382,7 +1382,7 @@ export function Admin() {
           {activeSection === "products" && (
             <div>
               <div className="flex items-center justify-between gap-3 mb-2">
-                <h2 className="text-2xl font-light">ÃœrÃ¼nler</h2>
+                <h2 className="text-2xl font-light">Ürünler</h2>
                 <button
                   type="button"
                   onClick={openCreateProductEditor}
@@ -1391,13 +1391,13 @@ export function Admin() {
                   Ekle
                 </button>
               </div>
-              <p className="text-sm text-gray-500 mb-5">VeritabanÄ±ndaki Ã¼rÃ¼nler listeleniyor.</p>
-              {productsLoading && <p className="text-sm text-gray-500">ÃœrÃ¼nler yÃ¼kleniyor...</p>}
+              <p className="text-sm text-gray-500 mb-5">Veritabanındaki ürünler listeleniyor.</p>
+              {productsLoading && <p className="text-sm text-gray-500">Ürünler yükleniyor...</p>}
               {productsError && (
                 <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2 mb-4">{productsError}</p>
               )}
               {!productsLoading && !productsError && products.length === 0 && (
-                <p className="text-sm text-gray-500">HenÃ¼z Ã¼rÃ¼n bulunmuyor.</p>
+                <p className="text-sm text-gray-500">Henüz ürün bulunmuyor.</p>
               )}
               <div className="space-y-3">
                 {products.map((product) => (
@@ -1420,7 +1420,7 @@ export function Admin() {
                         onClick={() => void openProductEditor(product)}
                         className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
                       >
-                        DÃ¼zenle
+                        Düzenle
                       </button>
                       <button
                         type="button"
@@ -1438,14 +1438,14 @@ export function Admin() {
 
           {activeSection === "users" && (
             <div>
-              <h2 className="text-2xl font-light mb-2">KullanÄ±cÄ±lar</h2>
-              <p className="text-sm text-gray-500 mb-5">VeritabanÄ±ndaki kullanÄ±cÄ±lar listeleniyor.</p>
-              {usersLoading && <p className="text-sm text-gray-500">KullanÄ±cÄ±lar yÃ¼kleniyor...</p>}
+              <h2 className="text-2xl font-light mb-2">Kullanıcılar</h2>
+              <p className="text-sm text-gray-500 mb-5">Veritabanındaki kullanıcılar listeleniyor.</p>
+              {usersLoading && <p className="text-sm text-gray-500">Kullanıcılar yükleniyor...</p>}
               {usersError && (
                 <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2 mb-4">{usersError}</p>
               )}
               {!usersLoading && !usersError && users.length === 0 && (
-                <p className="text-sm text-gray-500">HenÃ¼z kullanÄ±cÄ± bulunmuyor.</p>
+                <p className="text-sm text-gray-500">Henüz kullanıcı bulunmuyor.</p>
               )}
               <div className="space-y-3">
                 {users.map((user) => (
@@ -1459,7 +1459,7 @@ export function Admin() {
                         <p className="text-sm text-gray-600">Telefon: {user.phone || "-"}</p>
                       </div>
                       <p className="text-xs text-gray-500">
-                        KayÄ±t: {formatOrderDateTime(user.createdAt)}
+                        Kayıt: {formatOrderDateTime(user.createdAt)}
                       </p>
                     </div>
                   </div>
@@ -1470,14 +1470,14 @@ export function Admin() {
 
           {activeSection === "contactRequests" && (
             <div>
-              <h2 className="text-2xl font-light mb-2">Ä°letiÅŸim Talepleri</h2>
-              <p className="text-sm text-gray-500 mb-5">Ä°letiÅŸim formundan gelen talepler burada listelenir.</p>
-              {contactRequestsLoading && <p className="text-sm text-gray-500">Talepler yÃ¼kleniyor...</p>}
+              <h2 className="text-2xl font-light mb-2">İletişim Talepleri</h2>
+              <p className="text-sm text-gray-500 mb-5">İletişim formundan gelen talepler burada listelenir.</p>
+              {contactRequestsLoading && <p className="text-sm text-gray-500">Talepler yükleniyor...</p>}
               {contactRequestsError && (
                 <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2 mb-4">{contactRequestsError}</p>
               )}
               {!contactRequestsLoading && !contactRequestsError && contactRequests.length === 0 && (
-                <p className="text-sm text-gray-500">HenÃ¼z iletiÅŸim talebi bulunmuyor.</p>
+                <p className="text-sm text-gray-500">Henüz iletişim talebi bulunmuyor.</p>
               )}
 
               <div className="space-y-3">
@@ -1502,18 +1502,18 @@ export function Admin() {
             <div>
               <h2 className="text-2xl font-light mb-2">Pazarlama</h2>
               <p className="text-sm text-gray-500 mb-5">
-                Ä°lk kampanya olarak sepette Ã¼rÃ¼n bÄ±rakÄ±p ayrÄ±lan mÃ¼ÅŸterilere hatÄ±rlatma e-postasÄ± gÃ¶nderilir.
+                İlk kampanya olarak sepette ürün bırakıp ayrılan müşterilere hatırlatma e-postası gönderilir.
               </p>
 
               {marketingLoading ? (
-                <p className="text-sm text-gray-500">Pazarlama ayarlarÄ± yÃ¼kleniyor...</p>
+                <p className="text-sm text-gray-500">Pazarlama ayarları yükleniyor...</p>
               ) : (
                 <div className="max-w-4xl space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div className="bg-white border border-[#E7E2D8] rounded-lg p-4">
                       <p className="text-xs uppercase tracking-wide text-gray-500">SMTP</p>
                       <p className={`mt-2 text-sm font-medium ${marketingStats?.mailConfigured ? "text-green-700" : "text-red-600"}`}>
-                        {marketingStats?.mailConfigured ? "HazÄ±r" : "Eksik"}
+                        {marketingStats?.mailConfigured ? "Hazır" : "Eksik"}
                       </p>
                     </div>
                     <div className="bg-white border border-[#E7E2D8] rounded-lg p-4">
@@ -1521,11 +1521,11 @@ export function Admin() {
                       <p className="mt-2 text-2xl font-light">{marketingStats?.eligibleUsers ?? 0}</p>
                     </div>
                     <div className="bg-white border border-[#E7E2D8] rounded-lg p-4">
-                      <p className="text-xs uppercase tracking-wide text-gray-500">Son 7 GÃ¼n</p>
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Son 7 Gün</p>
                       <p className="mt-2 text-2xl font-light">{marketingStats?.sentLast7Days ?? 0}</p>
                     </div>
                     <div className="bg-white border border-[#E7E2D8] rounded-lg p-4">
-                      <p className="text-xs uppercase tracking-wide text-gray-500">Son GÃ¶nderim</p>
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Son Gönderim</p>
                       <p className="mt-2 text-sm font-medium text-gray-700">
                         {marketingStats?.lastSentAt ? formatOrderDateTime(marketingStats.lastSentAt) : "-"}
                       </p>
@@ -1540,7 +1540,7 @@ export function Admin() {
                       <div>
                         <h3 className="text-sm font-medium">Sepeti Terk Edenler</h3>
                         <p className="text-xs text-gray-500 mt-1">
-                          Sadece giriÅŸ yapmÄ±ÅŸ ve sunucuda sepeti kayÄ±tlÄ± kullanÄ±cÄ±lar hedeflenir.
+                          Sadece giriş yapmış ve sunucuda sepeti kayıtlı kullanıcılar hedeflenir.
                         </p>
                       </div>
                       <label className="inline-flex items-center gap-2 text-sm">
@@ -1557,7 +1557,7 @@ export function Admin() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium mb-1">Bekleme SÃ¼resi</label>
+                        <label className="block text-sm font-medium mb-1">Bekleme Süresi</label>
                         <input
                           type="number"
                           min={15}
@@ -1571,7 +1571,7 @@ export function Admin() {
                           }
                           className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                         />
-                        <p className="mt-1 text-xs text-gray-500">Dakika cinsinden. Ã–rn: 120 = 2 saat.</p>
+                        <p className="mt-1 text-xs text-gray-500">Dakika cinsinden. Örn: 120 = 2 saat.</p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium mb-1">Buton Metni</label>
@@ -1601,7 +1601,7 @@ export function Admin() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium mb-1">BaÅŸlÄ±k</label>
+                      <label className="block text-sm font-medium mb-1">Başlık</label>
                       <input
                         type="text"
                         maxLength={180}
@@ -1631,7 +1631,7 @@ export function Admin() {
                         <div>
                           <h4 className="text-sm font-medium">Kupon Kodu</h4>
                           <p className="text-xs text-gray-500 mt-1">
-                            Mail iÃ§indeki butonla sepete dÃ¶nen kullanÄ±cÄ±da kupon otomatik uygulanÄ±r.
+                            Mail içindeki butonla sepete dönen kullanıcıda kupon otomatik uygulanır.
                           </p>
                         </div>
                         <label className="inline-flex items-center gap-2 text-sm">
@@ -1663,7 +1663,7 @@ export function Admin() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium mb-1">Ä°ndirim Tipi</label>
+                          <label className="block text-sm font-medium mb-1">İndirim Tipi</label>
                           <select
                             value={marketingSettings.couponType}
                             onChange={(e) =>
@@ -1674,7 +1674,7 @@ export function Admin() {
                             }
                             className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                           >
-                            <option value="percentage">YÃ¼zde</option>
+                            <option value="percentage">Yüzde</option>
                             <option value="fixed">Sabit Tutar</option>
                           </select>
                         </div>
@@ -1683,7 +1683,7 @@ export function Admin() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium mb-1">
-                            {marketingSettings.couponType === "fixed" ? "Ä°ndirim TutarÄ± (TL)" : "Ä°ndirim OranÄ± (%)"}
+                            {marketingSettings.couponType === "fixed" ? "İndirim Tutarı (TL)" : "İndirim Oranı (%)"}
                           </label>
                           <input
                             type="number"
@@ -1700,7 +1700,7 @@ export function Admin() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium mb-1">Minimum Sepet TutarÄ±</label>
+                          <label className="block text-sm font-medium mb-1">Minimum Sepet Tutarı</label>
                           <input
                             type="number"
                             min={0}
@@ -1718,7 +1718,7 @@ export function Admin() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium mb-1">Kupon AÃ§Ä±klamasÄ±</label>
+                        <label className="block text-sm font-medium mb-1">Kupon Açıklaması</label>
                         <input
                           type="text"
                           maxLength={200}
@@ -1737,7 +1737,7 @@ export function Admin() {
                     {marketingMessage ? (
                       <p
                         className={`text-sm ${
-                          marketingMessage.includes("tamamlandÄ±") || marketingMessage.includes("kaydedildi")
+                          marketingMessage.includes("tamamlandı") || marketingMessage.includes("kaydedildi")
                             ? "text-green-700"
                             : "text-red-600"
                         }`}
@@ -1752,7 +1752,7 @@ export function Admin() {
                         disabled={isSavingMarketing}
                         className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
                       >
-                        {isSavingMarketing ? "Kaydediliyor..." : "KampanyayÄ± Kaydet"}
+                        {isSavingMarketing ? "Kaydediliyor..." : "Kampanyayı Kaydet"}
                       </button>
                       <button
                         type="button"
@@ -1760,7 +1760,7 @@ export function Admin() {
                         disabled={isRunningMarketing}
                         className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
                       >
-                        {isRunningMarketing ? "TaranÄ±yor..." : "Åimdi Tara ve GÃ¶nder"}
+                        {isRunningMarketing ? "Taranıyor..." : "Şimdi Tara ve Gönder"}
                       </button>
                     </div>
                   </form>
@@ -1772,14 +1772,14 @@ export function Admin() {
           {activeSection === "settings" && (
             <div>
               <h2 className="text-2xl font-light mb-2">Ayarlar</h2>
-              <p className="text-sm text-gray-500 mb-5">Site genel ayarlarÄ±nÄ± buradan dÃ¼zenleyebilirsiniz.</p>
+              <p className="text-sm text-gray-500 mb-5">Site genel ayarlarını buradan düzenleyebilirsiniz.</p>
               {settingsLoading ? (
-                <p className="text-sm text-gray-500">Ayarlar yÃ¼kleniyor...</p>
+                <p className="text-sm text-gray-500">Ayarlar yükleniyor...</p>
               ) : (
                 <div className="max-w-xl space-y-4">
                   <form onSubmit={handleSaveSettings} className="bg-white border border-[#E7E2D8] rounded-lg p-4 space-y-3">
                     <div>
-                      <label className="block text-sm font-medium mb-1">Site Ä°smi</label>
+                      <label className="block text-sm font-medium mb-1">Site İsmi</label>
                       <input
                         type="text"
                         value={siteNameInput}
@@ -1789,7 +1789,7 @@ export function Admin() {
                       />
                     </div>
                     {settingsMessage ? (
-                      <p className={`text-sm ${settingsMessage.includes("gÃ¼ncellendi") ? "text-green-700" : "text-red-600"}`}>
+                      <p className={`text-sm ${settingsMessage.includes("güncellendi") ? "text-green-700" : "text-red-600"}`}>
                         {settingsMessage}
                       </p>
                     ) : null}
@@ -1807,13 +1807,13 @@ export function Admin() {
                       <div>
                         <h3 className="text-sm font-medium">Google Merchant Center</h3>
                         <p className="text-xs text-gray-500 mt-1">
-                          ÃœrÃ¼nleri Content API ile Merchant Center hesabÄ±na gÃ¶nderir.
+                          Ürünleri Content API ile Merchant Center hesabına gönderir.
                         </p>
                       </div>
                     </div>
 
                     {merchantLoading ? (
-                      <p className="text-sm text-gray-500">Merchant durumu yÃ¼kleniyor...</p>
+                      <p className="text-sm text-gray-500">Merchant durumu yükleniyor...</p>
                     ) : merchantStatus ? (
                       <div className="text-sm space-y-1">
                         <p>
@@ -1823,21 +1823,21 @@ export function Admin() {
                           </span>
                         </p>
                         <p>
-                          KonfigÃ¼rasyon:{" "}
+                          Konfigürasyon:{" "}
                           <span className={merchantStatus.configured ? "text-green-700" : "text-red-600"}>
-                            {merchantStatus.configured ? "HazÄ±r" : "Eksik"}
+                            {merchantStatus.configured ? "Hazır" : "Eksik"}
                           </span>
                         </p>
                         <p>Merchant ID: {merchantStatus.accountId || "-"}</p>
                         <p>
-                          Ãœlke/Dil/Para: {merchantStatus.targetCountry} / {merchantStatus.contentLanguage} /{" "}
+                          Ülke/Dil/Para: {merchantStatus.targetCountry} / {merchantStatus.contentLanguage} /{" "}
                           {merchantStatus.currency}
                         </p>
                       </div>
                     ) : null}
 
                     {merchantMessage ? (
-                      <p className={`text-sm ${merchantMessage.toLowerCase().includes("tamamlandÄ±") ? "text-green-700" : "text-red-600"}`}>
+                      <p className={`text-sm ${merchantMessage.toLowerCase().includes("tamamlandı") ? "text-green-700" : "text-red-600"}`}>
                         {merchantMessage}
                       </p>
                     ) : null}
@@ -1848,7 +1848,7 @@ export function Admin() {
                       disabled={merchantSyncing || !merchantStatus?.enabled || !merchantStatus?.configured}
                       className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
                     >
-                      {merchantSyncing ? "Google'a GÃ¶nderiliyor..." : "ÃœrÃ¼nleri Google Merchant'a GÃ¶nder"}
+                      {merchantSyncing ? "Google'a Gönderiliyor..." : "Ürünleri Google Merchant'a Gönder"}
                     </button>
                   </div>
                 </div>
@@ -1861,7 +1861,7 @@ export function Admin() {
         <div className="fixed inset-0 z-[120] bg-black/35 p-4 md:p-8 flex items-center justify-center">
           <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-[#E7E2D8] rounded-lg bg-[#FAF9F6] p-4 md:p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium">{isCreatingProduct ? "Yeni ÃœrÃ¼n Ekle" : "ÃœrÃ¼n DÃ¼zenleme"}</h3>
+              <h3 className="text-lg font-medium">{isCreatingProduct ? "Yeni Ürün Ekle" : "Ürün Düzenleme"}</h3>
               <button
                 type="button"
                 onClick={closeProductEditor}
@@ -1872,7 +1872,7 @@ export function Admin() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">ÃœrÃ¼n ID</label>
+                <label className="block text-sm font-medium mb-1">Ürün ID</label>
                 <input
                   type="text"
                   value={productEditor.id}
@@ -1880,7 +1880,7 @@ export function Admin() {
                   onChange={(e) =>
                     setProductEditor((prev) => (prev ? { ...prev, id: e.target.value } : prev))
                   }
-                  placeholder={isCreatingProduct ? "BoÅŸ bÄ±rakÄ±lÄ±rsa otomatik Ã¼retilir" : ""}
+                  placeholder={isCreatingProduct ? "Boş bırakılırsa otomatik üretilir" : ""}
                   className={`w-full border rounded-lg px-3 py-2 text-sm ${
                     isCreatingProduct
                       ? "bg-white border-gray-300 outline-none focus:border-black"
@@ -1900,7 +1900,7 @@ export function Admin() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">ÃœrÃ¼n AdÄ±</label>
+                <label className="block text-sm font-medium mb-1">Ürün Adı</label>
                 <input
                   type="text"
                   value={productEditor.name}
@@ -1927,7 +1927,7 @@ export function Admin() {
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-1">ÃœrÃ¼n GÃ¶rselleri</label>
+                <label className="block text-sm font-medium mb-1">Ürün Görselleri</label>
                 <input
                   ref={imagePickerRef}
                   type="file"
@@ -1956,12 +1956,12 @@ export function Admin() {
                           : "border-gray-300"
                       }`}
                     >
-                      <img src={image.url} alt="ÃœrÃ¼n gÃ¶rseli" className="w-full h-full object-cover" />
+                      <img src={image.url} alt="Ürün görseli" className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => handleRemoveImage(image.id)}
                         className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 border border-gray-300 flex items-center justify-center hover:bg-black hover:text-white hover:border-black transition-colors"
-                        aria-label="GÃ¶rseli sil"
+                        aria-label="Görseli sil"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -1972,16 +1972,16 @@ export function Admin() {
                       type="button"
                       onClick={handlePickImages}
                       className="aspect-square rounded-lg border border-dashed border-gray-400 bg-white flex items-center justify-center text-gray-500 hover:text-black hover:border-black transition-colors"
-                      aria-label="GÃ¶rsel ekle"
+                      aria-label="Görsel ekle"
                     >
                       <Plus className="w-5 h-5" />
                     </button>
                   )}
                 </div>
-                <p className="text-xs text-gray-500 mt-2">En fazla {MAX_PRODUCT_IMAGES} gÃ¶rsel seÃ§ebilirsiniz.</p>
+                <p className="text-xs text-gray-500 mt-2">En fazla {MAX_PRODUCT_IMAGES} görsel seçebilirsiniz.</p>
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-1">AÃ§Ä±klama</label>
+                <label className="block text-sm font-medium mb-1">Açıklama</label>
                 <textarea
                   value={productEditor.description}
                   onChange={(e) =>
@@ -1992,7 +1992,7 @@ export function Admin() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Ã–zellikler</label>
+                <label className="block text-sm font-medium mb-1">Özellikler</label>
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     <input
@@ -2005,7 +2005,7 @@ export function Admin() {
                           handleAddFeature();
                         }
                       }}
-                      placeholder="Ã–zellik adÄ±"
+                      placeholder="Özellik adı"
                       className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                     />
                     <button
@@ -2013,12 +2013,12 @@ export function Admin() {
                       onClick={handleAddFeature}
                       className="border border-black text-black px-3 py-2 rounded-lg text-sm hover:bg-black hover:text-white transition-colors whitespace-nowrap"
                     >
-                      Ã–zellik Ekle
+                      Özellik Ekle
                     </button>
                   </div>
                   <div className="flex flex-col gap-2">
                     {productEditor.features.length === 0 && (
-                      <span className="text-xs text-gray-500">HenÃ¼z Ã¶zellik eklenmedi.</span>
+                      <span className="text-xs text-gray-500">Henüz özellik eklenmedi.</span>
                     )}
                     {productEditor.features.map((feature) => (
                       <span
@@ -2030,7 +2030,7 @@ export function Admin() {
                           type="button"
                           onClick={() => handleRemoveFeature(feature)}
                           className="text-gray-500 hover:text-current"
-                          aria-label={`${feature} Ã¶zelliÄŸini kaldÄ±r`}
+                          aria-label={`${feature} özelliğini kaldır`}
                         >
                           x
                         </button>
@@ -2053,7 +2053,7 @@ export function Admin() {
                           handleAddColor();
                         }
                       }}
-                      placeholder="Renk adÄ±"
+                      placeholder="Renk adı"
                       className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                     />
                     <button
@@ -2066,7 +2066,7 @@ export function Admin() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {productEditor.colors.length === 0 && (
-                      <span className="text-xs text-gray-500">HenÃ¼z renk eklenmedi.</span>
+                      <span className="text-xs text-gray-500">Henüz renk eklenmedi.</span>
                     )}
                     {productEditor.colors.map((color) => (
                       <span
@@ -2078,7 +2078,7 @@ export function Admin() {
                           type="button"
                           onClick={() => handleRemoveColor(color)}
                           className="text-gray-500 hover:text-black"
-                          aria-label={`${color} rengini kaldÄ±r`}
+                          aria-label={`${color} rengini kaldır`}
                         >
                           x
                         </button>
@@ -2101,7 +2101,7 @@ export function Admin() {
                           handleAddTag();
                         }
                       }}
-                      placeholder="Etiket adÄ± (Ã¶r. Yeni, Ã‡ok Satan)"
+                      placeholder="Etiket adı (ör. Yeni, Çok Satan)"
                       className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                     />
                     <button
@@ -2114,7 +2114,7 @@ export function Admin() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {productEditor.tags.length === 0 && (
-                      <span className="text-xs text-gray-500">HenÃ¼z etiket eklenmedi.</span>
+                      <span className="text-xs text-gray-500">Henüz etiket eklenmedi.</span>
                     )}
                     {productEditor.tags.map((tag) => (
                       <span
@@ -2126,7 +2126,7 @@ export function Admin() {
                           type="button"
                           onClick={() => handleRemoveTag(tag)}
                           className="text-gray-500 hover:text-current"
-                          aria-label={`${tag} etiketini kaldÄ±r`}
+                          aria-label={`${tag} etiketini kaldır`}
                         >
                           x
                         </button>
@@ -2143,7 +2143,7 @@ export function Admin() {
                     setProductEditor((prev) => (prev ? { ...prev, isNew: e.target.checked } : prev))
                   }
                 />
-                Yeni ÃœrÃ¼n
+                Yeni Ürün
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -2153,18 +2153,18 @@ export function Admin() {
                     setProductEditor((prev) => (prev ? { ...prev, isBestseller: e.target.checked } : prev))
                   }
                 />
-                Ã‡ok Satan
+                Çok Satan
               </label>
             </div>
             <p className="text-xs text-gray-500 mt-4">
               {isCreatingProduct
-                ? "Yeni Ã¼rÃ¼n bilgilerini girip Kaydet butonuna basÄ±n."
-                : "DÃ¼zenleme alanÄ±nda deÄŸiÅŸiklik yapÄ±p Kaydet butonuna basÄ±n."}
+                ? "Yeni ürün bilgilerini girip Kaydet butonuna basın."
+                : "Düzenleme alanında değişiklik yapıp Kaydet butonuna basın."}
             </p>
             {productSaveMessage && (
               <p
                 className={`text-sm mt-3 ${
-                  productSaveMessage.includes("baÅŸarÄ±yla") ? "text-green-700" : "text-red-600"
+                  productSaveMessage.includes("başarıyla") ? "text-green-700" : "text-red-600"
                 }`}
               >
                 {productSaveMessage}
@@ -2184,7 +2184,7 @@ export function Admin() {
                 onClick={closeProductEditor}
                 className="text-sm border border-black px-4 py-2 rounded-full hover:bg-black hover:text-white transition-colors"
               >
-                VazgeÃ§
+                Vazgeç
               </button>
             </div>
           </div>

@@ -1,4 +1,4 @@
-﻿import { Menu, Plus, Trash2, X } from "lucide-react";
+﻿import { ChevronDown, Menu, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   createAdminProduct,
@@ -51,6 +51,7 @@ type ProductEditorDraft = {
   isNew: boolean;
   isBestseller: boolean;
 };
+type ProductPanel = "list" | "create";
 const MAX_PRODUCT_IMAGES = 15;
 const shippingCompanies = [
   "Sen Kargo",
@@ -120,6 +121,8 @@ export function Admin() {
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsError, setProductsError] = useState("");
+  const [isProductsMenuOpen, setIsProductsMenuOpen] = useState(false);
+  const [activeProductPanel, setActiveProductPanel] = useState<ProductPanel>("list");
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
   const [productEditor, setProductEditor] = useState<ProductEditorDraft | null>(null);
@@ -422,6 +425,8 @@ export function Admin() {
     setStatusSavingByOrderId({});
     setProducts([]);
     setProductsError("");
+    setIsProductsMenuOpen(false);
+    setActiveProductPanel("list");
     setEditingProductId(null);
     setProductEditor(null);
     setIsSavingProduct(false);
@@ -451,7 +456,18 @@ export function Admin() {
 
   const handleSectionChange = (section: AdminSection) => {
     setActiveSection(section);
+    if (section !== "products") {
+      setIsProductsMenuOpen(false);
+    }
     setIsMobileNavOpen(false);
+  };
+
+  const handleProductsMenuToggle = () => {
+    setIsProductsMenuOpen((prev) => !prev);
+    setActiveSection("products");
+    if (activeSection !== "products") {
+      setActiveProductPanel("list");
+    }
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -692,6 +708,22 @@ export function Admin() {
     setNewColorName("");
     setNewTagName("");
     setProductSaveMessage("");
+  };
+
+  const handleOpenProductList = () => {
+    closeProductEditor();
+    setActiveSection("products");
+    setActiveProductPanel("list");
+    setIsProductsMenuOpen(true);
+    setIsMobileNavOpen(false);
+  };
+
+  const handleOpenCreateProduct = () => {
+    setActiveSection("products");
+    setActiveProductPanel("create");
+    setIsProductsMenuOpen(true);
+    setIsMobileNavOpen(false);
+    openCreateProductEditor();
   };
 
   const handlePickImages = () => {
@@ -1076,14 +1108,46 @@ export function Admin() {
             >
               Siparişler
             </button>
-            <button
-              onClick={() => handleSectionChange("products")}
-              className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
-                activeSection === "products" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
-              }`}
-            >
-              Ürünler
-            </button>
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={handleProductsMenuToggle}
+                className={`w-full flex items-center justify-between px-4 py-2 rounded-md text-sm transition-colors ${
+                  activeSection === "products" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
+                }`}
+              >
+                <span>Ürünler</span>
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform ${isProductsMenuOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              {isProductsMenuOpen && (
+                <div className="pl-4 space-y-1">
+                  <button
+                    type="button"
+                    onClick={handleOpenProductList}
+                    className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
+                      activeSection === "products" && activeProductPanel === "list"
+                        ? "bg-[#ECE7DC] text-black"
+                        : "text-black hover:bg-[#ECE7DC]"
+                    }`}
+                  >
+                    Ürün Listesi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenCreateProduct}
+                    className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
+                      activeSection === "products" && activeProductPanel === "create"
+                        ? "bg-[#ECE7DC] text-black"
+                        : "text-black hover:bg-[#ECE7DC]"
+                    }`}
+                  >
+                    Ürün Ekle
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               onClick={() => handleSectionChange("users")}
               className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
@@ -1160,14 +1224,46 @@ export function Admin() {
                   >
                     Siparişler
                   </button>
-                  <button
-                    onClick={() => handleSectionChange("products")}
-                    className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
-                      activeSection === "products" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
-                    }`}
-                  >
-                    Ürünler
-                  </button>
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={handleProductsMenuToggle}
+                      className={`w-full flex items-center justify-between px-4 py-2 rounded-md text-sm transition-colors ${
+                        activeSection === "products" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
+                      }`}
+                    >
+                      <span>Ürünler</span>
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform ${isProductsMenuOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                    {isProductsMenuOpen && (
+                      <div className="pl-4 space-y-1">
+                        <button
+                          type="button"
+                          onClick={handleOpenProductList}
+                          className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
+                            activeSection === "products" && activeProductPanel === "list"
+                              ? "bg-[#ECE7DC] text-black"
+                              : "text-black hover:bg-[#ECE7DC]"
+                          }`}
+                        >
+                          Ürün Listesi
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleOpenCreateProduct}
+                          className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
+                            activeSection === "products" && activeProductPanel === "create"
+                              ? "bg-[#ECE7DC] text-black"
+                              : "text-black hover:bg-[#ECE7DC]"
+                          }`}
+                        >
+                          Ürün Ekle
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={() => handleSectionChange("users")}
                     className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
@@ -1382,57 +1478,96 @@ export function Admin() {
           {activeSection === "products" && (
             <div>
               <div className="flex items-center justify-between gap-3 mb-2">
-                <h2 className="text-2xl font-light">Ürünler</h2>
-                <button
-                  type="button"
-                  onClick={openCreateProductEditor}
-                  className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
-                >
-                  Ekle
-                </button>
-              </div>
-              <p className="text-sm text-gray-500 mb-5">Veritabanındaki ürünler listeleniyor.</p>
-              {productsLoading && <p className="text-sm text-gray-500">Ürünler yükleniyor...</p>}
-              {productsError && (
-                <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2 mb-4">{productsError}</p>
-              )}
-              {!productsLoading && !productsError && products.length === 0 && (
-                <p className="text-sm text-gray-500">Henüz ürün bulunmuyor.</p>
-              )}
-              <div className="space-y-3">
-                {products.map((product) => (
-                  <div
-                    key={product.id}
-                    className={`border rounded-lg bg-white p-4 flex items-center gap-3 ${
-                      editingProductId === product.id ? "border-black" : "border-[#E7E2D8]"
-                    }`}
+                <h2 className="text-2xl font-light">
+                  {activeProductPanel === "create" ? "Ürün Ekle" : "Ürünler"}
+                </h2>
+                {activeProductPanel === "list" ? (
+                  <button
+                    type="button"
+                    onClick={handleOpenCreateProduct}
+                    className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
                   >
-                    <div className="w-14 h-14 rounded-md border border-[#E7E2D8] bg-white overflow-hidden shrink-0">
-                      <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium truncate">{product.name}</p>
-                      <p className="text-sm text-gray-500">{product.price.toLocaleString("tr-TR")} TL</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void openProductEditor(product)}
-                        className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
-                      >
-                        Düzenle
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteProduct(product)}
-                        className="border border-red-600 text-red-600 px-4 py-2 rounded-full text-sm hover:bg-red-600 hover:text-white transition-colors"
-                      >
-                        Sil
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                    Ürün Ekle
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleOpenProductList}
+                    className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
+                  >
+                    Ürün Listesi
+                  </button>
+                )}
               </div>
+              {activeProductPanel === "create" ? (
+                <div className="border border-[#E7E2D8] rounded-lg bg-[#FAF9F6] p-5 space-y-3">
+                  <p className="text-sm text-gray-600">
+                    Yeni ürün ekleme formu açılır pencere olarak hazırlanır. Formu açmak veya tekrar görüntülemek için
+                    aşağıdaki butonu kullanabilirsiniz.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={handleOpenCreateProduct}
+                      className="bg-black text-white px-4 py-2 rounded-full text-sm hover:opacity-90 transition-opacity"
+                    >
+                      Ürün Ekle Formunu Aç
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenProductList}
+                      className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
+                    >
+                      Ürün Listesine Dön
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-500 mb-5">Veritabanındaki ürünler listeleniyor.</p>
+                  {productsLoading && <p className="text-sm text-gray-500">Ürünler yükleniyor...</p>}
+                  {productsError && (
+                    <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2 mb-4">{productsError}</p>
+                  )}
+                  {!productsLoading && !productsError && products.length === 0 && (
+                    <p className="text-sm text-gray-500">Henüz ürün bulunmuyor.</p>
+                  )}
+                  <div className="space-y-3">
+                    {products.map((product) => (
+                      <div
+                        key={product.id}
+                        className={`border rounded-lg bg-white p-4 flex items-center gap-3 ${
+                          editingProductId === product.id ? "border-black" : "border-[#E7E2D8]"
+                        }`}
+                      >
+                        <div className="w-14 h-14 rounded-md border border-[#E7E2D8] bg-white overflow-hidden shrink-0">
+                          <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate">{product.name}</p>
+                          <p className="text-sm text-gray-500">{product.price.toLocaleString("tr-TR")} TL</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void openProductEditor(product)}
+                            className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
+                          >
+                            Düzenle
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteProduct(product)}
+                            className="border border-red-600 text-red-600 px-4 py-2 rounded-full text-sm hover:bg-red-600 hover:text-white transition-colors"
+                          >
+                            Sil
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
 

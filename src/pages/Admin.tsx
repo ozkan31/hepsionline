@@ -1,4 +1,4 @@
-﻿import { ChevronDown, Menu, Plus, Trash2, X } from "lucide-react";
+﻿import { ChevronDown, List, Menu, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   createAdminProduct,
@@ -1121,32 +1121,50 @@ export function Admin() {
                   className={`w-4 h-4 transition-transform ${isProductsMenuOpen ? "rotate-180" : ""}`}
                 />
               </button>
-              {isProductsMenuOpen && (
-                <div className="pl-4 space-y-1">
-                  <button
-                    type="button"
-                    onClick={handleOpenProductList}
-                    className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
-                      activeSection === "products" && activeProductPanel === "list"
-                        ? "bg-[#ECE7DC] text-black"
-                        : "text-black hover:bg-[#ECE7DC]"
-                    }`}
-                  >
-                    Ürün Listesi
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleOpenCreateProduct}
-                    className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
-                      activeSection === "products" && activeProductPanel === "create"
-                        ? "bg-[#ECE7DC] text-black"
-                        : "text-black hover:bg-[#ECE7DC]"
-                    }`}
-                  >
-                    Ürün Ekle
-                  </button>
+              <div
+                className={`grid transition-all duration-200 ease-out ${
+                  isProductsMenuOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                }`}
+              >
+                <div className="overflow-hidden">
+                  <div className="pl-4 pt-1 space-y-1">
+                    <button
+                      type="button"
+                      onClick={handleOpenProductList}
+                      className={`relative w-full text-left pl-10 pr-4 py-2 rounded-md text-sm transition-colors ${
+                        activeSection === "products" && activeProductPanel === "list"
+                          ? "bg-[#ECE7DC] text-black"
+                          : "text-black hover:bg-[#ECE7DC]"
+                      }`}
+                    >
+                      <span
+                        className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full ${
+                          activeSection === "products" && activeProductPanel === "list" ? "bg-black" : "bg-transparent"
+                        }`}
+                      />
+                      <List className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
+                      Ürün Listesi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenCreateProduct}
+                      className={`relative w-full text-left pl-10 pr-4 py-2 rounded-md text-sm transition-colors ${
+                        activeSection === "products" && activeProductPanel === "create"
+                          ? "bg-[#ECE7DC] text-black"
+                          : "text-black hover:bg-[#ECE7DC]"
+                      }`}
+                    >
+                      <span
+                        className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full ${
+                          activeSection === "products" && activeProductPanel === "create" ? "bg-black" : "bg-transparent"
+                        }`}
+                      />
+                      <Plus className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
+                      Ürün Ekle
+                    </button>
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
             <button
               onClick={() => handleSectionChange("users")}
@@ -1237,32 +1255,54 @@ export function Admin() {
                         className={`w-4 h-4 transition-transform ${isProductsMenuOpen ? "rotate-180" : ""}`}
                       />
                     </button>
-                    {isProductsMenuOpen && (
-                      <div className="pl-4 space-y-1">
-                        <button
-                          type="button"
-                          onClick={handleOpenProductList}
-                          className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
-                            activeSection === "products" && activeProductPanel === "list"
-                              ? "bg-[#ECE7DC] text-black"
-                              : "text-black hover:bg-[#ECE7DC]"
-                          }`}
-                        >
-                          Ürün Listesi
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleOpenCreateProduct}
-                          className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
-                            activeSection === "products" && activeProductPanel === "create"
-                              ? "bg-[#ECE7DC] text-black"
-                              : "text-black hover:bg-[#ECE7DC]"
-                          }`}
-                        >
-                          Ürün Ekle
-                        </button>
+                    <div
+                      className={`grid transition-all duration-200 ease-out ${
+                        isProductsMenuOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                      }`}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="pl-4 pt-1 space-y-1">
+                          <button
+                            type="button"
+                            onClick={handleOpenProductList}
+                            className={`relative w-full text-left pl-10 pr-4 py-2 rounded-md text-sm transition-colors ${
+                              activeSection === "products" && activeProductPanel === "list"
+                                ? "bg-[#ECE7DC] text-black"
+                                : "text-black hover:bg-[#ECE7DC]"
+                            }`}
+                          >
+                            <span
+                              className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full ${
+                                activeSection === "products" && activeProductPanel === "list"
+                                  ? "bg-black"
+                                  : "bg-transparent"
+                              }`}
+                            />
+                            <List className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
+                            Ürün Listesi
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleOpenCreateProduct}
+                            className={`relative w-full text-left pl-10 pr-4 py-2 rounded-md text-sm transition-colors ${
+                              activeSection === "products" && activeProductPanel === "create"
+                                ? "bg-[#ECE7DC] text-black"
+                                : "text-black hover:bg-[#ECE7DC]"
+                            }`}
+                          >
+                            <span
+                              className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full ${
+                                activeSection === "products" && activeProductPanel === "create"
+                                  ? "bg-black"
+                                  : "bg-transparent"
+                              }`}
+                            />
+                            <Plus className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
+                            Ürün Ekle
+                          </button>
+                        </div>
                       </div>
-                    )}
+                    </div>
                   </div>
                   <button
                     onClick={() => handleSectionChange("users")}

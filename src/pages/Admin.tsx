@@ -9,6 +9,7 @@
   Plus,
   Settings,
   ShoppingBag,
+  Tag,
   Trash2,
   Users,
   X,
@@ -66,6 +67,7 @@ type ProductEditorDraft = {
   isBestseller: boolean;
 };
 type ProductPanel = "list" | "create";
+type MarketingPanel = "abandonedCart" | "coupons";
 const MAX_PRODUCT_IMAGES = 15;
 const shippingCompanies = [
   "Sen Kargo",
@@ -155,6 +157,8 @@ export function Admin() {
   const [marketingSettings, setMarketingSettings] = useState<AdminAbandonedCartSettings>(defaultMarketingSettings);
   const [marketingLoading, setMarketingLoading] = useState(false);
   const [marketingMessage, setMarketingMessage] = useState("");
+  const [isMarketingMenuOpen, setIsMarketingMenuOpen] = useState(false);
+  const [activeMarketingPanel, setActiveMarketingPanel] = useState<MarketingPanel>("abandonedCart");
   const [marketingStats, setMarketingStats] = useState<{
     eligibleUsers: number;
     sentLast7Days: number;
@@ -454,6 +458,8 @@ export function Admin() {
     setMarketingSettings(defaultMarketingSettings);
     setMarketingLoading(false);
     setMarketingMessage("");
+    setIsMarketingMenuOpen(false);
+    setActiveMarketingPanel("abandonedCart");
     setMarketingStats(null);
     setIsSavingMarketing(false);
     setIsRunningMarketing(false);
@@ -475,11 +481,32 @@ export function Admin() {
     if (section !== "products") {
       setIsProductsMenuOpen(false);
     }
+    if (section !== "marketing") {
+      setIsMarketingMenuOpen(false);
+    }
     setIsMobileNavOpen(false);
   };
 
   const handleProductsMenuToggle = () => {
     setIsProductsMenuOpen((prev) => !prev);
+  };
+
+  const handleMarketingMenuToggle = () => {
+    setIsMarketingMenuOpen((prev) => !prev);
+  };
+
+  const handleOpenAbandonedCartMarketing = () => {
+    setActiveSection("marketing");
+    setActiveMarketingPanel("abandonedCart");
+    setIsMarketingMenuOpen(true);
+    setIsMobileNavOpen(false);
+  };
+
+  const handleOpenCouponsMarketing = () => {
+    setActiveSection("marketing");
+    setActiveMarketingPanel("coupons");
+    setIsMarketingMenuOpen(true);
+    setIsMobileNavOpen(false);
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -1566,17 +1593,73 @@ export function Admin() {
                 İletişim Talepleri
               </span>
             </button>
-            <button
-              onClick={() => handleSectionChange("marketing")}
-              className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
-                activeSection === "marketing" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
-              }`}
-            >
-              <span className="inline-flex items-center gap-2">
-                <Megaphone className="w-4 h-4" />
-                Pazarlama
-              </span>
-            </button>
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={handleMarketingMenuToggle}
+                className={`w-full flex items-center justify-between px-4 py-2 rounded-md text-sm transition-colors ${
+                  activeSection === "marketing" || isMarketingMenuOpen
+                    ? "bg-black text-white"
+                    : "text-black hover:bg-[#ECE7DC]"
+                }`}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Megaphone className="w-4 h-4" />
+                  Pazarlama
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform ${isMarketingMenuOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              <div
+                className={`grid transition-all duration-200 ease-out ${
+                  isMarketingMenuOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                }`}
+              >
+                <div className="overflow-hidden">
+                  <div className="pl-4 pt-1 space-y-1">
+                    <button
+                      type="button"
+                      onClick={handleOpenAbandonedCartMarketing}
+                      className={`relative w-full text-left pl-10 pr-4 py-2 rounded-md text-sm transition-colors ${
+                        activeSection === "marketing" && activeMarketingPanel === "abandonedCart"
+                          ? "bg-[#ECE7DC] text-black"
+                          : "text-black hover:bg-[#ECE7DC]"
+                      }`}
+                    >
+                      <span
+                        className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full ${
+                          activeSection === "marketing" && activeMarketingPanel === "abandonedCart"
+                            ? "bg-black"
+                            : "bg-transparent"
+                        }`}
+                      />
+                      <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
+                      Sepet Terk
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenCouponsMarketing}
+                      className={`relative w-full text-left pl-10 pr-4 py-2 rounded-md text-sm transition-colors ${
+                        activeSection === "marketing" && activeMarketingPanel === "coupons"
+                          ? "bg-[#ECE7DC] text-black"
+                          : "text-black hover:bg-[#ECE7DC]"
+                      }`}
+                    >
+                      <span
+                        className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full ${
+                          activeSection === "marketing" && activeMarketingPanel === "coupons"
+                            ? "bg-black"
+                            : "bg-transparent"
+                        }`}
+                      />
+                      <Tag className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
+                      Kuponlar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
             <button
               onClick={() => handleSectionChange("settings")}
               className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
@@ -1727,17 +1810,73 @@ export function Admin() {
                       İletişim Talepleri
                     </span>
                   </button>
-                  <button
-                    onClick={() => handleSectionChange("marketing")}
-                    className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
-                      activeSection === "marketing" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
-                    }`}
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <Megaphone className="w-4 h-4" />
-                      Pazarlama
-                    </span>
-                  </button>
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={handleMarketingMenuToggle}
+                      className={`w-full flex items-center justify-between px-4 py-2 rounded-md text-sm transition-colors ${
+                        activeSection === "marketing" || isMarketingMenuOpen
+                          ? "bg-black text-white"
+                          : "text-black hover:bg-[#ECE7DC]"
+                      }`}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Megaphone className="w-4 h-4" />
+                        Pazarlama
+                      </span>
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform ${isMarketingMenuOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                    <div
+                      className={`grid transition-all duration-200 ease-out ${
+                        isMarketingMenuOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                      }`}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="pl-4 pt-1 space-y-1">
+                          <button
+                            type="button"
+                            onClick={handleOpenAbandonedCartMarketing}
+                            className={`relative w-full text-left pl-10 pr-4 py-2 rounded-md text-sm transition-colors ${
+                              activeSection === "marketing" && activeMarketingPanel === "abandonedCart"
+                                ? "bg-[#ECE7DC] text-black"
+                                : "text-black hover:bg-[#ECE7DC]"
+                            }`}
+                          >
+                            <span
+                              className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full ${
+                                activeSection === "marketing" && activeMarketingPanel === "abandonedCart"
+                                  ? "bg-black"
+                                  : "bg-transparent"
+                              }`}
+                            />
+                            <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
+                            Sepet Terk
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleOpenCouponsMarketing}
+                            className={`relative w-full text-left pl-10 pr-4 py-2 rounded-md text-sm transition-colors ${
+                              activeSection === "marketing" && activeMarketingPanel === "coupons"
+                                ? "bg-[#ECE7DC] text-black"
+                                : "text-black hover:bg-[#ECE7DC]"
+                            }`}
+                          >
+                            <span
+                              className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full ${
+                                activeSection === "marketing" && activeMarketingPanel === "coupons"
+                                  ? "bg-black"
+                                  : "bg-transparent"
+                              }`}
+                            />
+                            <Tag className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
+                            Kuponlar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                   <button
                     onClick={() => handleSectionChange("settings")}
                     className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
@@ -2078,7 +2217,7 @@ export function Admin() {
             <div>
               <h2 className="text-2xl font-light mb-2">Pazarlama</h2>
               <p className="text-sm text-gray-500 mb-5">
-                İlk kampanya olarak sepette ürün bırakıp ayrılan müşterilere hatırlatma e-postası gönderilir.
+                Pazarlama araçlarını alt menülerden ayrı ayrı yönetebilir, kampanyaları daha kontrollü şekilde kurabilirsiniz.
               </p>
 
               {marketingLoading ? (
@@ -2108,106 +2247,168 @@ export function Admin() {
                     </div>
                   </div>
 
-                  <form
-                    onSubmit={handleSaveMarketingSettings}
-                    className="bg-white border border-[#E7E2D8] rounded-lg p-4 space-y-4"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-sm font-medium">Sepeti Terk Edenler</h3>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Sadece giriş yapmış ve sunucuda sepeti kayıtlı kullanıcılar hedeflenir.
-                        </p>
-                      </div>
-                      <label className="inline-flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={marketingSettings.enabled}
-                          onChange={(e) =>
-                            setMarketingSettings((prev) => ({ ...prev, enabled: e.target.checked }))
-                          }
-                        />
-                        Kampanya aktif
-                      </label>
-                    </div>
+                  <div className="inline-flex flex-wrap gap-2 rounded-full border border-[#E7E2D8] bg-white p-1">
+                    <button
+                      type="button"
+                      onClick={handleOpenAbandonedCartMarketing}
+                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition-colors ${
+                        activeMarketingPanel === "abandonedCart"
+                          ? "bg-black text-white"
+                          : "text-black hover:bg-[#ECE7DC]"
+                      }`}
+                    >
+                      <Mail className="h-4 w-4" />
+                      Sepet Terk
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenCouponsMarketing}
+                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition-colors ${
+                        activeMarketingPanel === "coupons"
+                          ? "bg-black text-white"
+                          : "text-black hover:bg-[#ECE7DC]"
+                      }`}
+                    >
+                      <Tag className="h-4 w-4" />
+                      Kuponlar
+                    </button>
+                  </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Bekleme Süresi</label>
-                        <input
-                          type="number"
-                          min={15}
-                          max={10080}
-                          value={marketingSettings.delayMinutes}
-                          onChange={(e) =>
-                            setMarketingSettings((prev) => ({
-                              ...prev,
-                              delayMinutes: Number(e.target.value || 0),
-                            }))
-                          }
-                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                        />
-                        <p className="mt-1 text-xs text-gray-500">Dakika cinsinden. Örn: 120 = 2 saat.</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Buton Metni</label>
-                        <input
-                          type="text"
-                          maxLength={80}
-                          value={marketingSettings.ctaLabel}
-                          onChange={(e) =>
-                            setMarketingSettings((prev) => ({ ...prev, ctaLabel: e.target.value }))
-                          }
-                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">E-posta Konusu</label>
-                      <input
-                        type="text"
-                        maxLength={180}
-                        value={marketingSettings.subject}
-                        onChange={(e) =>
-                          setMarketingSettings((prev) => ({ ...prev, subject: e.target.value }))
-                        }
-                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Başlık</label>
-                      <input
-                        type="text"
-                        maxLength={180}
-                        value={marketingSettings.heading}
-                        onChange={(e) =>
-                          setMarketingSettings((prev) => ({ ...prev, heading: e.target.value }))
-                        }
-                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Mesaj</label>
-                      <textarea
-                        rows={5}
-                        maxLength={2000}
-                        value={marketingSettings.body}
-                        onChange={(e) =>
-                          setMarketingSettings((prev) => ({ ...prev, body: e.target.value }))
-                        }
-                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black resize-y"
-                      />
-                    </div>
-
-                    <div className="border border-[#E7E2D8] rounded-lg p-4 space-y-4">
+                  {activeMarketingPanel === "abandonedCart" ? (
+                    <form
+                      onSubmit={handleSaveMarketingSettings}
+                      className="bg-white border border-[#E7E2D8] rounded-lg p-4 space-y-4"
+                    >
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <h4 className="text-sm font-medium">Kupon Kodu</h4>
+                          <h3 className="text-sm font-medium">Sepeti Terk Edenler</h3>
                           <p className="text-xs text-gray-500 mt-1">
-                            Mail içindeki butonla sepete dönen kullanıcıda kupon otomatik uygulanır.
+                            Sadece giriş yapmış ve sunucuda sepeti kayıtlı kullanıcılar hedeflenir.
+                          </p>
+                        </div>
+                        <label className="inline-flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={marketingSettings.enabled}
+                            onChange={(e) =>
+                              setMarketingSettings((prev) => ({ ...prev, enabled: e.target.checked }))
+                            }
+                          />
+                          Kampanya aktif
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Bekleme Süresi</label>
+                          <input
+                            type="number"
+                            min={15}
+                            max={10080}
+                            value={marketingSettings.delayMinutes}
+                            onChange={(e) =>
+                              setMarketingSettings((prev) => ({
+                                ...prev,
+                                delayMinutes: Number(e.target.value || 0),
+                              }))
+                            }
+                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                          />
+                          <p className="mt-1 text-xs text-gray-500">Dakika cinsinden. Örn: 120 = 2 saat.</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Buton Metni</label>
+                          <input
+                            type="text"
+                            maxLength={80}
+                            value={marketingSettings.ctaLabel}
+                            onChange={(e) =>
+                              setMarketingSettings((prev) => ({ ...prev, ctaLabel: e.target.value }))
+                            }
+                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">E-posta Konusu</label>
+                        <input
+                          type="text"
+                          maxLength={180}
+                          value={marketingSettings.subject}
+                          onChange={(e) =>
+                            setMarketingSettings((prev) => ({ ...prev, subject: e.target.value }))
+                          }
+                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Başlık</label>
+                        <input
+                          type="text"
+                          maxLength={180}
+                          value={marketingSettings.heading}
+                          onChange={(e) =>
+                            setMarketingSettings((prev) => ({ ...prev, heading: e.target.value }))
+                          }
+                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Mesaj</label>
+                        <textarea
+                          rows={5}
+                          maxLength={2000}
+                          value={marketingSettings.body}
+                          onChange={(e) =>
+                            setMarketingSettings((prev) => ({ ...prev, body: e.target.value }))
+                          }
+                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black resize-y"
+                        />
+                      </div>
+
+                      {marketingMessage ? (
+                        <p
+                          className={`text-sm ${
+                            marketingMessage.includes("tamamlandı") || marketingMessage.includes("kaydedildi")
+                              ? "text-green-700"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {marketingMessage}
+                        </p>
+                      ) : null}
+
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <button
+                          type="submit"
+                          disabled={isSavingMarketing}
+                          className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          {isSavingMarketing ? "Kaydediliyor..." : "Kampanyayı Kaydet"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRunMarketingCampaign}
+                          disabled={isRunningMarketing}
+                          className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          {isRunningMarketing ? "Taranıyor..." : "Şimdi Tara ve Gönder"}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <form
+                      onSubmit={handleSaveMarketingSettings}
+                      className="bg-white border border-[#E7E2D8] rounded-lg p-4 space-y-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-medium">Kuponlar</h3>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Buradaki kupon ayarları sepete terk e-postasında gösterilen indirimi belirler.
                           </p>
                         </div>
                         <label className="inline-flex items-center gap-2 text-sm">
@@ -2308,38 +2509,34 @@ export function Admin() {
                           className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
                         />
                       </div>
-                    </div>
 
-                    {marketingMessage ? (
-                      <p
-                        className={`text-sm ${
-                          marketingMessage.includes("tamamlandı") || marketingMessage.includes("kaydedildi")
-                            ? "text-green-700"
-                            : "text-red-600"
-                        }`}
-                      >
-                        {marketingMessage}
-                      </p>
-                    ) : null}
+                      <div className="rounded-lg border border-[#E7E2D8] bg-[#F8F7F4] px-4 py-3 text-sm text-gray-600">
+                        Kupon sepette minimum tutar sağlandığında otomatik uygulanır ve ödeme sırasında sunucuda tekrar doğrulanır.
+                      </div>
 
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <button
-                        type="submit"
-                        disabled={isSavingMarketing}
-                        className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
-                      >
-                        {isSavingMarketing ? "Kaydediliyor..." : "Kampanyayı Kaydet"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleRunMarketingCampaign}
-                        disabled={isRunningMarketing}
-                        className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
-                      >
-                        {isRunningMarketing ? "Taranıyor..." : "Şimdi Tara ve Gönder"}
-                      </button>
-                    </div>
-                  </form>
+                      {marketingMessage ? (
+                        <p
+                          className={`text-sm ${
+                            marketingMessage.includes("tamamlandı") || marketingMessage.includes("kaydedildi")
+                              ? "text-green-700"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {marketingMessage}
+                        </p>
+                      ) : null}
+
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <button
+                          type="submit"
+                          disabled={isSavingMarketing}
+                          className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          {isSavingMarketing ? "Kaydediliyor..." : "Kuponları Kaydet"}
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               )}
             </div>

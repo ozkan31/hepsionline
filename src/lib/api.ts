@@ -1,4 +1,17 @@
-﻿import type { Address, AdminContactRequest, AdminOrder, AdminUserSummary, CartItem, Category, Order, Product, User } from "@/types";
+﻿import type {
+  Address,
+  AdminAbandonedCartCampaignResponse,
+  AdminAbandonedCartRunSummary,
+  AdminAbandonedCartSettings,
+  AdminContactRequest,
+  AdminOrder,
+  AdminUserSummary,
+  CartItem,
+  Category,
+  Order,
+  Product,
+  User,
+} from "@/types";
 
 const AUTH_TOKEN_KEY = "parisMoveAuthToken";
 
@@ -443,6 +456,44 @@ export async function updateAdminSettings(
   return parseResponse<{ siteName: string }>(response);
 }
 
+export async function fetchAdminAbandonedCartCampaign(
+  token: string
+): Promise<AdminAbandonedCartCampaignResponse> {
+  const response = await fetch("/api/admin/marketing/abandoned-cart", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseResponse<AdminAbandonedCartCampaignResponse>(response);
+}
+
+export async function updateAdminAbandonedCartCampaign(
+  token: string,
+  input: AdminAbandonedCartSettings
+): Promise<AdminAbandonedCartCampaignResponse> {
+  const response = await fetch("/api/admin/marketing/abandoned-cart", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(input),
+  });
+  return parseResponse<AdminAbandonedCartCampaignResponse>(response);
+}
+
+export async function runAdminAbandonedCartCampaign(
+  token: string
+): Promise<AdminAbandonedCartRunSummary> {
+  const response = await fetch("/api/admin/marketing/abandoned-cart/run", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({}),
+  });
+  return parseResponse<AdminAbandonedCartRunSummary>(response);
+}
+
 export async function fetchAdminGoogleMerchantStatus(token: string): Promise<{
   enabled: boolean;
   configured: boolean;
@@ -659,3 +710,4 @@ export async function uploadAdminProductImages(token: string, files: File[]): Pr
   const data = await parseResponse<{ urls: string[] }>(response);
   return Array.isArray(data.urls) ? data.urls : [];
 }
+

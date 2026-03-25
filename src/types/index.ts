@@ -108,3 +108,34 @@ export interface AdminUserSummary {
   phone: string;
   createdAt: string;
 }
+
+export interface AdminAbandonedCartSettings {
+  enabled: boolean;
+  delayMinutes: number;
+  subject: string;
+  heading: string;
+  body: string;
+  ctaLabel: string;
+}
+
+export interface AdminAbandonedCartStats {
+  eligibleUsers: number;
+  sentLast7Days: number;
+  lastSentAt: string | null;
+  mailConfigured: boolean;
+}
+
+export interface AdminAbandonedCartCampaignResponse {
+  settings: AdminAbandonedCartSettings;
+  stats: AdminAbandonedCartStats;
+}
+
+export interface AdminAbandonedCartRunSummary {
+  enabled: boolean;
+  scanned: number;
+  eligible: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+  message: string;
+}

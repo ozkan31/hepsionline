@@ -4,6 +4,7 @@ import {
   createAdminProduct,
   adminLogin,
   deleteAdminProduct,
+  fetchAdminAbandonedCartCampaign,
   fetchAdminContactRequests,
   fetchAdminProductById,
   fetchAdminGoogleMerchantStatus,
@@ -15,13 +16,21 @@ import {
   updateAdminSettings,
   syncAdminGoogleMerchant,
   updateAdminOrderStatus,
+  updateAdminAbandonedCartCampaign,
   updateAdminProduct,
   uploadAdminProductImages,
+  runAdminAbandonedCartCampaign,
 } from "@/lib/api";
-import type { AdminContactRequest, AdminOrder, AdminUserSummary, Product } from "@/types";
+import type {
+  AdminAbandonedCartSettings,
+  AdminContactRequest,
+  AdminOrder,
+  AdminUserSummary,
+  Product,
+} from "@/types";
 
 const ADMIN_TOKEN_KEY = "parisMoveAdminToken";
-type AdminSection = "orders" | "products" | "users" | "contactRequests" | "settings";
+type AdminSection = "orders" | "products" | "users" | "contactRequests" | "marketing" | "settings";
 type OrderStatusDraft = {
   status: "processing" | "shipped" | "delivered";
   shippingCompany: string;
@@ -49,6 +58,15 @@ const shippingCompanies = [
   "Sürat Kargo",
   "Yurtiçi Kargo",
 ];
+const defaultMarketingSettings: AdminAbandonedCartSettings = {
+  enabled: false,
+  delayMinutes: 120,
+  subject: "Sepetiniz sizi bekliyor",
+  heading: "Sepetinizde bıraktığınız ürünler sizi bekliyor",
+  body:
+    "Seçtiğiniz ürünler hâlâ sepetinizde duruyor. Tükenmeden alışverişinizi tamamlamak için sepete geri dönebilirsiniz.",
+  ctaLabel: "Sepetime Dön",
+};
 
 export function Admin() {
   const [email, setEmail] = useState("");
@@ -81,6 +99,17 @@ export function Admin() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState("");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [marketingSettings, setMarketingSettings] = useState<AdminAbandonedCartSettings>(defaultMarketingSettings);
+  const [marketingLoading, setMarketingLoading] = useState(false);
+  const [marketingMessage, setMarketingMessage] = useState("");
+  const [marketingStats, setMarketingStats] = useState<{
+    eligibleUsers: number;
+    sentLast7Days: number;
+    lastSentAt: string | null;
+    mailConfigured: boolean;
+  } | null>(null);
+  const [isSavingMarketing, setIsSavingMarketing] = useState(false);
+  const [isRunningMarketing, setIsRunningMarketing] = useState(false);
   const [merchantStatus, setMerchantStatus] = useState<{
     enabled: boolean;
     configured: boolean;
@@ -296,6 +325,34 @@ export function Admin() {
     loadContactRequests();
   }, [activeSection, isAuthenticated]);
 
+  useEffect(() => {
+    if (!isAuthenticated || activeSection !== "marketing") return;
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) return;
+
+    let mounted = true;
+    const loadMarketing = async () => {
+      setMarketingLoading(true);
+      setMarketingMessage("");
+      try {
+        const data = await fetchAdminAbandonedCartCampaign(token);
+        if (!mounted) return;
+        setMarketingSettings(data.settings);
+        setMarketingStats(data.stats);
+      } catch (err) {
+        if (!mounted) return;
+        setMarketingMessage(err instanceof Error ? err.message : "Pazarlama ayarları alınamadı.");
+      } finally {
+        if (mounted) setMarketingLoading(false);
+      }
+    };
+
+    void loadMarketing();
+    return () => {
+      mounted = false;
+    };
+  }, [activeSection, isAuthenticated]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -334,6 +391,12 @@ export function Admin() {
     setSettingsLoading(false);
     setSettingsMessage("");
     setIsSavingSettings(false);
+    setMarketingSettings(defaultMarketingSettings);
+    setMarketingLoading(false);
+    setMarketingMessage("");
+    setMarketingStats(null);
+    setIsSavingMarketing(false);
+    setIsRunningMarketing(false);
     setMerchantStatus(null);
     setMerchantLoading(false);
     setMerchantSyncing(false);
@@ -372,6 +435,44 @@ export function Admin() {
       setSettingsMessage(err instanceof Error ? err.message : "Ayarlar kaydedilemedi.");
     } finally {
       setIsSavingSettings(false);
+    }
+  };
+
+  const handleSaveMarketingSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) return;
+
+    setIsSavingMarketing(true);
+    setMarketingMessage("");
+    try {
+      const data = await updateAdminAbandonedCartCampaign(token, marketingSettings);
+      setMarketingSettings(data.settings);
+      setMarketingStats(data.stats);
+      setMarketingMessage("Sepeti terk eden müşteriler kampanyası kaydedildi.");
+    } catch (err) {
+      setMarketingMessage(err instanceof Error ? err.message : "Pazarlama ayarları kaydedilemedi.");
+    } finally {
+      setIsSavingMarketing(false);
+    }
+  };
+
+  const handleRunMarketingCampaign = async () => {
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) return;
+
+    setIsRunningMarketing(true);
+    setMarketingMessage("");
+    try {
+      const result = await runAdminAbandonedCartCampaign(token);
+      setMarketingMessage(result.message);
+      const refreshed = await fetchAdminAbandonedCartCampaign(token);
+      setMarketingSettings(refreshed.settings);
+      setMarketingStats(refreshed.stats);
+    } catch (err) {
+      setMarketingMessage(err instanceof Error ? err.message : "Kampanya çalıştırılamadı.");
+    } finally {
+      setIsRunningMarketing(false);
     }
   };
 
@@ -952,6 +1053,14 @@ export function Admin() {
               İletişim Talepleri
             </button>
             <button
+              onClick={() => handleSectionChange("marketing")}
+              className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
+                activeSection === "marketing" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
+              }`}
+            >
+              Pazarlama
+            </button>
+            <button
               onClick={() => handleSectionChange("settings")}
               className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
                 activeSection === "settings" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
@@ -1026,6 +1135,14 @@ export function Admin() {
                     }`}
                   >
                     İletişim Talepleri
+                  </button>
+                  <button
+                    onClick={() => handleSectionChange("marketing")}
+                    className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
+                      activeSection === "marketing" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
+                    }`}
+                  >
+                    Pazarlama
                   </button>
                   <button
                     onClick={() => handleSectionChange("settings")}
@@ -1330,6 +1447,169 @@ export function Admin() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {activeSection === "marketing" && (
+            <div>
+              <h2 className="text-2xl font-light mb-2">Pazarlama</h2>
+              <p className="text-sm text-gray-500 mb-5">
+                İlk kampanya olarak sepette ürün bırakıp ayrılan müşterilere hatırlatma e-postası gönderilir.
+              </p>
+
+              {marketingLoading ? (
+                <p className="text-sm text-gray-500">Pazarlama ayarları yükleniyor...</p>
+              ) : (
+                <div className="max-w-4xl space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div className="bg-white border border-[#E7E2D8] rounded-lg p-4">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">SMTP</p>
+                      <p className={`mt-2 text-sm font-medium ${marketingStats?.mailConfigured ? "text-green-700" : "text-red-600"}`}>
+                        {marketingStats?.mailConfigured ? "Hazır" : "Eksik"}
+                      </p>
+                    </div>
+                    <div className="bg-white border border-[#E7E2D8] rounded-lg p-4">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Uygun Sepet</p>
+                      <p className="mt-2 text-2xl font-light">{marketingStats?.eligibleUsers ?? 0}</p>
+                    </div>
+                    <div className="bg-white border border-[#E7E2D8] rounded-lg p-4">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Son 7 Gün</p>
+                      <p className="mt-2 text-2xl font-light">{marketingStats?.sentLast7Days ?? 0}</p>
+                    </div>
+                    <div className="bg-white border border-[#E7E2D8] rounded-lg p-4">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Son Gönderim</p>
+                      <p className="mt-2 text-sm font-medium text-gray-700">
+                        {marketingStats?.lastSentAt ? formatOrderDateTime(marketingStats.lastSentAt) : "-"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <form
+                    onSubmit={handleSaveMarketingSettings}
+                    className="bg-white border border-[#E7E2D8] rounded-lg p-4 space-y-4"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-medium">Sepeti Terk Edenler</h3>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Sadece giriş yapmış ve sunucuda sepeti kayıtlı kullanıcılar hedeflenir.
+                        </p>
+                      </div>
+                      <label className="inline-flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={marketingSettings.enabled}
+                          onChange={(e) =>
+                            setMarketingSettings((prev) => ({ ...prev, enabled: e.target.checked }))
+                          }
+                        />
+                        Kampanya aktif
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Bekleme Süresi</label>
+                        <input
+                          type="number"
+                          min={15}
+                          max={10080}
+                          value={marketingSettings.delayMinutes}
+                          onChange={(e) =>
+                            setMarketingSettings((prev) => ({
+                              ...prev,
+                              delayMinutes: Number(e.target.value || 0),
+                            }))
+                          }
+                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">Dakika cinsinden. Örn: 120 = 2 saat.</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Buton Metni</label>
+                        <input
+                          type="text"
+                          maxLength={80}
+                          value={marketingSettings.ctaLabel}
+                          onChange={(e) =>
+                            setMarketingSettings((prev) => ({ ...prev, ctaLabel: e.target.value }))
+                          }
+                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-1">E-posta Konusu</label>
+                      <input
+                        type="text"
+                        maxLength={180}
+                        value={marketingSettings.subject}
+                        onChange={(e) =>
+                          setMarketingSettings((prev) => ({ ...prev, subject: e.target.value }))
+                        }
+                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Başlık</label>
+                      <input
+                        type="text"
+                        maxLength={180}
+                        value={marketingSettings.heading}
+                        onChange={(e) =>
+                          setMarketingSettings((prev) => ({ ...prev, heading: e.target.value }))
+                        }
+                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Mesaj</label>
+                      <textarea
+                        rows={5}
+                        maxLength={2000}
+                        value={marketingSettings.body}
+                        onChange={(e) =>
+                          setMarketingSettings((prev) => ({ ...prev, body: e.target.value }))
+                        }
+                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black resize-y"
+                      />
+                    </div>
+
+                    {marketingMessage ? (
+                      <p
+                        className={`text-sm ${
+                          marketingMessage.includes("tamamlandı") || marketingMessage.includes("kaydedildi")
+                            ? "text-green-700"
+                            : "text-red-600"
+                        }`}
+                      >
+                        {marketingMessage}
+                      </p>
+                    ) : null}
+
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <button
+                        type="submit"
+                        disabled={isSavingMarketing}
+                        className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
+                      >
+                        {isSavingMarketing ? "Kaydediliyor..." : "Kampanyayı Kaydet"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRunMarketingCampaign}
+                        disabled={isRunningMarketing}
+                        className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
+                      >
+                        {isRunningMarketing ? "Taranıyor..." : "Şimdi Tara ve Gönder"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
             </div>
           )}
 

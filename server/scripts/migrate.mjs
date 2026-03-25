@@ -229,6 +229,26 @@ CREATE TABLE IF NOT EXISTS contact_requests (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
+const createMarketingAbandonedCartEmailsSql = `
+CREATE TABLE IF NOT EXISTS marketing_abandoned_cart_emails (
+  id CHAR(36) PRIMARY KEY,
+  user_id CHAR(36) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  cart_signature CHAR(64) NOT NULL,
+  cart_updated_at DATETIME NOT NULL,
+  cart_snapshot_json JSON NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'sent',
+  error_message TEXT NULL,
+  sent_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_marketing_abandoned_cart_emails_user
+    FOREIGN KEY (user_id)
+    REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
 async function hasIndex(tableName, indexName) {
   const [rows] = await pool.query(`SHOW INDEX FROM \`${tableName}\``);
   return rows.some((row) => String(row.Key_name || "") === indexName);
@@ -255,6 +275,7 @@ async function migrate() {
   await pool.query(createUserOrderItemsSql);
   await pool.query(createAppSettingsSql);
   await pool.query(createContactRequestsSql);
+  await pool.query(createMarketingAbandonedCartEmailsSql);
 
   // Backward-compatible migration for existing databases.
   try {
@@ -502,6 +523,16 @@ async function migrate() {
     "user_sessions",
     "idx_user_sessions_expires_at",
     `CREATE INDEX idx_user_sessions_expires_at ON user_sessions (expires_at)`
+  );
+  await ensureIndex(
+    "marketing_abandoned_cart_emails",
+    "idx_marketing_abandoned_cart_signature",
+    `CREATE INDEX idx_marketing_abandoned_cart_signature ON marketing_abandoned_cart_emails (user_id, cart_signature, status)`
+  );
+  await ensureIndex(
+    "marketing_abandoned_cart_emails",
+    "idx_marketing_abandoned_cart_sent_at",
+    `CREATE INDEX idx_marketing_abandoned_cart_sent_at ON marketing_abandoned_cart_emails (sent_at)`
   );
 
   await pool.query(

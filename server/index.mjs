@@ -353,6 +353,22 @@ const orderMailTransporter = isOrderSmtpConfigured
       },
     })
   : null;
+const abandonedCartMailTransporter = orderMailTransporter || mailTransporter;
+const abandonedCartMailFromName = orderMailTransporter ? ORDER_SMTP_FROM_NAME : SMTP_FROM_NAME;
+const abandonedCartMailFromEmail = orderMailTransporter ? ORDER_SMTP_FROM_EMAIL : SMTP_FROM_EMAIL;
+const ABANDONED_CART_SETTING_KEY = "marketing_abandoned_cart";
+const ABANDONED_CART_SCAN_INTERVAL_MS = 15 * 60 * 1000;
+const DEFAULT_ABANDONED_CART_SETTINGS = Object.freeze({
+  enabled: false,
+  delayMinutes: 120,
+  subject: "Sepetiniz sizi bekliyor",
+  heading: "Sepetinizde bıraktığınız ürünler sizi bekliyor",
+  body:
+    "Seçtiğiniz ürünler hâlâ sepetinizde duruyor. Tükenmeden alışverişinizi tamamlamak için sepete geri dönebilirsiniz.",
+  ctaLabel: "Sepetime Dön",
+});
+let abandonedCartScanTimeout = null;
+let abandonedCartScanInFlight = null;
 const WHATSAPP_ENABLED = String(process.env.WHATSAPP_ENABLED ?? "false").toLowerCase() === "true";
 const WHATSAPP_API_URL = String(process.env.WHATSAPP_API_URL ?? "").trim();
 const WHATSAPP_API_TOKEN = String(process.env.WHATSAPP_API_TOKEN ?? "").trim();
@@ -1448,6 +1464,313 @@ Siparişiniz kargoya verildiğinde size bilgilendirme e-postası gönderilecekti
   });
 }
 
+async function sendAbandonedCartEmail(req, { to, firstName, cartItems, settings }) {
+  if (!abandonedCartMailTransporter) {
+    throw new Error("Abandoned cart mail transporter is not configured.");
+  }
+
+  const safeSettings = sanitizeAbandonedCartSettings(settings);
+  const safeFirstName = escapeHtml(String(firstName ?? "").trim() || "Müşterimiz");
+  const baseUrl = buildPublicBaseUrl(req);
+  const loginUrl = `${baseUrl}/giris?redirect=${encodeURIComponent("/sepet")}`;
+  const subject = String(safeSettings.subject ?? DEFAULT_ABANDONED_CART_SETTINGS.subject).trim();
+  const heading = escapeHtml(String(safeSettings.heading ?? DEFAULT_ABANDONED_CART_SETTINGS.heading).trim());
+  const body = escapeHtml(String(safeSettings.body ?? DEFAULT_ABANDONED_CART_SETTINGS.body).trim());
+  const ctaLabel = escapeHtml(String(safeSettings.ctaLabel ?? DEFAULT_ABANDONED_CART_SETTINGS.ctaLabel).trim());
+  const items = Array.isArray(cartItems) ? cartItems : [];
+  const mailAttachments = [];
+  const totalAmount = items.reduce((sum, item) => {
+    const quantity = Math.max(1, Number(item?.quantity ?? 1) || 1);
+    const price = Number(item?.product?.price ?? 0);
+    return sum + quantity * price;
+  }, 0);
+
+  const productCardsHtml = items
+    .map((item, index) => {
+      const product = item?.product ?? {};
+      const productId = String(product?.id ?? "").trim();
+      const productName = escapeHtml(String(product?.name ?? "Ürün"));
+      const quantity = Math.max(1, Number(item?.quantity ?? 1) || 1);
+      const unitPrice = Number(product?.price ?? 0);
+      const totalPriceText = (unitPrice * quantity).toLocaleString("tr-TR");
+      const productUrl = productId ? `${baseUrl}/product/${encodeURIComponent(productId)}/` : loginUrl;
+      const rawImage = String(
+        Array.isArray(product?.images) && product.images.length > 0 ? product.images[0] : product?.image ?? ""
+      ).trim();
+      const dataAttachment = dataUrlToEmailAttachment(rawImage, `abandoned-cart-${Date.now()}-${index}`);
+      if (dataAttachment?.attachment) {
+        mailAttachments.push(dataAttachment.attachment);
+      }
+      const image = dataAttachment?.src ?? toPublicUrl(baseUrl, rawImage);
+
+      return `
+        <tr>
+          <td style="padding:0 0 20px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f7;border-radius:12px;padding:20px;">
+              <tr>
+                <td width="110" valign="top">
+                  ${image ? `<img src="${escapeHtml(image)}" width="96" style="border-radius:10px;display:block;" alt="${productName}">` : `<div style="width:96px;height:96px;border-radius:10px;background:#ececec;"></div>`}
+                </td>
+                <td valign="top" style="padding-left:18px;">
+                  <div style="font-size:18px;font-weight:600;margin-bottom:8px;">
+                    <a href="${escapeHtml(productUrl)}" style="color:#111;text-decoration:none;">${productName}</a>
+                  </div>
+                  <div style="color:#666;font-size:15px;">Adet: ${quantity}</div>
+                  <div style="margin-top:6px;font-size:16px;font-weight:600;">${totalPriceText} TL</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const html = `
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width">
+  <title>${escapeHtml(subject)}</title>
+</head>
+<body style="margin:0;padding:0;background:#efefef;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#222;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#efefef;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+          <tr>
+            <td style="padding:40px 40px 10px;text-align:center;">
+              <div style="font-size:30px;font-weight:700;letter-spacing:0.5px;color:#111;">StilBags&Fashion</div>
+              <div style="margin-top:14px;font-size:32px;font-weight:600;color:#111;">${heading}</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:10px 50px 20px;font-size:16px;line-height:1.8;color:#444;">
+              Merhaba ${safeFirstName},<br><br>
+              ${body}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 40px 10px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                ${productCardsHtml}
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 40px 25px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f7;border-radius:12px;padding:20px;">
+                <tr>
+                  <td style="font-size:16px;color:#333;">Sepet Toplamı</td>
+                  <td align="right" style="font-size:18px;font-weight:700;color:#111;">${totalAmount.toLocaleString("tr-TR")} TL</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:10px 40px 35px;">
+              <a href="${escapeHtml(loginUrl)}" style="background:#111;color:#fff;text-decoration:none;padding:16px 42px;border-radius:35px;font-size:16px;font-weight:500;display:inline-block;">
+                ${ctaLabel}
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 40px 40px;text-align:center;font-size:14px;color:#777;">
+              Sepetinizdeki ürünler hesabınızda saklanır. Giriş yaptıktan sonra kaldığınız yerden devam edebilirsiniz.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+
+  const textItems = items
+    .map((item) => {
+      const product = item?.product ?? {};
+      const quantity = Math.max(1, Number(item?.quantity ?? 1) || 1);
+      const price = Number(product?.price ?? 0);
+      return `- ${String(product?.name ?? "Ürün")} x${quantity} (${(price * quantity).toLocaleString("tr-TR")} TL)`;
+    })
+    .join("\n");
+  const text = [
+    `Merhaba ${String(firstName ?? "").trim() || "Müşterimiz"},`,
+    String(safeSettings.body ?? DEFAULT_ABANDONED_CART_SETTINGS.body).trim(),
+    "",
+    "Sepetinizde kalan ürünler:",
+    textItems,
+    "",
+    `Sepet toplamı: ${totalAmount.toLocaleString("tr-TR")} TL`,
+    `Sepete dön: ${loginUrl}`,
+  ].join("\n");
+
+  await abandonedCartMailTransporter.sendMail({
+    from: `"${abandonedCartMailFromName}" <${abandonedCartMailFromEmail}>`,
+    to,
+    subject,
+    text,
+    html,
+    attachments: mailAttachments,
+  });
+}
+
+async function runAbandonedCartCampaign({ req = null, force = false } = {}) {
+  const settings = await getAbandonedCartSettings();
+  if (!settings.enabled && !force) {
+    return {
+      enabled: false,
+      scanned: 0,
+      eligible: 0,
+      sent: 0,
+      skipped: 0,
+      failed: 0,
+      message: "Sepeti terk etme kampanyası kapalı.",
+    };
+  }
+
+  if (!abandonedCartMailTransporter) {
+    return {
+      enabled: settings.enabled,
+      scanned: 0,
+      eligible: 0,
+      sent: 0,
+      skipped: 0,
+      failed: 0,
+      message: "SMTP ayarı eksik olduğu için kampanya çalıştırılamadı.",
+    };
+  }
+
+  const [rows] = await pool.query(
+    `
+    SELECT
+      c.user_id,
+      u.email,
+      u.first_name,
+      MAX(c.updated_at) AS cart_updated_at
+    FROM user_cart_items c
+    JOIN users u ON u.id = c.user_id
+    WHERE COALESCE(NULLIF(TRIM(u.email), ''), '') <> ''
+    GROUP BY c.user_id, u.email, u.first_name
+    HAVING MAX(c.updated_at) <= DATE_SUB(NOW(), INTERVAL ? MINUTE)
+    ORDER BY MAX(c.updated_at) ASC
+    `,
+    [settings.delayMinutes]
+  );
+
+  const summary = {
+    enabled: settings.enabled,
+    scanned: rows.length,
+    eligible: 0,
+    sent: 0,
+    skipped: 0,
+    failed: 0,
+    message: "",
+  };
+
+  for (const row of rows) {
+    const userId = String(row.user_id ?? "").trim();
+    const email = String(row.email ?? "").trim().toLowerCase();
+    if (!userId || !email) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    const cartItems = await getUserCartItems(userId);
+    if (cartItems.length === 0) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    const cartSignature = buildAbandonedCartSignature(cartItems);
+    if (!cartSignature) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    if (await hasSentAbandonedCartEmail(userId, cartSignature)) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    summary.eligible += 1;
+
+    try {
+      const requestLike = req ?? {
+        protocol: "https",
+        get: (headerName) => {
+          if (String(headerName).toLowerCase() === "host") {
+            return String(ORDER_EMAIL_BASE_URL ?? "").replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+          }
+          return "";
+        },
+      };
+      await sendAbandonedCartEmail(requestLike, {
+        to: email,
+        firstName: row.first_name,
+        cartItems,
+        settings,
+      });
+      await recordAbandonedCartEmailAttempt({
+        userId,
+        email,
+        cartSignature,
+        cartUpdatedAt: row.cart_updated_at,
+        cartItems,
+        status: "sent",
+      });
+      summary.sent += 1;
+    } catch (error) {
+      await recordAbandonedCartEmailAttempt({
+        userId,
+        email,
+        cartSignature,
+        cartUpdatedAt: row.cart_updated_at,
+        cartItems,
+        status: "failed",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      summary.failed += 1;
+      console.error("Abandoned cart email send failed:", {
+        userId,
+        email,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
+  }
+
+  summary.message = `Tarama tamamlandı. Uygun: ${summary.eligible}, Gönderilen: ${summary.sent}, Atlanan: ${summary.skipped}, Hatalı: ${summary.failed}`;
+  return summary;
+}
+
+async function scheduleAbandonedCartCampaignScan() {
+  if (abandonedCartScanInFlight) {
+    return abandonedCartScanInFlight;
+  }
+
+  abandonedCartScanInFlight = (async () => {
+    try {
+      await ensureMarketingAbandonedCartEmailsTable();
+      await getAbandonedCartSettings();
+      await runAbandonedCartCampaign();
+    } catch (error) {
+      console.error("Abandoned cart scan failed:", error instanceof Error ? error.message : error);
+    } finally {
+      abandonedCartScanInFlight = null;
+      if (abandonedCartScanTimeout != null) {
+        clearTimeout(abandonedCartScanTimeout);
+      }
+      abandonedCartScanTimeout = setTimeout(() => {
+        void scheduleAbandonedCartCampaignScan();
+      }, ABANDONED_CART_SCAN_INTERVAL_MS);
+    }
+  })();
+
+  return abandonedCartScanInFlight;
+}
+
 function mapProductRow(row) {
   let images = [];
   try {
@@ -1935,6 +2258,117 @@ async function getUserCartItems(userId) {
   return rows.map(mapCartRow);
 }
 
+function buildAbandonedCartSignature(items) {
+  const normalizedItems = (Array.isArray(items) ? items : [])
+    .map((item) => ({
+      productId: String(item?.product?.id ?? "").trim(),
+      quantity: Math.max(1, Number(item?.quantity ?? 1) || 1),
+      color: String(item?.color ?? "").trim().toLowerCase(),
+    }))
+    .filter((item) => item.productId)
+    .sort((a, b) => {
+      const idCompare = a.productId.localeCompare(b.productId);
+      if (idCompare !== 0) return idCompare;
+      const colorCompare = a.color.localeCompare(b.color);
+      if (colorCompare !== 0) return colorCompare;
+      return a.quantity - b.quantity;
+    });
+
+  return sha256(JSON.stringify(normalizedItems));
+}
+
+function serializeAbandonedCartSnapshot(items) {
+  const snapshot = (Array.isArray(items) ? items : []).map((item) => ({
+    product: normalizeProductMedia(item?.product ?? {}),
+    quantity: Math.max(1, Number(item?.quantity ?? 1) || 1),
+    color: String(item?.color ?? "").trim(),
+  }));
+  return JSON.stringify(snapshot);
+}
+
+async function hasSentAbandonedCartEmail(userId, cartSignature) {
+  await ensureMarketingAbandonedCartEmailsTable();
+  const [rows] = await pool.query(
+    `
+    SELECT id
+    FROM marketing_abandoned_cart_emails
+    WHERE user_id = ? AND cart_signature = ? AND status = 'sent'
+    LIMIT 1
+    `,
+    [userId, cartSignature]
+  );
+  return rows.length > 0;
+}
+
+async function recordAbandonedCartEmailAttempt({
+  userId,
+  email,
+  cartSignature,
+  cartUpdatedAt,
+  cartItems,
+  status,
+  errorMessage = null,
+}) {
+  await ensureMarketingAbandonedCartEmailsTable();
+  await pool.query(
+    `
+    INSERT INTO marketing_abandoned_cart_emails (
+      id,
+      user_id,
+      email,
+      cart_signature,
+      cart_updated_at,
+      cart_snapshot_json,
+      status,
+      error_message,
+      sent_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      crypto.randomUUID(),
+      userId,
+      email,
+      cartSignature,
+      cartUpdatedAt,
+      serializeAbandonedCartSnapshot(cartItems),
+      status,
+      errorMessage,
+      status === "sent" ? new Date() : null,
+    ]
+  );
+}
+
+async function getAbandonedCartCampaignStats() {
+  await ensureMarketingAbandonedCartEmailsTable();
+  const [eligibleRows] = await pool.query(
+    `
+    SELECT COUNT(*) AS total
+    FROM (
+      SELECT c.user_id
+      FROM user_cart_items c
+      JOIN users u ON u.id = c.user_id
+      WHERE COALESCE(NULLIF(TRIM(u.email), ''), '') <> ''
+      GROUP BY c.user_id
+    ) eligible
+    `
+  );
+  const [sentRows] = await pool.query(
+    `
+    SELECT COUNT(*) AS total, MAX(sent_at) AS last_sent_at
+    FROM marketing_abandoned_cart_emails
+    WHERE status = 'sent' AND sent_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+    `
+  );
+
+  return {
+    eligibleUsers: Number(eligibleRows?.[0]?.total ?? 0),
+    sentLast7Days: Number(sentRows?.[0]?.total ?? 0),
+    lastSentAt: sentRows?.[0]?.last_sent_at ?? null,
+    mailConfigured: Boolean(abandonedCartMailTransporter),
+  };
+}
+
 async function getUserWishlistItems(userId) {
   const [rows] = await pool.query(
     `
@@ -2184,6 +2618,114 @@ async function ensureContactRequestsTable() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
+}
+
+async function ensureMarketingAbandonedCartEmailsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS marketing_abandoned_cart_emails (
+      id CHAR(36) PRIMARY KEY,
+      user_id CHAR(36) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      cart_signature CHAR(64) NOT NULL,
+      cart_updated_at DATETIME NOT NULL,
+      cart_snapshot_json JSON NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'sent',
+      error_message TEXT NULL,
+      sent_at DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT fk_marketing_abandoned_cart_emails_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE,
+      KEY idx_marketing_abandoned_cart_signature (user_id, cart_signature, status),
+      KEY idx_marketing_abandoned_cart_sent_at (sent_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+}
+
+async function getJsonAppSetting(settingKey, fallbackValue) {
+  await ensureAppSettingsTable();
+  const [rows] = await pool.query(
+    `
+    SELECT setting_value
+    FROM app_settings
+    WHERE setting_key = ?
+    LIMIT 1
+    `,
+    [settingKey]
+  );
+
+  if (rows.length === 0) {
+    await pool.query(
+      `
+      INSERT INTO app_settings (setting_key, setting_value)
+      VALUES (?, ?)
+      `,
+      [settingKey, JSON.stringify(fallbackValue)]
+    );
+    return JSON.parse(JSON.stringify(fallbackValue));
+  }
+
+  try {
+    const parsed = JSON.parse(String(rows[0].setting_value ?? "").trim() || "null");
+    if (parsed && typeof parsed === "object") {
+      return { ...fallbackValue, ...parsed };
+    }
+  } catch {
+    // fall through to reset invalid JSON
+  }
+
+  await pool.query(
+    `
+    INSERT INTO app_settings (setting_key, setting_value)
+    VALUES (?, ?)
+    ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = CURRENT_TIMESTAMP
+    `,
+    [settingKey, JSON.stringify(fallbackValue)]
+  );
+  return JSON.parse(JSON.stringify(fallbackValue));
+}
+
+async function setJsonAppSetting(settingKey, value) {
+  await ensureAppSettingsTable();
+  await pool.query(
+    `
+    INSERT INTO app_settings (setting_key, setting_value)
+    VALUES (?, ?)
+    ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = CURRENT_TIMESTAMP
+    `,
+    [settingKey, JSON.stringify(value)]
+  );
+}
+
+function sanitizeAbandonedCartSettings(input = {}) {
+  const delayMinutesRaw = Number(input?.delayMinutes ?? DEFAULT_ABANDONED_CART_SETTINGS.delayMinutes);
+  const delayMinutes = Math.max(15, Math.min(7 * 24 * 60, Number.isFinite(delayMinutesRaw) ? Math.trunc(delayMinutesRaw) : DEFAULT_ABANDONED_CART_SETTINGS.delayMinutes));
+  const subject = String(input?.subject ?? DEFAULT_ABANDONED_CART_SETTINGS.subject).trim().slice(0, 180);
+  const heading = String(input?.heading ?? DEFAULT_ABANDONED_CART_SETTINGS.heading).trim().slice(0, 180);
+  const body = String(input?.body ?? DEFAULT_ABANDONED_CART_SETTINGS.body).trim().slice(0, 2000);
+  const ctaLabel = String(input?.ctaLabel ?? DEFAULT_ABANDONED_CART_SETTINGS.ctaLabel).trim().slice(0, 80);
+
+  return {
+    enabled: Boolean(input?.enabled),
+    delayMinutes,
+    subject: subject || DEFAULT_ABANDONED_CART_SETTINGS.subject,
+    heading: heading || DEFAULT_ABANDONED_CART_SETTINGS.heading,
+    body: body || DEFAULT_ABANDONED_CART_SETTINGS.body,
+    ctaLabel: ctaLabel || DEFAULT_ABANDONED_CART_SETTINGS.ctaLabel,
+  };
+}
+
+async function getAbandonedCartSettings() {
+  const stored = await getJsonAppSetting(ABANDONED_CART_SETTING_KEY, DEFAULT_ABANDONED_CART_SETTINGS);
+  return sanitizeAbandonedCartSettings(stored);
+}
+
+async function setAbandonedCartSettings(input) {
+  const normalized = sanitizeAbandonedCartSettings(input);
+  await setJsonAppSetting(ABANDONED_CART_SETTING_KEY, normalized);
+  return normalized;
 }
 
 async function getSiteNameSetting() {
@@ -3482,6 +4024,52 @@ app.put("/api/admin/settings", requireAdminAuth, async (req, res) => {
   }
 });
 
+app.get("/api/admin/marketing/abandoned-cart", requireAdminAuth, async (_req, res) => {
+  try {
+    const [settings, stats] = await Promise.all([
+      getAbandonedCartSettings(),
+      getAbandonedCartCampaignStats(),
+    ]);
+    return res.json({
+      settings,
+      stats,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: "Abandoned cart kampanya ayarları alınamadı." });
+  }
+});
+
+app.put("/api/admin/marketing/abandoned-cart", requireAdminAuth, async (req, res) => {
+  try {
+    const settings = sanitizeAbandonedCartSettings(req.body ?? {});
+    if (!String(settings.subject ?? "").trim()) {
+      return res.status(400).json({ message: "E-posta konusu zorunludur." });
+    }
+    if (!String(settings.heading ?? "").trim()) {
+      return res.status(400).json({ message: "Başlık zorunludur." });
+    }
+    if (!String(settings.body ?? "").trim()) {
+      return res.status(400).json({ message: "Mesaj metni zorunludur." });
+    }
+    const saved = await setAbandonedCartSettings(settings);
+    const stats = await getAbandonedCartCampaignStats();
+    return res.json({ settings: saved, stats });
+  } catch (error) {
+    return res.status(500).json({ message: "Abandoned cart kampanya ayarları kaydedilemedi." });
+  }
+});
+
+app.post("/api/admin/marketing/abandoned-cart/run", requireAdminAuth, async (req, res) => {
+  try {
+    const summary = await runAbandonedCartCampaign({ req, force: true });
+    return res.json(summary);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Abandoned cart kampanyası çalıştırılamadı.";
+    return res.status(500).json({ message });
+  }
+});
+
 app.get("/api/admin/google-merchant/status", requireAdminAuth, async (_req, res) => {
   return res.json({
     enabled: GOOGLE_MERCHANT_ENABLED,
@@ -4692,7 +5280,9 @@ if (fs.existsSync(distIndexHtml)) {
   });
 }
 
+await ensureMarketingAbandonedCartEmailsTable();
 await initializeRedisCache();
+void scheduleAbandonedCartCampaignScan();
 
 app.listen(port, () => {
   console.log(`API server running on http://localhost:${port}`);

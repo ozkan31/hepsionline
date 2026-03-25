@@ -7,6 +7,7 @@ import {
   clearAuthToken,
   deleteAddress,
   fetchCurrentUser,
+  getAuthRememberPreference,
   getAuthToken,
   loginWithGoogle,
   logoutUser,
@@ -52,6 +53,7 @@ export function Account() {
   const [authGender, setAuthGender] = useState<"kadin" | "erkek" | "">("");
   const [authPhone, setAuthPhone] = useState("");
   const [authTermsAccepted, setAuthTermsAccepted] = useState(false);
+  const [authRememberMe, setAuthRememberMe] = useState(() => getAuthRememberPreference());
   const [authEmailExists, setAuthEmailExists] = useState<boolean | null>(null);
   const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
   const [isVerificationCodeSending, setIsVerificationCodeSending] = useState(false);
@@ -476,6 +478,7 @@ export function Account() {
         gender: authEmailExists ? undefined : authGender || undefined,
         phone: isRegisterAttempt ? authPhone.trim() : undefined,
         termsAccepted: isRegisterAttempt ? authTermsAccepted : undefined,
+        rememberMe: authRememberMe,
       });
 
       if (result.mode === "login" && result.user) {
@@ -511,6 +514,7 @@ export function Account() {
       const user = await verifyAuthFlowCode({
         email: authEmail,
         code: normalizedCode,
+        rememberMe: authRememberMe,
       });
       dispatch({ type: "SET_USER", payload: user });
       setIsVerificationModalOpen(false);
@@ -621,7 +625,7 @@ export function Account() {
   const handleGoogleLogin = async (credential: string) => {
     setErrorMessage("");
     try {
-      const user = await loginWithGoogle(credential);
+      const user = await loginWithGoogle(credential, { rememberMe: authRememberMe });
       dispatch({ type: "SET_USER", payload: user });
       navigateAfterAuth();
     } catch (error) {
@@ -926,6 +930,15 @@ export function Account() {
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
                       />
                     </div>
+                    <label className="flex items-center gap-3 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={authRememberMe}
+                        onChange={(e) => setAuthRememberMe(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
+                      />
+                      <span>Bu cihazda beni hatirla</span>
+                    </label>
                     <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
                       Devam Et
                     </button>
@@ -963,6 +976,15 @@ export function Account() {
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
                       />
                     </div>
+                    <label className="flex items-center gap-3 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={authRememberMe}
+                        onChange={(e) => setAuthRememberMe(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
+                      />
+                      <span>Bu cihazda beni hatirla</span>
+                    </label>
                     {!authEmailExists && (
                       <div>
                         <div className="grid grid-cols-2 gap-3 mb-4">

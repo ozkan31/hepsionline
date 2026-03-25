@@ -15,6 +15,7 @@
 } from "@/types";
 
 const AUTH_TOKEN_KEY = "parisMoveAuthToken";
+const AUTH_REMEMBER_KEY = "parisMoveAuthRemember";
 
 function normalizeMojibake(value: string): string {
   return String(value ?? "")
@@ -50,15 +51,29 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 export function getAuthToken(): string | null {
-  return localStorage.getItem(AUTH_TOKEN_KEY);
+  return localStorage.getItem(AUTH_TOKEN_KEY) || sessionStorage.getItem(AUTH_TOKEN_KEY);
 }
 
-export function setAuthToken(token: string) {
-  localStorage.setItem(AUTH_TOKEN_KEY, token);
+export function getAuthRememberPreference(): boolean {
+  const stored = localStorage.getItem(AUTH_REMEMBER_KEY);
+  return stored === null ? true : stored === "1";
+}
+
+export function setAuthToken(token: string, rememberMe = true) {
+  localStorage.setItem(AUTH_REMEMBER_KEY, rememberMe ? "1" : "0");
+  if (rememberMe) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    return;
+  }
+
+  sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+  localStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
 export function clearAuthToken() {
   localStorage.removeItem(AUTH_TOKEN_KEY);
+  sessionStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
 async function authFetch(path: string, init?: RequestInit) {
@@ -169,6 +184,7 @@ export async function registerUser(input: {
   email: string;
   password: string;
   confirmPassword: string;
+  rememberMe?: boolean;
 }): Promise<User> {
   const response = await fetch("/api/auth/register", {
     method: "POST",
@@ -176,29 +192,39 @@ export async function registerUser(input: {
     body: JSON.stringify(input),
   });
   const data = await parseResponse<{ token: string; user: User }>(response);
-  setAuthToken(data.token);
+  setAuthToken(data.token, input.rememberMe !== false);
   return data.user;
 }
 
-export async function loginUser(input: { email: string; password: string }): Promise<User> {
+export async function loginUser(input: {
+  email: string;
+  password: string;
+  rememberMe?: boolean;
+}): Promise<User> {
   const response = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
   const data = await parseResponse<{ token: string; user: User }>(response);
-  setAuthToken(data.token);
+  setAuthToken(data.token, input.rememberMe !== false);
   return data.user;
 }
 
-export async function loginWithGoogle(credential: string): Promise<User> {
+export async function loginWithGoogle(
+  credential: string,
+  options?: { rememberMe?: boolean }
+): Promise<User> {
   const response = await fetch("/api/auth/google", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ credential }),
+    body: JSON.stringify({
+      credential,
+      rememberMe: options?.rememberMe !== false,
+    }),
   });
   const data = await parseResponse<{ token: string; user: User }>(response);
-  setAuthToken(data.token);
+  setAuthToken(data.token, options?.rememberMe !== false);
   return data.user;
 }
 
@@ -219,6 +245,7 @@ export async function startAuthFlow(input: {
   gender?: "kadin" | "erkek";
   phone?: string;
   termsAccepted?: boolean;
+  rememberMe?: boolean;
 }): Promise<{
   mode: "login" | "register";
   token?: string;
@@ -239,7 +266,7 @@ export async function startAuthFlow(input: {
     message?: string;
   }>(response);
   if (data.token) {
-    setAuthToken(data.token);
+    setAuthToken(data.token, input.rememberMe !== false);
   }
   return data;
 }
@@ -247,6 +274,7 @@ export async function startAuthFlow(input: {
 export async function verifyAuthFlowCode(input: {
   email: string;
   code: string;
+  rememberMe?: boolean;
 }): Promise<User> {
   const response = await fetch("/api/auth/flow/verify", {
     method: "POST",
@@ -254,7 +282,7 @@ export async function verifyAuthFlowCode(input: {
     body: JSON.stringify(input),
   });
   const data = await parseResponse<{ token: string; user: User }>(response);
-  setAuthToken(data.token);
+  setAuthToken(data.token, input.rememberMe !== false);
   return data.user;
 }
 

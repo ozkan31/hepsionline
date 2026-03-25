@@ -296,7 +296,8 @@ const adminImageUpload = multer({
   },
 });
 
-const SESSION_DAYS = 30;
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const REMEMBER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MINUTES = 30;
 const GOOGLE_CLIENT_IDS = Array.from(
   new Set(
@@ -2414,9 +2415,13 @@ function extractBearerToken(req) {
   return authHeader.slice("Bearer ".length).trim();
 }
 
-async function createSession(userId) {
+function getUserSessionTtlMs(rememberMe = false) {
+  return rememberMe ? REMEMBER_SESSION_TTL_MS : SESSION_TTL_MS;
+}
+
+async function createSession(userId, { rememberMe = true } = {}) {
   const token = crypto.randomBytes(48).toString("hex");
-  const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + getUserSessionTtlMs(rememberMe));
   await pool.query(
     `
     INSERT INTO user_sessions (token, user_id, expires_at)
@@ -3297,6 +3302,7 @@ app.post("/api/auth/flow/start", async (req, res) => {
     const gender = String(req.body?.gender ?? "").trim().toLowerCase();
     const phone = String(req.body?.phone ?? "").trim();
     const termsAccepted = Boolean(req.body?.termsAccepted);
+    const rememberMe = req.body?.rememberMe === undefined ? true : Boolean(req.body?.rememberMe);
     const normalizedGender = gender === "kadin" || gender === "erkek" ? gender : "";
 
     if (!email || !password) {
@@ -3317,7 +3323,7 @@ app.post("/api/auth/flow/start", async (req, res) => {
       if (!isValid) {
         return res.status(401).json({ message: "Şifre hatalı." });
       }
-      const token = await createSession(found.id);
+      const token = await createSession(found.id, { rememberMe });
       const user = await getSessionUser(token);
       return res.json({ mode: "login", token, user });
     }
@@ -3394,6 +3400,7 @@ app.post("/api/auth/flow/verify", async (req, res) => {
   try {
     const email = String(req.body?.email ?? "").trim().toLowerCase();
     const code = String(req.body?.code ?? "").trim();
+    const rememberMe = req.body?.rememberMe === undefined ? true : Boolean(req.body?.rememberMe);
     if (!email || !code) {
       return res.status(400).json({ message: "E-posta ve doğrulama kodu zorunludur." });
     }
@@ -3468,7 +3475,7 @@ app.post("/api/auth/flow/verify", async (req, res) => {
     await pool.query(`UPDATE email_verification_codes SET used_at = NOW() WHERE id = ?`, [verifyRow.id]);
     await pool.query(`DELETE FROM email_verification_codes WHERE email = ?`, [email]);
 
-    const token = await createSession(userId);
+    const token = await createSession(userId, { rememberMe });
     const user = await getSessionUser(token);
     if (createdNewUser && user?.email) {
       queueWelcomeEmail(req, {
@@ -3489,6 +3496,7 @@ app.post("/api/auth/flow/verify", async (req, res) => {
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { firstName, lastName, email, password, confirmPassword } = req.body ?? {};
+    const rememberMe = req.body?.rememberMe === undefined ? true : Boolean(req.body?.rememberMe);
 
     if (!firstName || !lastName || !email || !password || !confirmPassword) {
       return res.status(400).json({ message: "All fields are required." });
@@ -3522,7 +3530,7 @@ app.post("/api/auth/register", async (req, res) => {
       [userId, String(firstName).trim(), String(lastName).trim(), normalizedEmail, "", passwordHash]
     );
 
-    const token = await createSession(userId);
+    const token = await createSession(userId, { rememberMe });
     const user = await getSessionUser(token);
     if (user?.email) {
       queueWelcomeEmail(req, {
@@ -3540,6 +3548,7 @@ app.post("/api/auth/register", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body ?? {};
+    const rememberMe = req.body?.rememberMe === undefined ? true : Boolean(req.body?.rememberMe);
     if (!email || !password) {
       return res.status(400).json({ message: "Email and password are required." });
     }
@@ -3565,7 +3574,7 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password." });
     }
 
-    const token = await createSession(found.id);
+    const token = await createSession(found.id, { rememberMe });
     const user = await getSessionUser(token);
     return res.json({ token, user });
   } catch (error) {
@@ -3754,6 +3763,7 @@ app.post("/api/auth/password/reset", async (req, res) => {
 app.post("/api/auth/google", async (req, res) => {
   try {
     const { credential } = req.body ?? {};
+    const rememberMe = req.body?.rememberMe === undefined ? true : Boolean(req.body?.rememberMe);
     if (!credential) {
       return res.status(400).json({ message: "Google kimlik bilgisi zorunludur." });
     }
@@ -3798,7 +3808,7 @@ app.post("/api/auth/google", async (req, res) => {
       createdNewUser = true;
     }
 
-    const token = await createSession(userId);
+    const token = await createSession(userId, { rememberMe });
     const user = await getSessionUser(token);
     if (createdNewUser && user?.email) {
       queueWelcomeEmail(req, {

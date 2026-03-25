@@ -93,6 +93,13 @@ const defaultMarketingSettings: AdminAbandonedCartSettings = {
   couponDescription: "Sepetinize özel indirim kodunuz hazır.",
 };
 
+function generateAdminCouponCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const randomChunk = (length: number) =>
+    Array.from({ length }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+  return `STIL-${randomChunk(4)}-${randomChunk(4)}`;
+}
+
 function getStoredAdminToken() {
   return localStorage.getItem(ADMIN_TOKEN_KEY) || sessionStorage.getItem(ADMIN_TOKEN_KEY);
 }
@@ -507,6 +514,15 @@ export function Admin() {
     setActiveMarketingPanel("coupons");
     setIsMarketingMenuOpen(true);
     setIsMobileNavOpen(false);
+  };
+
+  const handleGenerateCouponCode = () => {
+    setMarketingSettings((prev) => ({
+      ...prev,
+      couponEnabled: true,
+      couponCode: generateAdminCouponCode(),
+    }));
+    setMarketingMessage("Kupon kodu oluşturuldu. Kaydetmeyi unutmayın.");
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -2404,9 +2420,56 @@ export function Admin() {
                       onSubmit={handleSaveMarketingSettings}
                       className="bg-white border border-[#E7E2D8] rounded-lg p-4 space-y-4"
                     >
+                      <div className="rounded-xl border border-[#E7E2D8] bg-[#FAF9F6] p-4 space-y-3">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <h3 className="text-sm font-medium">Kupon Oluştur</h3>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Sepeti terk eden müşterilere gidecek indirim kodunu buradan hazırlayabilirsiniz.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleGenerateCouponCode}
+                            className="inline-flex items-center justify-center rounded-full border border-black px-4 py-2 text-sm text-black transition-colors hover:bg-black hover:text-white"
+                          >
+                            Otomatik Kod Üret
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                          <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-500">Durum</p>
+                            <p className={`mt-2 text-sm font-medium ${marketingSettings.couponEnabled ? "text-green-700" : "text-gray-600"}`}>
+                              {marketingSettings.couponEnabled ? "Aktif" : "Pasif"}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-500">Kod</p>
+                            <p className="mt-2 text-sm font-medium text-black">
+                              {marketingSettings.couponCode || "Henüz oluşturulmadı"}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-500">İndirim</p>
+                            <p className="mt-2 text-sm font-medium text-black">
+                              {marketingSettings.couponType === "fixed"
+                                ? `${Number(marketingSettings.couponValue || 0).toLocaleString("tr-TR")} TL`
+                                : `%${Number(marketingSettings.couponValue || 0).toLocaleString("tr-TR")}`}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-500">Minimum Sepet</p>
+                            <p className="mt-2 text-sm font-medium text-black">
+                              {Number(marketingSettings.couponMinimumSubtotal || 0).toLocaleString("tr-TR")} TL
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <h3 className="text-sm font-medium">Kuponlar</h3>
+                          <h3 className="text-sm font-medium">Kupon Ayarları</h3>
                           <p className="text-xs text-gray-500 mt-1">
                             Buradaki kupon ayarları sepete terk e-postasında gösterilen indirimi belirler.
                           </p>
@@ -2510,6 +2573,26 @@ export function Admin() {
                         />
                       </div>
 
+                      <div className="rounded-xl border border-dashed border-[#D7D1C3] bg-[#FCFBF8] px-4 py-4">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Önizleme</p>
+                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                          <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-medium tracking-[0.2em] text-white">
+                            {marketingSettings.couponCode || "KUPON-KODU"}
+                          </span>
+                          <span className="text-sm text-gray-700">
+                            {marketingSettings.couponType === "fixed"
+                              ? `${Number(marketingSettings.couponValue || 0).toLocaleString("tr-TR")} TL indirim`
+                              : `%${Number(marketingSettings.couponValue || 0).toLocaleString("tr-TR")} indirim`}
+                          </span>
+                        </div>
+                        <p className="mt-3 text-sm text-gray-700">
+                          {marketingSettings.couponDescription || "Sepetinize özel indirim kodunuz hazır."}
+                        </p>
+                        <p className="mt-2 text-xs text-gray-500">
+                          Müşteri bu kodu minimum {Number(marketingSettings.couponMinimumSubtotal || 0).toLocaleString("tr-TR")} TL sepette kullanabilir.
+                        </p>
+                      </div>
+
                       <div className="rounded-lg border border-[#E7E2D8] bg-[#F8F7F4] px-4 py-3 text-sm text-gray-600">
                         Kupon sepette minimum tutar sağlandığında otomatik uygulanır ve ödeme sırasında sunucuda tekrar doğrulanır.
                       </div>
@@ -2517,7 +2600,9 @@ export function Admin() {
                       {marketingMessage ? (
                         <p
                           className={`text-sm ${
-                            marketingMessage.includes("tamamlandı") || marketingMessage.includes("kaydedildi")
+                            marketingMessage.includes("tamamlandı") ||
+                            marketingMessage.includes("kaydedildi") ||
+                            marketingMessage.includes("oluşturuldu")
                               ? "text-green-700"
                               : "text-red-600"
                           }`}

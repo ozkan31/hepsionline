@@ -762,6 +762,8 @@ export function Admin() {
 
   const getStatusText = (status: string) => {
     switch (status) {
+      case "created":
+        return "Sipariş Alındı";
       case "delivered":
         return "Teslim Edildi";
       case "shipped":
@@ -795,6 +797,35 @@ export function Admin() {
     });
   };
 
+  const getTimelineEventTone = (type: string) => {
+    switch (type) {
+      case "delivered":
+        return {
+          dot: "bg-green-600 border-green-600",
+          line: "bg-green-200",
+          card: "border-green-200 bg-green-50/60",
+        };
+      case "shipped":
+        return {
+          dot: "bg-blue-600 border-blue-600",
+          line: "bg-blue-200",
+          card: "border-blue-200 bg-blue-50/60",
+        };
+      case "processing":
+        return {
+          dot: "bg-amber-500 border-amber-500",
+          line: "bg-amber-200",
+          card: "border-amber-200 bg-amber-50/60",
+        };
+      default:
+        return {
+          dot: "bg-black border-black",
+          line: "bg-[#D7D1C3]",
+          card: "border-[#E7E2D8] bg-white",
+        };
+    }
+  };
+
   const clearLocalImagePreviews = (images: Array<{ url: string; isLocal: boolean }>) => {
     images.forEach((image) => {
       if (image.isLocal && image.url.startsWith("blob:")) {
@@ -811,7 +842,7 @@ export function Admin() {
     setStatusSavingByOrderId((prev) => ({ ...prev, [orderId]: true }));
     setOrdersError("");
     try {
-      await updateAdminOrderStatus(token, orderId, {
+      const response = await updateAdminOrderStatus(token, orderId, {
         status: draft.status,
         shippingCompany: draft.status === "shipped" ? draft.shippingCompany : undefined,
         shippingTrackingNo: draft.status === "shipped" ? draft.shippingTrackingNo : undefined,
@@ -824,6 +855,11 @@ export function Admin() {
                 status: draft.status,
                 shippingCompany: draft.status === "shipped" ? draft.shippingCompany : "",
                 shippingTrackingNo: draft.status === "shipped" ? draft.shippingTrackingNo : "",
+                timeline: response.event
+                  ? [...order.timeline, response.event].sort(
+                      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                    )
+                  : order.timeline,
               }
             : order
         )
@@ -2389,7 +2425,53 @@ export function Admin() {
                               <p>Takip No: {order.shippingTrackingNo}</p>
                             )}
                           </div>
+                          <div className="mt-5">
+                            <h3 className="text-sm font-medium mb-3">Sipariş Zaman Çizelgesi</h3>
+                            <div className="space-y-4">
+                              {order.timeline.map((event, index) => {
+                                const tone = getTimelineEventTone(event.type);
+                                return (
+                                  <div key={event.id || `${order.id}-${event.type}-${index}`} className="relative pl-8">
+                                    {index < order.timeline.length - 1 ? (
+                                      <span
+                                        className={`absolute left-[10px] top-6 bottom-[-18px] w-px ${tone.line}`}
+                                        aria-hidden="true"
+                                      />
+                                    ) : null}
+                                    <span
+                                      className={`absolute left-0 top-1.5 h-5 w-5 rounded-full border-2 ${tone.dot}`}
+                                      aria-hidden="true"
+                                    />
+                                    <div className={`rounded-xl border px-4 py-3 ${tone.card}`}>
+                                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                        <p className="text-sm font-medium text-black">
+                                          {getStatusText(event.type)}
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                          {formatOrderDateTime(event.createdAt)}
+                                        </p>
+                                      </div>
+                                      {event.note ? (
+                                        <p className="mt-2 text-sm text-gray-700">{event.note}</p>
+                                      ) : null}
+                                      {event.shippingCompany || event.shippingTrackingNo ? (
+                                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                                          {event.shippingCompany ? (
+                                            <span>Kargo Firması: {event.shippingCompany}</span>
+                                          ) : null}
+                                          {event.shippingTrackingNo ? (
+                                            <span>Takip No: {event.shippingTrackingNo}</span>
+                                          ) : null}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
                           <div className="mt-4 flex flex-col gap-2">
+                            <h3 className="text-sm font-medium">Durum Güncelle</h3>
                             <select
                               value={draft.status}
                               onChange={(e) =>

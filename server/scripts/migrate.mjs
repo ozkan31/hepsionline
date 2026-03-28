@@ -228,6 +228,25 @@ CREATE TABLE IF NOT EXISTS user_order_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
+const createOrderStatusEventsSql = `
+CREATE TABLE IF NOT EXISTS order_status_events (
+  id CHAR(36) PRIMARY KEY,
+  order_id VARCHAR(20) NOT NULL,
+  event_type VARCHAR(20) NOT NULL,
+  note VARCHAR(255) NULL,
+  shipping_company VARCHAR(120) NULL,
+  shipping_tracking_no VARCHAR(120) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_order_status_events_order
+    FOREIGN KEY (order_id)
+    REFERENCES user_orders(id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+  KEY idx_order_status_events_order_created (order_id, created_at),
+  KEY idx_order_status_events_type (event_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
 const createAppSettingsSql = `
 CREATE TABLE IF NOT EXISTS app_settings (
   setting_key VARCHAR(120) PRIMARY KEY,
@@ -310,6 +329,7 @@ async function migrate() {
   await pool.query(createUserWishlistItemsSql);
   await pool.query(createUserOrdersSql);
   await pool.query(createUserOrderItemsSql);
+  await pool.query(createOrderStatusEventsSql);
   await pool.query(createAppSettingsSql);
   await pool.query(createContactRequestsSql);
   await pool.query(createCouponsSql);

@@ -3700,6 +3700,102 @@ function parseAdminStockInput(value, fallback = null) {
   return Math.trunc(parsed);
 }
 
+function mapOrderStatusTimelineEventRow(row) {
+  const rawType = String(row.event_type ?? "").trim();
+  const type =
+    rawType === "created" || rawType === "processing" || rawType === "shipped" || rawType === "delivered"
+      ? rawType
+      : "processing";
+  const note = String(row.note ?? "").trim();
+  const shippingCompany = String(row.shipping_company ?? "").trim();
+  const shippingTrackingNo = String(row.shipping_tracking_no ?? "").trim();
+  return {
+    id: String(row.id ?? "").trim() || crypto.randomUUID(),
+    type,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+    note: note || undefined,
+    shippingCompany: shippingCompany || undefined,
+    shippingTrackingNo: shippingTrackingNo || undefined,
+  };
+}
+
+function buildFallbackOrderTimeline(orderRow, storedEvents = []) {
+  const timeline = [...storedEvents];
+  const orderCreatedAt =
+    orderRow?.created_at != null
+      ? new Date(orderRow.created_at).toISOString()
+      : String(orderRow?.order_date ?? "").trim()
+      ? new Date(`${String(orderRow.order_date).trim()}T00:00:00`).toISOString()
+      : new Date().toISOString();
+
+  if (!timeline.some((event) => event.type === "created")) {
+    timeline.push({
+      id: `fallback-created-${String(orderRow?.id ?? "").trim() || crypto.randomUUID()}`,
+      type: "created",
+      createdAt: orderCreatedAt,
+      note: "Sipariş müşteriden alındı.",
+    });
+  }
+
+  const currentStatus = String(orderRow?.status ?? "").trim();
+  const orderUpdatedAt =
+    orderRow?.updated_at != null ? new Date(orderRow.updated_at).toISOString() : orderCreatedAt;
+  if (
+    (currentStatus === "shipped" || currentStatus === "delivered") &&
+    !timeline.some((event) => event.type === currentStatus)
+  ) {
+    timeline.push({
+      id: `fallback-${currentStatus}-${String(orderRow?.id ?? "").trim() || crypto.randomUUID()}`,
+      type: currentStatus,
+      createdAt: orderUpdatedAt,
+      note:
+        currentStatus === "shipped"
+          ? "Kargo durumu mevcut sipariş kaydından geri dolduruldu."
+          : "Teslim durumu mevcut sipariş kaydından geri dolduruldu.",
+      shippingCompany: String(orderRow?.shipping_company ?? "").trim() || undefined,
+      shippingTrackingNo: String(orderRow?.shipping_tracking_no ?? "").trim() || undefined,
+    });
+  }
+
+  return timeline.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+}
+
+async function insertOrderStatusTimelineEvent(
+  db,
+  { orderId, type, note = "", shippingCompany = "", shippingTrackingNo = "" }
+) {
+  const eventId = crypto.randomUUID();
+  const safeType =
+    type === "created" || type === "processing" || type === "shipped" || type === "delivered"
+      ? type
+      : "processing";
+  await db.query(
+    `
+    INSERT INTO order_status_events (
+      id, order_id, event_type, note, shipping_company, shipping_tracking_no
+    )
+    VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    [
+      eventId,
+      orderId,
+      safeType,
+      String(note ?? "").trim() || null,
+      String(shippingCompany ?? "").trim() || null,
+      String(shippingTrackingNo ?? "").trim() || null,
+    ]
+  );
+
+  return {
+    id: eventId,
+    type: safeType,
+    createdAt: new Date().toISOString(),
+    note: String(note ?? "").trim() || undefined,
+    shippingCompany: String(shippingCompany ?? "").trim() || undefined,
+    shippingTrackingNo: String(shippingTrackingNo ?? "").trim() || undefined,
+  };
+}
+
 function splitFullName(name) {
   const normalized = String(name ?? "").trim().replace(/\s+/g, " ");
   if (!normalized) {
@@ -4664,6 +4760,12 @@ app.post("/api/orders", requireAuth, async (req, res) => {
       );
     }
 
+    await insertOrderStatusTimelineEvent(connection, {
+      orderId,
+      type: "created",
+      note: "Sipariş müşteriden alındı.",
+    });
+
     const valuesSql = normalizedItems.map(() => "(?, ?, ?, ?, ?)").join(", ");
     const params = normalizedItems.flatMap((item) => [
       crypto.randomUUID(),
@@ -5299,6 +5401,7 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
           o.shipping_district,
           o.shipping_neighborhood,
           o.created_at,
+          o.updated_at,
           u.first_name,
           u.last_name,
           u.email,
@@ -5323,6 +5426,7 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
           o.total,
           o.status,
           o.created_at,
+          o.updated_at,
           u.first_name,
           u.last_name,
           u.email,
@@ -5363,6 +5467,24 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
       userIds
     );
 
+    let timelineRows = [];
+    try {
+      const [rows] = await pool.query(
+        `
+        SELECT id, order_id, event_type, note, shipping_company, shipping_tracking_no, created_at
+        FROM order_status_events
+        WHERE order_id IN (${orderPlaceholders})
+        ORDER BY created_at ASC, id ASC
+        `,
+        orderIds
+      );
+      timelineRows = rows;
+    } catch (error) {
+      if (error?.code !== "ER_NO_SUCH_TABLE") {
+        throw error;
+      }
+    }
+
     const addressByUserId = new Map();
     for (const row of addressRows) {
       if (addressByUserId.has(row.user_id)) continue;
@@ -5391,6 +5513,13 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
         continue;
       }
       itemsByOrderId.set(row.order_id, list);
+    }
+
+    const timelineByOrderId = new Map();
+    for (const row of timelineRows) {
+      const list = timelineByOrderId.get(row.order_id) ?? [];
+      list.push(mapOrderStatusTimelineEventRow(row));
+      timelineByOrderId.set(row.order_id, list);
     }
 
     const orders = orderRows.map((row) => {
@@ -5423,6 +5552,7 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
         status: row.status,
         shippingCompany: row.shipping_company ?? "",
         shippingTrackingNo: row.shipping_tracking_no ?? "",
+        timeline: buildFallbackOrderTimeline(row, timelineByOrderId.get(row.id) ?? []),
         customer: {
           firstName: shippingAddressFromOrder?.firstName ?? row.first_name,
           lastName: shippingAddressFromOrder?.lastName ?? row.last_name,
@@ -5440,6 +5570,7 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
 });
 
 app.patch("/api/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
+  let connection;
   try {
     const orderId = String(req.params.id ?? "").trim();
     const nextStatus = String(req.body?.status ?? "").trim();
@@ -5466,7 +5597,47 @@ app.patch("/api/admin/orders/:id/status", requireAdminAuth, async (req, res) => 
       }
     }
 
-    const [result] = await pool.query(
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    const [currentRows] = await connection.query(
+      `
+      SELECT status, shipping_company, shipping_tracking_no
+      FROM user_orders
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [orderId]
+    );
+
+    if (currentRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    const currentOrder = currentRows[0];
+    const currentStatus = String(currentOrder.status ?? "").trim();
+    const currentShippingCompany = String(currentOrder.shipping_company ?? "").trim();
+    const currentShippingTrackingNo = String(currentOrder.shipping_tracking_no ?? "").trim();
+    const nextShippingCompany = nextStatus === "shipped" ? shippingCompany : "";
+    const nextShippingTrackingNo = nextStatus === "shipped" ? shippingTrackingNo : "";
+    const noChange =
+      currentStatus === nextStatus &&
+      currentShippingCompany === nextShippingCompany &&
+      currentShippingTrackingNo === nextShippingTrackingNo;
+
+    if (noChange) {
+      await connection.rollback();
+      return res.json({
+        ok: true,
+        status: nextStatus,
+        shippingCompany: nextShippingCompany,
+        shippingTrackingNo: nextShippingTrackingNo,
+        event: null,
+      });
+    }
+
+    await connection.query(
       `
       UPDATE user_orders
       SET status = ?, shipping_company = ?, shipping_tracking_no = ?
@@ -5480,23 +5651,42 @@ app.patch("/api/admin/orders/:id/status", requireAdminAuth, async (req, res) => 
       ]
     );
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: "Order not found." });
-    }
+    const timelineEvent = await insertOrderStatusTimelineEvent(connection, {
+      orderId,
+      type: nextStatus,
+      note:
+        nextStatus === "processing"
+          ? "Sipariş hazırlık sürecine alındı."
+          : nextStatus === "shipped"
+          ? currentStatus === "shipped"
+            ? "Kargo bilgileri güncellendi."
+            : "Sipariş kargoya verildi."
+          : "Sipariş teslim edildi olarak işaretlendi.",
+      shippingCompany: nextShippingCompany,
+      shippingTrackingNo: nextShippingTrackingNo,
+    });
+
+    await connection.commit();
 
     return res.json({
       ok: true,
       status: nextStatus,
-      shippingCompany: nextStatus === "shipped" ? shippingCompany : "",
-      shippingTrackingNo: nextStatus === "shipped" ? shippingTrackingNo : "",
+      shippingCompany: nextShippingCompany,
+      shippingTrackingNo: nextShippingTrackingNo,
+      event: timelineEvent,
     });
   } catch (error) {
+    if (connection) {
+      await connection.rollback().catch(() => undefined);
+    }
     if (error?.code === "ER_BAD_FIELD_ERROR") {
       return res
         .status(500)
         .json({ message: "DB migration required for shipping fields. Run npm run db:migrate." });
     }
     return res.status(500).json({ message: "Admin order status update failed." });
+  } finally {
+    connection?.release();
   }
 });
 

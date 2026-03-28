@@ -106,10 +106,20 @@ export interface AdminOrderCustomer {
   } | null;
 }
 
+export interface AdminOrderTimelineEvent {
+  id: string;
+  type: "created" | "processing" | "shipped" | "delivered";
+  createdAt: string;
+  note?: string;
+  shippingCompany?: string;
+  shippingTrackingNo?: string;
+}
+
 export interface AdminOrder extends Order {
   shippingCompany?: string;
   shippingTrackingNo?: string;
   customer: AdminOrderCustomer;
+  timeline: AdminOrderTimelineEvent[];
 }
 
 export interface AdminContactRequest {

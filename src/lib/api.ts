@@ -711,7 +711,13 @@ export async function updateAdminOrderStatus(
     shippingCompany?: string;
     shippingTrackingNo?: string;
   }
-): Promise<void> {
+): Promise<{
+  ok: boolean;
+  status: "processing" | "shipped" | "delivered";
+  shippingCompany: string;
+  shippingTrackingNo: string;
+  event: import("@/types").AdminOrderTimelineEvent | null;
+}> {
   const response = await fetch(`/api/admin/orders/${orderId}/status`, {
     method: "PATCH",
     headers: {
@@ -720,7 +726,13 @@ export async function updateAdminOrderStatus(
     },
     body: JSON.stringify(payload),
   });
-  await parseResponse<{ ok: boolean; status: string }>(response);
+  return parseResponse<{
+    ok: boolean;
+    status: "processing" | "shipped" | "delivered";
+    shippingCompany: string;
+    shippingTrackingNo: string;
+    event: import("@/types").AdminOrderTimelineEvent | null;
+  }>(response);
 }
 
 export async function fetchAdminProducts(

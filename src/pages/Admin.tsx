@@ -1775,8 +1775,8 @@ export function Admin() {
 
   return (
     <div className="min-h-screen bg-[#F8F7F4]">
-      <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] min-h-screen">
-        <aside className="hidden md:block border-b md:border-b-0 md:border-r border-[#E7E2D8] bg-[#F8F7F4] p-4 md:p-6 md:h-screen md:sticky md:top-0">
+      <div className="min-h-screen md:pl-[240px]">
+        <aside className="hidden md:block md:fixed md:inset-y-0 md:left-0 md:z-20 md:w-[240px] border-b md:border-b-0 md:border-r border-[#E7E2D8] bg-[#F8F7F4] p-4 md:p-6 overflow-y-auto">
           <h1 className="text-xl font-light mb-6">Admin Panel</h1>
           <nav className="space-y-2">
             <button
@@ -2049,7 +2049,7 @@ export function Admin() {
           </nav>
         </aside>
 
-        <section className="p-6 md:p-8 bg-white">
+        <section className="min-h-screen p-6 md:p-8 bg-white">
           <div className="md:hidden mb-4">
             <button
               type="button"

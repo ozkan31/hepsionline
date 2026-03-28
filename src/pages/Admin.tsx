@@ -1,6 +1,7 @@
 ﻿import {
   Boxes,
   ChevronDown,
+  LayoutDashboard,
   List,
   LogOut,
   Mail,
@@ -53,7 +54,7 @@ import type {
 
 const ADMIN_TOKEN_KEY = "parisMoveAdminToken";
 const ADMIN_REMEMBER_KEY = "parisMoveAdminRemember";
-type AdminSection = "orders" | "products" | "users" | "contactRequests" | "marketing" | "campaigns" | "settings";
+type AdminSection = "overview" | "orders" | "products" | "users" | "contactRequests" | "marketing" | "campaigns" | "settings";
 type OrderStatusDraft = {
   status: "processing" | "shipped" | "delivered";
   shippingCompany: string;
@@ -159,7 +160,7 @@ export function Admin() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeSection, setActiveSection] = useState<AdminSection>("orders");
+  const [activeSection, setActiveSection] = useState<AdminSection>("overview");
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState("");
@@ -228,6 +229,19 @@ export function Admin() {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const activeCustomerCoupons = customerCoupons.filter((coupon) => coupon.enabled);
   const latestCustomerCoupon = customerCoupons[0] ?? null;
+  const todayOrderCount = orders.filter((order) => {
+    const parsedDate = new Date(String(order.date ?? "").replace(" ", "T"));
+    if (Number.isNaN(parsedDate.getTime())) return false;
+    const now = new Date();
+    return (
+      parsedDate.getFullYear() === now.getFullYear() &&
+      parsedDate.getMonth() === now.getMonth() &&
+      parsedDate.getDate() === now.getDate()
+    );
+  }).length;
+  const processingOrderCount = orders.filter((order) => order.status === "processing").length;
+  const shippedOrderCount = orders.filter((order) => order.status === "shipped").length;
+  const deliveredOrderCount = orders.filter((order) => order.status === "delivered").length;
 
   const resetCustomerCouponDraft = () => {
     setCustomerCouponSettings(defaultCustomerCouponSettings);
@@ -504,7 +518,7 @@ export function Admin() {
       const token = await adminLogin({ email, password, rememberMe });
       setStoredAdminToken(token, rememberMe);
       setIsAuthenticated(true);
-      setActiveSection("orders");
+      setActiveSection("overview");
       setEmail("");
       setPassword("");
     } catch (err) {
@@ -524,6 +538,7 @@ export function Admin() {
     }
     clearStoredAdminToken();
     setIsAuthenticated(false);
+    setActiveSection("overview");
     setOrders([]);
     setExpandedOrderId(null);
     setStatusDrafts({});
@@ -1780,6 +1795,17 @@ export function Admin() {
           <h1 className="text-xl font-light mb-6">Admin Panel</h1>
           <nav className="space-y-2">
             <button
+              onClick={() => handleSectionChange("overview")}
+              className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
+                activeSection === "overview" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
+              }`}
+            >
+              <span className="inline-flex items-center gap-2">
+                <LayoutDashboard className="w-4 h-4" />
+                Genel Bakış
+              </span>
+            </button>
+            <button
               onClick={() => handleSectionChange("orders")}
               className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
                 activeSection === "orders" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
@@ -2077,6 +2103,17 @@ export function Admin() {
                 </div>
                 <nav className="space-y-2">
                   <button
+                    onClick={() => handleSectionChange("overview")}
+                    className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
+                      activeSection === "overview" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <LayoutDashboard className="w-4 h-4" />
+                      Genel Bakış
+                    </span>
+                  </button>
+                  <button
                     onClick={() => handleSectionChange("orders")}
                     className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
                       activeSection === "orders" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
@@ -2350,6 +2387,127 @@ export function Admin() {
                     </span>
                   </button>
                 </nav>
+              </div>
+            </div>
+          )}
+          {activeSection === "overview" && (
+            <div>
+              <h2 className="text-2xl font-light mb-2">Genel Bakış</h2>
+              <p className="text-sm text-gray-500 mb-5">
+                Admin panelindeki temel sipariş görünümünü ve hızlı geçişleri burada görebilirsiniz.
+              </p>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-[#E7E2D8] bg-white px-5 py-4">
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Toplam Sipariş</p>
+                  <p className="mt-3 text-2xl font-medium text-black">
+                    {ordersLoading ? "..." : orders.length.toLocaleString("tr-TR")}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-[#E7E2D8] bg-white px-5 py-4">
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Bugünkü Sipariş</p>
+                  <p className="mt-3 text-2xl font-medium text-black">
+                    {ordersLoading ? "..." : todayOrderCount.toLocaleString("tr-TR")}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-[#E7E2D8] bg-white px-5 py-4">
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Hazırlanan</p>
+                  <p className="mt-3 text-2xl font-medium text-black">
+                    {ordersLoading ? "..." : processingOrderCount.toLocaleString("tr-TR")}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-[#E7E2D8] bg-white px-5 py-4">
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Kargodaki / Teslim</p>
+                  <p className="mt-3 text-2xl font-medium text-black">
+                    {ordersLoading
+                      ? "..."
+                      : `${shippedOrderCount.toLocaleString("tr-TR")} / ${deliveredOrderCount.toLocaleString("tr-TR")}`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+                <div className="rounded-xl border border-[#E7E2D8] bg-white px-5 py-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-medium">Son Siparişler</h3>
+                      <p className="mt-1 text-xs text-gray-500">
+                        En son oluşan siparişleri buradan hızlıca takip edebilirsiniz.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSectionChange("orders")}
+                      className="rounded-full border border-black px-4 py-2 text-sm text-black transition-colors hover:bg-black hover:text-white"
+                    >
+                      Tüm Siparişler
+                    </button>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {ordersLoading ? (
+                      <p className="text-sm text-gray-500">Siparişler yükleniyor...</p>
+                    ) : orders.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        Henüz sipariş yok. Örnek sipariş oluşturduysan sayfayı yenileyip tekrar bakabilirsin.
+                      </p>
+                    ) : (
+                      orders.slice(0, 5).map((order) => (
+                        <div
+                          key={order.id}
+                          className="rounded-xl border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3"
+                        >
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-black">#{order.id}</p>
+                              <p className="mt-1 text-xs text-gray-500">
+                                {order.customer.firstName} {order.customer.lastName} • {formatOrderDateTime(order.date)}
+                              </p>
+                            </div>
+                            <span className="text-sm text-gray-700">{getStatusText(order.status)}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-[#E7E2D8] bg-white px-5 py-5">
+                  <h3 className="text-sm font-medium">Hızlı İşlemler</h3>
+                  <p className="mt-1 text-xs text-gray-500">
+                    En sık kullanılan alanlara buradan tek tıkla geçebilirsin.
+                  </p>
+                  <div className="mt-4 space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSectionChange("orders")}
+                      className="w-full rounded-full border border-black px-4 py-3 text-sm text-black transition-colors hover:bg-black hover:text-white"
+                    >
+                      Sipariş Yönetimine Git
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenProductList}
+                      className="w-full rounded-full border border-[#D5CFC3] px-4 py-3 text-sm text-gray-700 transition-colors hover:border-black hover:text-black"
+                    >
+                      Ürün Listesini Aç
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenCouponCreateCampaigns}
+                      className="w-full rounded-full border border-[#D5CFC3] px-4 py-3 text-sm text-gray-700 transition-colors hover:border-black hover:text-black"
+                    >
+                      Yeni Kupon Oluştur
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSectionChange("settings")}
+                      className="w-full rounded-full border border-[#D5CFC3] px-4 py-3 text-sm text-gray-700 transition-colors hover:border-black hover:text-black"
+                    >
+                      Ayarlara Git
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

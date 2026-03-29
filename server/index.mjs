@@ -3932,6 +3932,18 @@ function parseNavlungoResponsePayload(text) {
 }
 
 function formatNavlungoErrorMessage(payload, fallbackMessage = "Navlungo isteği başarısız oldu.") {
+  const flattenErrorValues = (value) => {
+    if (value == null) return [];
+    if (Array.isArray(value)) {
+      return value.flatMap((entry) => flattenErrorValues(entry));
+    }
+    if (typeof value === "object") {
+      return Object.values(value).flatMap((entry) => flattenErrorValues(entry));
+    }
+    const normalized = String(value ?? "").trim();
+    return normalized ? [normalized] : [];
+  };
+
   if (!payload) return fallbackMessage;
   if (typeof payload === "string") {
     return payload || fallbackMessage;
@@ -3941,10 +3953,7 @@ function formatNavlungoErrorMessage(payload, fallbackMessage = "Navlungo isteği
     return topLevelError;
   }
   if (payload.error && typeof payload.error === "object") {
-    const flattened = Object.entries(payload.error)
-      .flatMap(([, value]) => (Array.isArray(value) ? value : [value]))
-      .map((value) => String(value ?? "").trim())
-      .filter(Boolean);
+    const flattened = flattenErrorValues(payload.error);
     if (flattened.length > 0) {
       return flattened.join(" | ");
     }

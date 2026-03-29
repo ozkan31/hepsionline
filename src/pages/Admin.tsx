@@ -58,8 +58,6 @@ const ADMIN_REMEMBER_KEY = "parisMoveAdminRemember";
 type AdminSection = "overview" | "orders" | "products" | "users" | "contactRequests" | "marketing" | "campaigns" | "settings";
 type OrderStatusDraft = {
   status: "processing" | "shipped" | "delivered";
-  shippingCompany: string;
-  shippingTrackingNo: string;
 };
 type ProductEditorDraft = {
   id: string;
@@ -80,14 +78,6 @@ type ProductPanel = "list" | "create" | "stock";
 type MarketingPanel = "abandonedCart" | "coupons";
 type CampaignsPanel = "createCoupon" | "existingCoupons";
 const MAX_PRODUCT_IMAGES = 15;
-const shippingCompanies = [
-  "Sen Kargo",
-  "Aras Kargo",
-  "PTT Kargo",
-  "DHL",
-  "Sürat Kargo",
-  "Yurtiçi Kargo",
-];
 const defaultMarketingSettings: AdminAbandonedCartSettings = {
   enabled: false,
   delayMinutes: 120,
@@ -287,8 +277,6 @@ export function Admin() {
             order.status === "shipped" || order.status === "delivered" ? order.status : "processing";
           acc[order.id] = {
             status: normalizedStatus,
-            shippingCompany: order.shippingCompany ?? "",
-            shippingTrackingNo: order.shippingTrackingNo ?? "",
           };
           return acc;
         }, {}));
@@ -884,8 +872,6 @@ export function Admin() {
     try {
       const response = await updateAdminOrderStatus(token, orderId, {
         status: draft.status,
-        shippingCompany: draft.status === "shipped" ? draft.shippingCompany : undefined,
-        shippingTrackingNo: draft.status === "shipped" ? draft.shippingTrackingNo : undefined,
       });
       setOrders((prev) =>
         prev.map((order) =>
@@ -893,8 +879,8 @@ export function Admin() {
             ? {
                 ...order,
                 status: draft.status,
-                shippingCompany: draft.status === "shipped" ? draft.shippingCompany : "",
-                shippingTrackingNo: draft.status === "shipped" ? draft.shippingTrackingNo : "",
+                shippingCompany: response.shippingCompany ?? "",
+                shippingTrackingNo: response.shippingTrackingNo ?? "",
                 timeline: response.event
                   ? [...order.timeline, response.event].sort(
                       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
@@ -2581,8 +2567,6 @@ export function Admin() {
                   const isExpanded = expandedOrderId === order.id;
                   const draft = statusDrafts[order.id] ?? {
                     status: "processing" as const,
-                    shippingCompany: "",
-                    shippingTrackingNo: "",
                   };
 
                   return (
@@ -2757,8 +2741,6 @@ export function Admin() {
                                   [order.id]: {
                                     ...(prev[order.id] ?? {
                                       status: "processing" as const,
-                                      shippingCompany: order.shippingCompany ?? "",
-                                      shippingTrackingNo: order.shippingTrackingNo ?? "",
                                     }),
                                     status: e.target.value as "processing" | "shipped" | "delivered",
                                   },
@@ -2770,62 +2752,21 @@ export function Admin() {
                               <option value="shipped">Kargoya Verildi</option>
                               <option value="delivered">Teslim Edildi</option>
                             </select>
-                            {draft.status === "shipped" && (
-                              <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                                <select
-                                  value={draft.shippingCompany}
-                                  onChange={(e) =>
-                                    setStatusDrafts((prev) => ({
-                                      ...prev,
-                                      [order.id]: {
-                                        ...(prev[order.id] ?? {
-                                          status: "shipped" as const,
-                                          shippingCompany: "",
-                                          shippingTrackingNo: "",
-                                        }),
-                                        shippingCompany: e.target.value,
-                                      },
-                                    }))
-                                  }
-                                  className="w-full sm:w-[220px] bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                                >
-                                  <option value="">Kargo Firması</option>
-                                  {shippingCompanies.map((company) => (
-                                    <option key={company} value={company}>
-                                      {company}
-                                    </option>
-                                  ))}
-                                </select>
-                                <input
-                                  type="text"
-                                  value={draft.shippingTrackingNo}
-                                  onChange={(e) =>
-                                    setStatusDrafts((prev) => ({
-                                      ...prev,
-                                      [order.id]: {
-                                        ...(prev[order.id] ?? {
-                                          status: "shipped" as const,
-                                          shippingCompany: "",
-                                          shippingTrackingNo: "",
-                                        }),
-                                        shippingTrackingNo: e.target.value,
-                                      },
-                                    }))
-                                  }
-                                  placeholder="Takip No"
-                                  className="w-full sm:w-[220px] bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                                />
+                            {draft.status === "shipped" ? (
+                              <div className="space-y-2">
+                                <p className="text-xs text-gray-500">
+                                  Kargo bilgileri Navlungo gönderisinden otomatik alınır. Kargoya verildi durumuna geçmeden önce sipariş için Navlungo gönderisinin oluşturulmuş olması gerekir.
+                                </p>
                                 <button
                                   type="button"
                                   onClick={() => handleSaveOrderStatus(order.id)}
                                   disabled={Boolean(statusSavingByOrderId[order.id])}
-                                  className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50 sm:whitespace-nowrap"
+                                  className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50 w-full sm:w-auto"
                                 >
                                   {statusSavingByOrderId[order.id] ? "Kaydediliyor..." : "Durumu Kaydet"}
                                 </button>
                               </div>
-                            )}
-                            {draft.status !== "shipped" && (
+                            ) : (
                               <button
                                 type="button"
                                 onClick={() => handleSaveOrderStatus(order.id)}

@@ -518,15 +518,6 @@ const isWhatsappConfigured = Boolean(
     WHATSAPP_TO_NUMBERS.length > 0 &&
     (WHATSAPP_PHONE_NUMBER_ID || /\/messages$/i.test(WHATSAPP_API_URL))
 );
-const allowedShippingCompanies = new Set([
-  "Sen Kargo",
-  "Aras Kargo",
-  "PTT Kargo",
-  "DHL",
-  "Sürat Kargo",
-  "Yurtiçi Kargo",
-]);
-
 function sha256(input) {
   return crypto.createHash("sha256").update(String(input)).digest("hex");
 }
@@ -6488,8 +6479,6 @@ app.patch("/api/admin/orders/:id/status", requireAdminAuth, async (req, res) => 
   try {
     const orderId = String(req.params.id ?? "").trim();
     const nextStatus = String(req.body?.status ?? "").trim();
-    const shippingCompany = String(req.body?.shippingCompany ?? "").trim();
-    const shippingTrackingNo = String(req.body?.shippingTrackingNo ?? "").trim();
     const allowedStatus = new Set(["processing", "shipped", "delivered"]);
 
     if (!orderId) {
@@ -6498,17 +6487,6 @@ app.patch("/api/admin/orders/:id/status", requireAdminAuth, async (req, res) => 
 
     if (!allowedStatus.has(nextStatus)) {
       return res.status(400).json({ message: "Invalid order status." });
-    }
-
-    if (nextStatus === "shipped") {
-      if (!shippingCompany || !shippingTrackingNo) {
-        return res
-          .status(400)
-          .json({ message: "Kargoya verildi için kargo firması ve takip no zorunludur." });
-      }
-      if (!allowedShippingCompanies.has(shippingCompany)) {
-        return res.status(400).json({ message: "Geçersiz kargo firması." });
-      }
     }
 
     connection = await pool.getConnection();
@@ -6533,8 +6511,29 @@ app.patch("/api/admin/orders/:id/status", requireAdminAuth, async (req, res) => 
     const currentStatus = String(currentOrder.status ?? "").trim();
     const currentShippingCompany = String(currentOrder.shipping_company ?? "").trim();
     const currentShippingTrackingNo = String(currentOrder.shipping_tracking_no ?? "").trim();
-    const nextShippingCompany = nextStatus === "shipped" ? shippingCompany : "";
-    const nextShippingTrackingNo = nextStatus === "shipped" ? shippingTrackingNo : "";
+    let nextShippingCompany = "";
+    let nextShippingTrackingNo = "";
+
+    if (nextStatus === "shipped") {
+      const shipment = await getOrderShipmentRecord(orderId, "navlungo");
+      if (!shipment || shipment.status !== "created") {
+        await connection.rollback();
+        return res.status(400).json({
+          message: "Kargoya verildi durumuna geçmeden önce sipariş için Navlungo gönderisi oluşturulmalı.",
+        });
+      }
+
+      nextShippingCompany = String(shipment.carrierName ?? "").trim();
+      nextShippingTrackingNo = String(shipment.postNumber ?? "").trim();
+
+      if (!nextShippingCompany || !nextShippingTrackingNo) {
+        await connection.rollback();
+        return res.status(400).json({
+          message: "Navlungo gönderisinde taşıyıcı veya gönderi numarası eksik.",
+        });
+      }
+    }
+
     const noChange =
       currentStatus === nextStatus &&
       currentShippingCompany === nextShippingCompany &&
@@ -6573,7 +6572,7 @@ app.patch("/api/admin/orders/:id/status", requireAdminAuth, async (req, res) => 
           ? "Sipariş hazırlık sürecine alındı."
           : nextStatus === "shipped"
           ? currentStatus === "shipped"
-            ? "Kargo bilgileri güncellendi."
+            ? "Navlungo kargo bilgileri güncellendi."
             : "Sipariş kargoya verildi."
           : "Sipariş teslim edildi olarak işaretlendi.",
       shippingCompany: nextShippingCompany,

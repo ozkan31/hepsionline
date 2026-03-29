@@ -708,8 +708,6 @@ export async function updateAdminOrderStatus(
   orderId: string,
   payload: {
     status: "processing" | "shipped" | "delivered";
-    shippingCompany?: string;
-    shippingTrackingNo?: string;
   }
 ): Promise<{
   ok: boolean;

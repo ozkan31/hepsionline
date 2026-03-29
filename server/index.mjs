@@ -403,6 +403,10 @@ const ABANDONED_CART_SETTING_KEY = "marketing_abandoned_cart";
 const CUSTOMER_COUPON_SETTING_KEY = "marketing_customer_coupon";
 const NAVLUNGO_SENDER_ADDRESS_SETTING_KEY = "navlungo_sender_address_id";
 const ABANDONED_CART_SCAN_INTERVAL_MS = 15 * 60 * 1000;
+const NAVLUNGO_STATUS_SYNC_INTERVAL_MS = Math.max(
+  60 * 1000,
+  Number.parseInt(String(process.env.NAVLUNGO_STATUS_SYNC_INTERVAL_MS ?? `${5 * 60 * 1000}`), 10) || 5 * 60 * 1000
+);
 const DEFAULT_ABANDONED_CART_SETTINGS = Object.freeze({
   enabled: false,
   delayMinutes: 120,
@@ -428,6 +432,8 @@ const DEFAULT_CUSTOMER_COUPON_SETTINGS = Object.freeze({
 });
 let abandonedCartScanTimeout = null;
 let abandonedCartScanInFlight = null;
+let navlungoStatusSyncTimeout = null;
+let navlungoStatusSyncInFlight = null;
 let navlungoTokenCache = {
   token: "",
   expiresAt: 0,
@@ -3912,6 +3918,73 @@ function mapOrderShipmentRow(row) {
   };
 }
 
+function getOrderStatusRank(status) {
+  switch (String(status ?? "").trim()) {
+    case "delivered":
+      return 3;
+    case "shipped":
+      return 2;
+    case "processing":
+    default:
+      return 1;
+  }
+}
+
+function normalizeNavlungoStatusName(value) {
+  return String(value ?? "").trim().toLocaleLowerCase("tr-TR");
+}
+
+function mapNavlungoLifecycleStatus(statusCode, statusName) {
+  const numericStatusCode = Number(statusCode ?? 0);
+  const normalizedStatusName = normalizeNavlungoStatusName(statusName);
+
+  if (
+    numericStatusCode === 2 ||
+    numericStatusCode === 13 ||
+    normalizedStatusName.includes("teslim edildi") ||
+    normalizedStatusName.includes("tamamlandı")
+  ) {
+    return "delivered";
+  }
+
+  if (
+    [3, 4, 5, 6, 16, 17, 18].includes(numericStatusCode) ||
+    normalizedStatusName.includes("teslim alındı") ||
+    normalizedStatusName.includes("transfer aşamasında") ||
+    normalizedStatusName.includes("şubede beklemede") ||
+    normalizedStatusName.includes("teslim edilecek") ||
+    normalizedStatusName.includes("dağıtıma çıktı") ||
+    normalizedStatusName.includes("dağıtım planlandı") ||
+    normalizedStatusName.includes("tekrar sevk")
+  ) {
+    return "shipped";
+  }
+
+  return null;
+}
+
+function extractNavlungoCheckPayload(payload) {
+  const normalizedPayload =
+    payload && typeof payload === "object" && payload.data && typeof payload.data === "object" ? payload.data : payload;
+  const data = Array.isArray(normalizedPayload) ? normalizedPayload[0] ?? {} : normalizedPayload ?? {};
+  const post = data?.post && typeof data.post === "object" ? data.post : {};
+  const status = data?.status && typeof data.status === "object" ? data.status : {};
+
+  return {
+    raw: data,
+    referenceId: String(data.reference_id ?? "").trim(),
+    postNumber: String(data.post_number ?? "").trim(),
+    carrierName: String(post.carrier_name ?? data.carrier_name ?? "").trim(),
+    trackingUrl: String(data.tracking_url ?? "").trim(),
+    carrierTrackingUrl: String(data.carrier_tracking_url ?? "").trim(),
+    barcodeUrl: String(data.barcode_url ?? data.barcode ?? "").trim(),
+    statusCode: Number(status.status_code ?? data.status_code ?? 0) || 0,
+    statusName: String(status.status_name ?? data.status_name ?? "").trim(),
+    pickedUpDate: String(status.picked_up_date ?? "").trim(),
+    deliveredDate: String(status.delivered_date ?? "").trim(),
+  };
+}
+
 function parseNavlungoResponsePayload(text) {
   const normalized = String(text ?? "").trim();
   if (!normalized) return null;
@@ -4518,6 +4591,238 @@ async function createNavlungoShipmentForOrder({ order, user, deliveryAddress, fo
     });
     return { skipped: false, shipment };
   }
+}
+
+async function fetchNavlungoShipmentStatus(shipment) {
+  const lookupValue = String(shipment?.postNumber ?? shipment?.referenceId ?? "").trim();
+  if (!lookupValue) {
+    throw new Error("Navlungo durum sorgusu için post numarası veya referans bulunamadı.");
+  }
+
+  const responsePayload = await requestNavlungoJson(`post/check/${encodeURIComponent(lookupValue)}`, {
+    method: "GET",
+  });
+
+  return {
+    lookupValue,
+    responsePayload,
+    summary: extractNavlungoCheckPayload(responsePayload),
+  };
+}
+
+async function syncNavlungoShipmentStatusForOrder(orderId) {
+  const normalizedOrderId = String(orderId ?? "").trim();
+  if (!normalizedOrderId || !isNavlungoConfigured) {
+    return { skipped: true, reason: "not_configured" };
+  }
+
+  const shipment = await getOrderShipmentRecord(normalizedOrderId, "navlungo");
+  if (!shipment || shipment.status !== "created") {
+    return { skipped: true, reason: "shipment_not_ready" };
+  }
+
+  if (!shipment.postNumber && !shipment.referenceId) {
+    return { skipped: true, reason: "missing_lookup_value" };
+  }
+
+  const { lookupValue, responsePayload, summary } = await fetchNavlungoShipmentStatus(shipment);
+  const refreshedShipment = await upsertOrderShipmentRecord({
+    orderId: normalizedOrderId,
+    provider: "navlungo",
+    status: "created",
+    requestPayload: {
+      source: "post/check",
+      lookupValue,
+    },
+    responsePayload,
+    referenceId: summary.referenceId || shipment.referenceId || normalizedOrderId,
+    postNumber: summary.postNumber || shipment.postNumber || "",
+    carrierName: summary.carrierName || shipment.carrierName || "",
+    trackingUrl: summary.trackingUrl || shipment.trackingUrl || summary.carrierTrackingUrl || "",
+    barcodeUrl: summary.barcodeUrl || shipment.barcodeUrl || "",
+  });
+
+  const mappedOrderStatus = mapNavlungoLifecycleStatus(summary.statusCode, summary.statusName);
+  if (!mappedOrderStatus) {
+    return {
+      skipped: true,
+      reason: "status_not_mapped",
+      shipment: refreshedShipment,
+      navlungoStatusCode: summary.statusCode,
+      navlungoStatusName: summary.statusName,
+    };
+  }
+
+  const [currentRows] = await pool.query(
+    `
+    SELECT status, shipping_company, shipping_tracking_no
+    FROM user_orders
+    WHERE id = ?
+    LIMIT 1
+    `,
+    [normalizedOrderId]
+  );
+
+  if (currentRows.length === 0) {
+    return { skipped: true, reason: "order_not_found", shipment: refreshedShipment };
+  }
+
+  const currentOrder = currentRows[0];
+  const currentStatus = String(currentOrder.status ?? "processing").trim() || "processing";
+  const currentShippingCompany = String(currentOrder.shipping_company ?? "").trim();
+  const currentShippingTrackingNo = String(currentOrder.shipping_tracking_no ?? "").trim();
+  const nextStatus = getOrderStatusRank(mappedOrderStatus) > getOrderStatusRank(currentStatus) ? mappedOrderStatus : currentStatus;
+  const nextShippingCompany = String(summary.carrierName || refreshedShipment?.carrierName || currentShippingCompany).trim();
+  const nextShippingTrackingNo = String(summary.postNumber || refreshedShipment?.postNumber || currentShippingTrackingNo).trim();
+
+  const shouldUpdateStatus = nextStatus !== currentStatus;
+  const shouldUpdateShipping =
+    (nextShippingCompany && nextShippingCompany !== currentShippingCompany) ||
+    (nextShippingTrackingNo && nextShippingTrackingNo !== currentShippingTrackingNo);
+
+  if (!shouldUpdateStatus && !shouldUpdateShipping) {
+    return {
+      skipped: true,
+      reason: "already_synced",
+      shipment: refreshedShipment,
+      navlungoStatusCode: summary.statusCode,
+      navlungoStatusName: summary.statusName,
+    };
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    await connection.query(
+      `
+      UPDATE user_orders
+      SET status = ?, shipping_company = ?, shipping_tracking_no = ?
+      WHERE id = ?
+      `,
+      [nextStatus, nextShippingCompany || null, nextShippingTrackingNo || null, normalizedOrderId]
+    );
+
+    let timelineEvent = null;
+    if (shouldUpdateStatus) {
+      timelineEvent = await insertOrderStatusTimelineEvent(connection, {
+        orderId: normalizedOrderId,
+        type: nextStatus,
+        note:
+          nextStatus === "delivered"
+            ? `Navlungo durumu teslim edildi olarak güncellendi (${summary.statusName || "Teslim Edildi"}).`
+            : `Navlungo durumu kargoya verildi olarak güncellendi (${summary.statusName || "Teslim Alındı"}).`,
+        shippingCompany: nextShippingCompany,
+        shippingTrackingNo: nextShippingTrackingNo,
+      });
+    }
+
+    await connection.commit();
+
+    return {
+      skipped: false,
+      shipment: refreshedShipment,
+      status: nextStatus,
+      shippingCompany: nextShippingCompany,
+      shippingTrackingNo: nextShippingTrackingNo,
+      timelineEvent,
+      navlungoStatusCode: summary.statusCode,
+      navlungoStatusName: summary.statusName,
+    };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+async function runNavlungoShipmentStatusSync({ limit = 25 } = {}) {
+  if (!isNavlungoConfigured) {
+    return {
+      ok: false,
+      message: "Navlungo entegrasyonu aktif değil.",
+      scanned: 0,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
+    };
+  }
+
+  await ensureOrderShipmentsTable();
+
+  const [rows] = await pool.query(
+    `
+    SELECT s.order_id
+    FROM order_shipments s
+    JOIN user_orders o ON o.id = s.order_id
+    WHERE s.provider = 'navlungo'
+      AND s.status = 'created'
+      AND o.status IN ('processing', 'shipped')
+    ORDER BY s.updated_at ASC, s.created_at ASC
+    LIMIT ?
+    `,
+    [Math.max(1, Number(limit) || 25)]
+  );
+
+  const summary = {
+    ok: true,
+    scanned: rows.length,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    message: "",
+  };
+
+  for (const row of rows) {
+    const orderId = String(row.order_id ?? "").trim();
+    if (!orderId) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    try {
+      const result = await syncNavlungoShipmentStatusForOrder(orderId);
+      if (result?.skipped) {
+        summary.skipped += 1;
+      } else {
+        summary.updated += 1;
+      }
+    } catch (error) {
+      summary.failed += 1;
+      console.error("Navlungo shipment status sync failed:", {
+        orderId,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
+  }
+
+  summary.message = `Navlungo senkron tamamlandı. Taranan: ${summary.scanned}, Güncellenen: ${summary.updated}, Atlanan: ${summary.skipped}, Hatalı: ${summary.failed}`;
+  return summary;
+}
+
+async function scheduleNavlungoShipmentStatusSync() {
+  if (navlungoStatusSyncInFlight) {
+    return navlungoStatusSyncInFlight;
+  }
+
+  navlungoStatusSyncInFlight = (async () => {
+    try {
+      await runNavlungoShipmentStatusSync();
+    } catch (error) {
+      console.error("Navlungo shipment status scheduler failed:", error instanceof Error ? error.message : error);
+    } finally {
+      navlungoStatusSyncInFlight = null;
+      if (navlungoStatusSyncTimeout != null) {
+        clearTimeout(navlungoStatusSyncTimeout);
+      }
+      navlungoStatusSyncTimeout = setTimeout(() => {
+        void scheduleNavlungoShipmentStatusSync();
+      }, NAVLUNGO_STATUS_SYNC_INTERVAL_MS);
+    }
+  })();
+
+  return navlungoStatusSyncInFlight;
 }
 
 async function getOrderContextForNavlungo(orderId) {
@@ -6558,8 +6863,8 @@ app.patch("/api/admin/orders/:id/status", requireAdminAuth, async (req, res) => 
       `,
       [
         nextStatus,
-        nextStatus === "shipped" ? shippingCompany : null,
-        nextStatus === "shipped" ? shippingTrackingNo : null,
+        nextStatus === "processing" ? null : nextShippingCompany || currentShippingCompany || null,
+        nextStatus === "processing" ? null : nextShippingTrackingNo || currentShippingTrackingNo || null,
         orderId,
       ]
     );
@@ -7545,6 +7850,7 @@ await ensureAdminSessionsTable();
 await ensureMarketingAbandonedCartEmailsTable();
 await initializeRedisCache();
 void scheduleAbandonedCartCampaignScan();
+void scheduleNavlungoShipmentStatusSync();
 
 app.listen(port, () => {
   console.log(`API server running on http://localhost:${port}`);

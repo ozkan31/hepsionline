@@ -3948,9 +3948,11 @@ function formatNavlungoErrorMessage(payload, fallbackMessage = "Navlungo isteği
   if (typeof payload === "string") {
     return payload || fallbackMessage;
   }
-  const topLevelError = String(payload.error ?? "").trim();
-  if (topLevelError) {
-    return topLevelError;
+  if (payload.error != null && typeof payload.error !== "object") {
+    const topLevelError = String(payload.error ?? "").trim();
+    if (topLevelError) {
+      return topLevelError;
+    }
   }
   if (payload.error && typeof payload.error === "object") {
     const flattened = flattenErrorValues(payload.error);

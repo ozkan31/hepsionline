@@ -4096,10 +4096,13 @@ async function requestNavlungoJson(pathname, init = {}, { retryOnUnauthorized = 
       : init.body == null
         ? ""
         : String(init.body);
+  if (serializedBody) {
+    headers.set("Content-Length", String(Buffer.byteLength(serializedBody)));
+  }
 
   let status = 0;
   let rawText = "";
-  if (method === "GET" && serializedBody) {
+  if (serializedBody) {
     const rawResponse = await performNavlungoHttpRequest(requestUrl, {
       method,
       headers: Object.fromEntries(headers.entries()),

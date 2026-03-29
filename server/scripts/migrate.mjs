@@ -247,6 +247,33 @@ CREATE TABLE IF NOT EXISTS order_status_events (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
+const createOrderShipmentsSql = `
+CREATE TABLE IF NOT EXISTS order_shipments (
+  id CHAR(36) PRIMARY KEY,
+  order_id VARCHAR(20) NOT NULL,
+  provider VARCHAR(40) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'created',
+  provider_reference_id VARCHAR(120) NULL,
+  provider_post_number VARCHAR(120) NULL,
+  carrier_name VARCHAR(120) NULL,
+  tracking_url TEXT NULL,
+  barcode_url TEXT NULL,
+  error_message TEXT NULL,
+  request_payload_json JSON NULL,
+  response_payload_json JSON NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_order_shipments_order
+    FOREIGN KEY (order_id)
+    REFERENCES user_orders(id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+  UNIQUE KEY uq_order_shipments_order_provider (order_id, provider),
+  KEY idx_order_shipments_status (status),
+  KEY idx_order_shipments_updated_at (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
 const createAppSettingsSql = `
 CREATE TABLE IF NOT EXISTS app_settings (
   setting_key VARCHAR(120) PRIMARY KEY,
@@ -330,6 +357,7 @@ async function migrate() {
   await pool.query(createUserOrdersSql);
   await pool.query(createUserOrderItemsSql);
   await pool.query(createOrderStatusEventsSql);
+  await pool.query(createOrderShipmentsSql);
   await pool.query(createAppSettingsSql);
   await pool.query(createContactRequestsSql);
   await pool.query(createCouponsSql);

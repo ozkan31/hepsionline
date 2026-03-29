@@ -3,6 +3,7 @@ import express from "express";
 import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
+import https from "node:https";
 import nodemailer from "nodemailer";
 import multer from "multer";
 import fs from "node:fs";
@@ -400,6 +401,7 @@ const abandonedCartMailFromName = orderMailTransporter ? ORDER_SMTP_FROM_NAME : 
 const abandonedCartMailFromEmail = orderMailTransporter ? ORDER_SMTP_FROM_EMAIL : SMTP_FROM_EMAIL;
 const ABANDONED_CART_SETTING_KEY = "marketing_abandoned_cart";
 const CUSTOMER_COUPON_SETTING_KEY = "marketing_customer_coupon";
+const NAVLUNGO_SENDER_ADDRESS_SETTING_KEY = "navlungo_sender_address_id";
 const ABANDONED_CART_SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const DEFAULT_ABANDONED_CART_SETTINGS = Object.freeze({
   enabled: false,
@@ -426,6 +428,10 @@ const DEFAULT_CUSTOMER_COUPON_SETTINGS = Object.freeze({
 });
 let abandonedCartScanTimeout = null;
 let abandonedCartScanInFlight = null;
+let navlungoTokenCache = {
+  token: "",
+  expiresAt: 0,
+};
 const WHATSAPP_ENABLED = String(process.env.WHATSAPP_ENABLED ?? "false").toLowerCase() === "true";
 const WHATSAPP_API_URL = String(process.env.WHATSAPP_API_URL ?? "").trim();
 const WHATSAPP_API_TOKEN = String(process.env.WHATSAPP_API_TOKEN ?? "").trim();
@@ -463,6 +469,47 @@ const isGoogleMerchantConfigured = Boolean(
     GOOGLE_MERCHANT_ACCOUNT_ID &&
     GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL &&
     GOOGLE_MERCHANT_SERVICE_ACCOUNT_PRIVATE_KEY
+);
+const NAVLUNGO_API_BASE_URL = String(
+  process.env.NAVLUNGO_API_BASE_URL ?? "https://domestic-api.navlungo.com/v2.1"
+)
+  .trim()
+  .replace(/\/+$/, "");
+const NAVLUNGO_USERNAME = String(process.env.NAVLUNGO_USERNAME ?? "").trim();
+const NAVLUNGO_PASSWORD = String(process.env.NAVLUNGO_PASSWORD ?? "").trim();
+const NAVLUNGO_SENDER_ADDRESS_ID = String(process.env.NAVLUNGO_SENDER_ADDRESS_ID ?? "").trim();
+const NAVLUNGO_SENDER_LOCATION_NAME = String(process.env.NAVLUNGO_SENDER_LOCATION_NAME ?? "").trim();
+const NAVLUNGO_SENDER_NAME = String(process.env.NAVLUNGO_SENDER_NAME ?? "").trim();
+const NAVLUNGO_SENDER_EMAIL = String(process.env.NAVLUNGO_SENDER_EMAIL ?? "").trim();
+const NAVLUNGO_SENDER_PHONE = String(process.env.NAVLUNGO_SENDER_PHONE ?? "").trim();
+const NAVLUNGO_SENDER_ADDRESS_LINE = String(process.env.NAVLUNGO_SENDER_ADDRESS_LINE ?? "").trim();
+const NAVLUNGO_SENDER_COUNTRY = String(process.env.NAVLUNGO_SENDER_COUNTRY ?? "tr").trim() || "tr";
+const NAVLUNGO_SENDER_CITY = String(process.env.NAVLUNGO_SENDER_CITY ?? "").trim();
+const NAVLUNGO_SENDER_DISTRICT = String(process.env.NAVLUNGO_SENDER_DISTRICT ?? "").trim();
+const NAVLUNGO_SENDER_POST_CODE = String(process.env.NAVLUNGO_SENDER_POST_CODE ?? "").trim();
+const NAVLUNGO_DEFAULT_CARRIER_ID = Math.max(1, Number.parseInt(String(process.env.NAVLUNGO_DEFAULT_CARRIER_ID ?? "1"), 10) || 1);
+const NAVLUNGO_DEFAULT_POST_TYPE = Math.max(1, Number.parseInt(String(process.env.NAVLUNGO_DEFAULT_POST_TYPE ?? "2"), 10) || 2);
+const NAVLUNGO_DEFAULT_DESI = Number.isFinite(Number(process.env.NAVLUNGO_DEFAULT_DESI))
+  ? Math.max(0.1, Number(process.env.NAVLUNGO_DEFAULT_DESI))
+  : 1;
+const NAVLUNGO_DEFAULT_PACKAGE_COUNT = Math.max(
+  1,
+  Number.parseInt(String(process.env.NAVLUNGO_DEFAULT_PACKAGE_COUNT ?? "1"), 10) || 1
+);
+const NAVLUNGO_PLATFORM = String(process.env.NAVLUNGO_PLATFORM ?? "stilbagsfashion").trim();
+const NAVLUNGO_LOCALIZATION = String(process.env.NAVLUNGO_LOCALIZATION ?? "tr").trim() || "tr";
+const hasNavlungoSenderCreateConfig = Boolean(
+  NAVLUNGO_SENDER_NAME &&
+    NAVLUNGO_SENDER_EMAIL &&
+    NAVLUNGO_SENDER_PHONE &&
+    NAVLUNGO_SENDER_ADDRESS_LINE &&
+    NAVLUNGO_SENDER_CITY &&
+    NAVLUNGO_SENDER_DISTRICT
+);
+const isNavlungoConfigured = Boolean(
+  NAVLUNGO_API_BASE_URL &&
+    NAVLUNGO_USERNAME &&
+    NAVLUNGO_PASSWORD
 );
 const isWhatsappConfigured = Boolean(
   WHATSAPP_ENABLED &&
@@ -3411,6 +3458,35 @@ async function ensureMarketingAbandonedCartEmailsTable() {
   `);
 }
 
+async function ensureOrderShipmentsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS order_shipments (
+      id CHAR(36) PRIMARY KEY,
+      order_id VARCHAR(20) NOT NULL,
+      provider VARCHAR(40) NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'created',
+      provider_reference_id VARCHAR(120) NULL,
+      provider_post_number VARCHAR(120) NULL,
+      carrier_name VARCHAR(120) NULL,
+      tracking_url TEXT NULL,
+      barcode_url TEXT NULL,
+      error_message TEXT NULL,
+      request_payload_json JSON NULL,
+      response_payload_json JSON NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_order_shipments_order
+        FOREIGN KEY (order_id)
+        REFERENCES user_orders(id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE,
+      UNIQUE KEY uq_order_shipments_order_provider (order_id, provider),
+      KEY idx_order_shipments_status (status),
+      KEY idx_order_shipments_updated_at (updated_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+}
+
 async function getJsonAppSetting(settingKey, fallbackValue) {
   await ensureAppSettingsTable();
   const [rows] = await pool.query(
@@ -3463,6 +3539,38 @@ async function setJsonAppSetting(settingKey, value) {
     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = CURRENT_TIMESTAMP
     `,
     [settingKey, JSON.stringify(value)]
+  );
+}
+
+async function getTextAppSetting(settingKey, fallbackValue = "") {
+  await ensureAppSettingsTable();
+  const [rows] = await pool.query(
+    `
+    SELECT setting_value
+    FROM app_settings
+    WHERE setting_key = ?
+    LIMIT 1
+    `,
+    [settingKey]
+  );
+
+  if (rows.length === 0) {
+    return fallbackValue;
+  }
+
+  const value = String(rows[0].setting_value ?? "").trim();
+  return value || fallbackValue;
+}
+
+async function setTextAppSetting(settingKey, value) {
+  await ensureAppSettingsTable();
+  await pool.query(
+    `
+    INSERT INTO app_settings (setting_key, setting_value)
+    VALUES (?, ?)
+    ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = CURRENT_TIMESTAMP
+    `,
+    [settingKey, String(value ?? "").trim()]
   );
 }
 
@@ -3793,6 +3901,672 @@ async function insertOrderStatusTimelineEvent(
     note: String(note ?? "").trim() || undefined,
     shippingCompany: String(shippingCompany ?? "").trim() || undefined,
     shippingTrackingNo: String(shippingTrackingNo ?? "").trim() || undefined,
+  };
+}
+
+function mapOrderShipmentRow(row) {
+  const rawStatus = String(row.status ?? "").trim().toLowerCase();
+  const status = rawStatus === "created" || rawStatus === "failed" ? rawStatus : "failed";
+  return {
+    provider: String(row.provider ?? "").trim() || "navlungo",
+    status,
+    referenceId: String(row.provider_reference_id ?? "").trim() || undefined,
+    postNumber: String(row.provider_post_number ?? "").trim() || undefined,
+    carrierName: String(row.carrier_name ?? "").trim() || undefined,
+    trackingUrl: String(row.tracking_url ?? "").trim() || undefined,
+    barcodeUrl: String(row.barcode_url ?? "").trim() || undefined,
+    errorMessage: String(row.error_message ?? "").trim() || undefined,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : undefined,
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : undefined,
+  };
+}
+
+function parseNavlungoResponsePayload(text) {
+  const normalized = String(text ?? "").trim();
+  if (!normalized) return null;
+  try {
+    return JSON.parse(normalized);
+  } catch {
+    return normalized;
+  }
+}
+
+function formatNavlungoErrorMessage(payload, fallbackMessage = "Navlungo isteği başarısız oldu.") {
+  if (!payload) return fallbackMessage;
+  if (typeof payload === "string") {
+    return payload || fallbackMessage;
+  }
+  const topLevelError = String(payload.error ?? "").trim();
+  if (topLevelError) {
+    return topLevelError;
+  }
+  if (payload.error && typeof payload.error === "object") {
+    const flattened = Object.entries(payload.error)
+      .flatMap(([, value]) => (Array.isArray(value) ? value : [value]))
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    if (flattened.length > 0) {
+      return flattened.join(" | ");
+    }
+  }
+  const message = String(payload.message ?? "").trim();
+  if (message) {
+    return message;
+  }
+  return fallbackMessage;
+}
+
+function buildNavlungoApiUrl(pathname) {
+  const normalizedPath = String(pathname ?? "").trim().replace(/^\/+/, "");
+  return `${NAVLUNGO_API_BASE_URL}/${normalizedPath}`;
+}
+
+function normalizeNavlungoPhone(phone) {
+  const raw = String(phone ?? "").trim();
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("90") && digits.length === 12) {
+    return `+${digits}`;
+  }
+  if (digits.startsWith("0") && digits.length === 11) {
+    return `+90${digits.slice(1)}`;
+  }
+  if (digits.length === 10) {
+    return `+90${digits}`;
+  }
+  if (raw.startsWith("+")) {
+    return `+${digits}`;
+  }
+  return `+${digits}`;
+}
+
+function buildNavlungoRecipientAddressLine(deliveryAddress = {}) {
+  const parts = [
+    String(deliveryAddress.addressName ?? "").trim(),
+    String(deliveryAddress.street ?? "").trim(),
+    String(deliveryAddress.neighborhood ?? "").trim(),
+  ].filter(Boolean);
+  return parts.join(", ").slice(0, 250);
+}
+
+function getNavlungoPostRequestMeta(payload = {}) {
+  const post = Array.isArray(payload.posts) ? payload.posts[0] ?? {} : {};
+  const providerPost = post.post && typeof post.post === "object" ? post.post : {};
+  return {
+    referenceId: String(post.reference_id ?? "").trim(),
+    carrierId: Number(post.carrier_id ?? NAVLUNGO_DEFAULT_CARRIER_ID) || NAVLUNGO_DEFAULT_CARRIER_ID,
+    postType: Number(post.post_type ?? NAVLUNGO_DEFAULT_POST_TYPE) || NAVLUNGO_DEFAULT_POST_TYPE,
+    packageCount: Number(providerPost.package_count ?? NAVLUNGO_DEFAULT_PACKAGE_COUNT) || NAVLUNGO_DEFAULT_PACKAGE_COUNT,
+    desi: Number(providerPost.desi ?? NAVLUNGO_DEFAULT_DESI) || NAVLUNGO_DEFAULT_DESI,
+  };
+}
+
+async function requestNavlungoToken({ forceRefresh = false } = {}) {
+  if (!isNavlungoConfigured) {
+    throw new Error("Navlungo entegrasyonu için gerekli bilgiler eksik.");
+  }
+
+  if (!forceRefresh && navlungoTokenCache.token && navlungoTokenCache.expiresAt > Date.now()) {
+    return navlungoTokenCache.token;
+  }
+
+  const response = await fetch(buildNavlungoApiUrl("auth/api"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "X-localization": NAVLUNGO_LOCALIZATION,
+    },
+    body: JSON.stringify({
+      username: NAVLUNGO_USERNAME,
+      password: NAVLUNGO_PASSWORD,
+    }),
+  });
+
+  const payload = parseNavlungoResponsePayload(await response.text());
+  if (!response.ok || !payload || typeof payload !== "object" || payload.status === false) {
+    throw new Error(formatNavlungoErrorMessage(payload, `Navlungo token alınamadı (${response.status}).`));
+  }
+
+  const accessToken = String(payload.data?.access_token ?? "").trim();
+  const expiresAtRaw = String(payload.data?.expires_in ?? "").trim();
+  if (!accessToken) {
+    throw new Error("Navlungo token cevabı geçersiz.");
+  }
+
+  const parsedExpiry = expiresAtRaw ? Date.parse(expiresAtRaw) : NaN;
+  navlungoTokenCache = {
+    token: accessToken,
+    expiresAt: Number.isFinite(parsedExpiry) ? parsedExpiry - 60 * 1000 : Date.now() + 7 * 60 * 60 * 1000,
+  };
+  return accessToken;
+}
+
+async function performNavlungoHttpRequest(url, { method = "GET", headers = {}, body = "" } = {}) {
+  const target = new URL(url);
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port || undefined,
+        path: `${target.pathname}${target.search}`,
+        method,
+        headers,
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (chunk) => {
+          chunks.push(chunk);
+        });
+        res.on("end", () => {
+          resolve({
+            status: Number(res.statusCode ?? 0),
+            text: Buffer.concat(chunks).toString("utf8"),
+          });
+        });
+      }
+    );
+
+    req.on("error", reject);
+
+    if (body) {
+      req.write(body);
+    }
+
+    req.end();
+  });
+}
+
+async function requestNavlungoJson(pathname, init = {}, { retryOnUnauthorized = true } = {}) {
+  const token = await requestNavlungoToken();
+  const method = String(init.method ?? "GET").trim().toUpperCase() || "GET";
+  const headers = new Headers(init.headers ?? {});
+  headers.set("Accept", "application/json");
+  headers.set("X-localization", NAVLUNGO_LOCALIZATION);
+  if (init.body != null && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  headers.set("Authorization", `Bearer ${token}`);
+
+  const requestUrl = buildNavlungoApiUrl(pathname);
+  const serializedBody =
+    typeof init.body === "string"
+      ? init.body
+      : init.body == null
+        ? ""
+        : String(init.body);
+
+  let status = 0;
+  let rawText = "";
+  if (method === "GET" && serializedBody) {
+    const rawResponse = await performNavlungoHttpRequest(requestUrl, {
+      method,
+      headers: Object.fromEntries(headers.entries()),
+      body: serializedBody,
+    });
+    status = rawResponse.status;
+    rawText = rawResponse.text;
+  } else {
+    const response = await fetch(requestUrl, {
+      ...init,
+      method,
+      headers,
+    });
+    status = response.status;
+    rawText = await response.text();
+  }
+
+  if (status === 401 && retryOnUnauthorized) {
+    await requestNavlungoToken({ forceRefresh: true });
+    return requestNavlungoJson(pathname, init, { retryOnUnauthorized: false });
+  }
+
+  const payload = parseNavlungoResponsePayload(rawText);
+  const isOk = status >= 200 && status < 300;
+  if (!isOk || (payload && typeof payload === "object" && payload.status === false)) {
+    throw new Error(formatNavlungoErrorMessage(payload, `Navlungo isteği başarısız oldu (${status}).`));
+  }
+
+  return payload;
+}
+
+function extractNavlungoAddressId(addressPayload) {
+  const candidates = [
+    addressPayload?.id,
+    addressPayload?.addressId,
+    addressPayload?.address_id,
+    addressPayload?.data?.id,
+    addressPayload?.data?.addressId,
+    addressPayload?.data?.address_id,
+  ];
+  for (const candidate of candidates) {
+    const normalized = String(candidate ?? "").trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return "";
+}
+
+async function listNavlungoSenderAddresses() {
+  const payload = await requestNavlungoJson("address-book/getAll", {
+    method: "GET",
+    body: JSON.stringify({
+      limit: 50,
+      page: 1,
+      filters: {
+        address_type: "sender",
+      },
+    }),
+  });
+
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  if (Array.isArray(payload?.data)) {
+    return payload.data;
+  }
+  if (Array.isArray(payload?.data?.data)) {
+    return payload.data.data;
+  }
+  if (Array.isArray(payload?.items)) {
+    return payload.items;
+  }
+  return [];
+}
+
+async function createNavlungoSenderAddress() {
+  if (!hasNavlungoSenderCreateConfig) {
+    throw new Error("Navlungo gonderici adres bilgileri eksik.");
+  }
+
+  const payload = await requestNavlungoJson("address-book/create", {
+    method: "POST",
+    body: JSON.stringify({
+      name: NAVLUNGO_SENDER_NAME,
+      address_name: NAVLUNGO_SENDER_LOCATION_NAME || NAVLUNGO_SENDER_NAME,
+      address_type: "sender",
+      email: NAVLUNGO_SENDER_EMAIL,
+      phone: normalizeNavlungoPhone(NAVLUNGO_SENDER_PHONE),
+      address: NAVLUNGO_SENDER_ADDRESS_LINE,
+      country: NAVLUNGO_SENDER_COUNTRY,
+      city: NAVLUNGO_SENDER_CITY,
+      district: NAVLUNGO_SENDER_DISTRICT,
+      post_code: NAVLUNGO_SENDER_POST_CODE,
+      is_main_warehouse: 1,
+    }),
+  });
+
+  const addressId = extractNavlungoAddressId(payload);
+  if (!addressId) {
+    throw new Error("Navlungo gonderici adresi olusturuldu ama address id donmedi.");
+  }
+  await setTextAppSetting(NAVLUNGO_SENDER_ADDRESS_SETTING_KEY, addressId);
+  return addressId;
+}
+
+async function getNavlungoSenderAddressId() {
+  const explicitAddressId = String(NAVLUNGO_SENDER_ADDRESS_ID ?? "").trim();
+  if (explicitAddressId) {
+    return explicitAddressId;
+  }
+
+  const cachedAddressId = await getTextAppSetting(NAVLUNGO_SENDER_ADDRESS_SETTING_KEY, "");
+  if (cachedAddressId) {
+    return cachedAddressId;
+  }
+
+  const senderAddresses = await listNavlungoSenderAddresses();
+  const primaryAddress =
+    senderAddresses.find((address) => Number(address?.is_main_warehouse ?? 0) === 1) ?? senderAddresses[0] ?? null;
+  const primaryAddressId = extractNavlungoAddressId(primaryAddress);
+  if (primaryAddressId) {
+    await setTextAppSetting(NAVLUNGO_SENDER_ADDRESS_SETTING_KEY, primaryAddressId);
+    return primaryAddressId;
+  }
+
+  if (hasNavlungoSenderCreateConfig) {
+    return createNavlungoSenderAddress();
+  }
+
+  throw new Error("Navlungo gonderici adresi bulunamadi. sender address id ya da gonderici adres bilgilerini ekleyin.");
+}
+
+function buildNavlungoShipmentPayload({ order, user, deliveryAddress }) {
+  const recipientPhone = normalizeNavlungoPhone(deliveryAddress?.phone || user?.phone || "");
+  const recipientCity = String(deliveryAddress?.province ?? "").trim();
+  const recipientDistrict = String(deliveryAddress?.district ?? "").trim();
+  const recipientAddressLine = buildNavlungoRecipientAddressLine(deliveryAddress);
+  const recipientName = `${String(deliveryAddress?.firstName ?? user?.firstName ?? "").trim()} ${String(
+    deliveryAddress?.lastName ?? user?.lastName ?? ""
+  )
+    .trim()
+    .trim()}`.trim();
+  const senderAddressId = NAVLUNGO_SENDER_ADDRESS_ID || "";
+
+  if (!recipientName || !recipientPhone || !recipientCity || !recipientDistrict || !recipientAddressLine) {
+    throw new Error("Navlungo için teslimat adresi eksik veya geçersiz.");
+  }
+
+  return {
+    platform: NAVLUNGO_PLATFORM,
+    posts: [
+      {
+        reference_id: String(order?.id ?? "").trim(),
+        carrier_id: NAVLUNGO_DEFAULT_CARRIER_ID,
+        post_type: NAVLUNGO_DEFAULT_POST_TYPE,
+        cod_payment_type: "",
+        sender: {
+          addressId: Number.isFinite(Number(senderAddressId)) ? Number(senderAddressId) : senderAddressId,
+        },
+        recipient: {
+          name: recipientName,
+          phone: recipientPhone,
+          email: String(user?.email ?? "").trim(),
+          address: recipientAddressLine,
+          country: "tr",
+          city: recipientCity,
+          district: recipientDistrict,
+          post_code: "",
+        },
+        post: {
+          desi: NAVLUNGO_DEFAULT_DESI,
+          package_count: NAVLUNGO_DEFAULT_PACKAGE_COUNT,
+          price: "",
+          note: `StilBags&Fashion siparisi #${String(order?.id ?? "").trim()}`,
+        },
+        custom_data_1: String(order?.id ?? "").trim(),
+        custom_data_2: String(order?.couponCode ?? "").trim(),
+      },
+    ],
+  };
+}
+
+async function upsertOrderShipmentRecord({
+  orderId,
+  provider = "navlungo",
+  status,
+  requestPayload = null,
+  responsePayload = null,
+  errorMessage = "",
+  referenceId = "",
+  postNumber = "",
+  carrierName = "",
+  trackingUrl = "",
+  barcodeUrl = "",
+}) {
+  await ensureOrderShipmentsTable();
+  await pool.query(
+    `
+    INSERT INTO order_shipments (
+      id,
+      order_id,
+      provider,
+      status,
+      provider_reference_id,
+      provider_post_number,
+      carrier_name,
+      tracking_url,
+      barcode_url,
+      error_message,
+      request_payload_json,
+      response_payload_json
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      status = VALUES(status),
+      provider_reference_id = VALUES(provider_reference_id),
+      provider_post_number = VALUES(provider_post_number),
+      carrier_name = VALUES(carrier_name),
+      tracking_url = VALUES(tracking_url),
+      barcode_url = VALUES(barcode_url),
+      error_message = VALUES(error_message),
+      request_payload_json = VALUES(request_payload_json),
+      response_payload_json = VALUES(response_payload_json),
+      updated_at = CURRENT_TIMESTAMP
+    `,
+    [
+      crypto.randomUUID(),
+      orderId,
+      provider,
+      status,
+      String(referenceId ?? "").trim() || null,
+      String(postNumber ?? "").trim() || null,
+      String(carrierName ?? "").trim() || null,
+      String(trackingUrl ?? "").trim() || null,
+      String(barcodeUrl ?? "").trim() || null,
+      String(errorMessage ?? "").trim() || null,
+      requestPayload == null ? null : JSON.stringify(requestPayload),
+      responsePayload == null ? null : JSON.stringify(responsePayload),
+    ]
+  );
+
+  const [rows] = await pool.query(
+    `
+    SELECT provider, status, provider_reference_id, provider_post_number, carrier_name, tracking_url, barcode_url,
+           error_message, created_at, updated_at
+    FROM order_shipments
+    WHERE order_id = ? AND provider = ?
+    LIMIT 1
+    `,
+    [orderId, provider]
+  );
+
+  return rows.length > 0 ? mapOrderShipmentRow(rows[0]) : null;
+}
+
+async function getOrderShipmentRecord(orderId, provider = "navlungo") {
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT provider, status, provider_reference_id, provider_post_number, carrier_name, tracking_url, barcode_url,
+             error_message, created_at, updated_at
+      FROM order_shipments
+      WHERE order_id = ? AND provider = ?
+      LIMIT 1
+      `,
+      [orderId, provider]
+    );
+    return rows.length > 0 ? mapOrderShipmentRow(rows[0]) : null;
+  } catch (error) {
+    if (error?.code === "ER_NO_SUCH_TABLE") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function createNavlungoShipmentForOrder({ order, user, deliveryAddress, force = false }) {
+  if (!isNavlungoConfigured) {
+    return { skipped: true, shipment: null };
+  }
+
+  const orderId = String(order?.id ?? "").trim();
+  if (!orderId) {
+    throw new Error("Navlungo gönderisi için sipariş numarası eksik.");
+  }
+
+  const existingShipment = await getOrderShipmentRecord(orderId, "navlungo");
+  if (existingShipment && existingShipment.status === "created" && !force) {
+    return { skipped: true, shipment: existingShipment };
+  }
+
+  const senderAddressId = await getNavlungoSenderAddressId();
+  const requestPayload = buildNavlungoShipmentPayload({
+    order: { ...order, id: orderId },
+    user,
+    deliveryAddress,
+  });
+  requestPayload.posts[0].sender.addressId = Number.isFinite(Number(senderAddressId))
+    ? Number(senderAddressId)
+    : senderAddressId;
+
+  try {
+    let responsePayload;
+    try {
+      responsePayload = await requestNavlungoJson("post/create", {
+        method: "POST",
+        body: JSON.stringify(requestPayload),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : "";
+      if (!NAVLUNGO_SENDER_ADDRESS_ID && message.includes("adres")) {
+        await setTextAppSetting(NAVLUNGO_SENDER_ADDRESS_SETTING_KEY, "");
+        const refreshedSenderAddressId = await getNavlungoSenderAddressId();
+        requestPayload.posts[0].sender.addressId = Number.isFinite(Number(refreshedSenderAddressId))
+          ? Number(refreshedSenderAddressId)
+          : refreshedSenderAddressId;
+        responsePayload = await requestNavlungoJson("post/create", {
+          method: "POST",
+          body: JSON.stringify(requestPayload),
+        });
+      } else {
+        throw error;
+      }
+    }
+
+    const normalizedResponse =
+      responsePayload && typeof responsePayload === "object" && responsePayload.data
+        ? responsePayload.data
+        : responsePayload;
+    const postResponse = Array.isArray(normalizedResponse) ? normalizedResponse[0] ?? {} : normalizedResponse ?? {};
+    const requestMeta = getNavlungoPostRequestMeta(requestPayload);
+    const shipment = await upsertOrderShipmentRecord({
+      orderId,
+      provider: "navlungo",
+      status: "created",
+      requestPayload,
+      responsePayload,
+      referenceId: String(postResponse.reference_id ?? requestMeta.referenceId ?? orderId).trim(),
+      postNumber: String(postResponse.post_number ?? "").trim(),
+      carrierName: String(postResponse.post?.carrier_name ?? postResponse.carrier_name ?? "").trim(),
+      trackingUrl: String(postResponse.tracking_url ?? "").trim(),
+      barcodeUrl: String(postResponse.barcode_url ?? "").trim(),
+    });
+
+    console.info("Navlungo shipment created:", {
+      orderId,
+      referenceId: shipment?.referenceId || requestMeta.referenceId,
+      postNumber: shipment?.postNumber || "",
+      carrierId: requestMeta.carrierId,
+      postType: requestMeta.postType,
+    });
+
+    return { skipped: false, shipment };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Navlungo gönderisi oluşturulamadı.";
+    const shipment = await upsertOrderShipmentRecord({
+      orderId,
+      provider: "navlungo",
+      status: "failed",
+      requestPayload,
+      errorMessage,
+    });
+    console.error("Navlungo shipment create failed:", {
+      orderId,
+      error: errorMessage,
+    });
+    return { skipped: false, shipment };
+  }
+}
+
+async function getOrderContextForNavlungo(orderId) {
+  let orderRow = null;
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT
+        o.id,
+        o.user_id,
+        o.total,
+        o.coupon_code,
+        o.shipping_first_name,
+        o.shipping_last_name,
+        o.shipping_phone,
+        o.shipping_street,
+        o.shipping_province,
+        o.shipping_district,
+        o.shipping_neighborhood,
+        u.first_name,
+        u.last_name,
+        u.email,
+        u.phone
+      FROM user_orders o
+      JOIN users u ON u.id = o.user_id
+      WHERE o.id = ?
+      LIMIT 1
+      `,
+      [orderId]
+    );
+    orderRow = rows[0] ?? null;
+  } catch (error) {
+    if (error?.code === "ER_BAD_FIELD_ERROR") {
+      return null;
+    }
+    throw error;
+  }
+
+  if (!orderRow) {
+    return null;
+  }
+
+  const [addressRows] = await pool.query(
+    `
+    SELECT first_name, last_name, phone, street, province, district, neighborhood, is_default, created_at
+    FROM user_addresses
+    WHERE user_id = ?
+    ORDER BY is_default DESC, created_at DESC
+    LIMIT 1
+    `,
+    [orderRow.user_id]
+  );
+
+  const fallbackAddressRow = addressRows[0] ?? null;
+  const shippingAddressFromOrder =
+    String(orderRow.shipping_street ?? "").trim() ||
+    String(orderRow.shipping_district ?? "").trim() ||
+    String(orderRow.shipping_province ?? "").trim() ||
+    String(orderRow.shipping_neighborhood ?? "").trim()
+      ? {
+          firstName: String(orderRow.shipping_first_name ?? "").trim() || String(orderRow.first_name ?? "").trim(),
+          lastName: String(orderRow.shipping_last_name ?? "").trim() || String(orderRow.last_name ?? "").trim(),
+          phone: String(orderRow.shipping_phone ?? "").trim() || String(orderRow.phone ?? "").trim(),
+          street: String(orderRow.shipping_street ?? "").trim(),
+          province: String(orderRow.shipping_province ?? "").trim(),
+          district: String(orderRow.shipping_district ?? "").trim(),
+          neighborhood: String(orderRow.shipping_neighborhood ?? "").trim(),
+          addressName: "",
+        }
+      : null;
+
+  const fallbackAddress = fallbackAddressRow
+    ? {
+        firstName: String(fallbackAddressRow.first_name ?? "").trim() || String(orderRow.first_name ?? "").trim(),
+        lastName: String(fallbackAddressRow.last_name ?? "").trim() || String(orderRow.last_name ?? "").trim(),
+        phone: String(fallbackAddressRow.phone ?? "").trim() || String(orderRow.phone ?? "").trim(),
+        street: String(fallbackAddressRow.street ?? "").trim(),
+        province: String(fallbackAddressRow.province ?? "").trim(),
+        district: String(fallbackAddressRow.district ?? "").trim(),
+        neighborhood: String(fallbackAddressRow.neighborhood ?? "").trim(),
+        addressName: "",
+      }
+    : null;
+
+  return {
+    order: {
+      id: String(orderRow.id ?? "").trim(),
+      total: Number(orderRow.total ?? 0),
+      couponCode: String(orderRow.coupon_code ?? "").trim(),
+    },
+    user: {
+      id: String(orderRow.user_id ?? "").trim(),
+      firstName: String(orderRow.first_name ?? "").trim(),
+      lastName: String(orderRow.last_name ?? "").trim(),
+      email: String(orderRow.email ?? "").trim(),
+      phone: String(orderRow.phone ?? "").trim(),
+    },
+    deliveryAddress: shippingAddressFromOrder ?? fallbackAddress,
   };
 }
 
@@ -4836,6 +5610,16 @@ app.post("/api/orders", requireAuth, async (req, res) => {
       });
     }
 
+    if (deliveryAddress) {
+      createNavlungoShipmentForOrder({
+        order: createdOrder,
+        user: req.authUser,
+        deliveryAddress,
+      }).catch((error) => {
+        console.error("Navlungo shipment queue failed:", error?.message || error);
+      });
+    }
+
     return res.status(201).json({ order: createdOrder });
   } catch (error) {
     await connection.rollback();
@@ -5485,6 +6269,35 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
       }
     }
 
+    let shipmentRows = [];
+    try {
+      const [rows] = await pool.query(
+        `
+        SELECT
+          order_id,
+          provider,
+          status,
+          provider_reference_id,
+          provider_post_number,
+          carrier_name,
+          tracking_url,
+          barcode_url,
+          error_message,
+          created_at,
+          updated_at
+        FROM order_shipments
+        WHERE order_id IN (${orderPlaceholders}) AND provider = 'navlungo'
+        ORDER BY updated_at DESC, created_at DESC
+        `,
+        orderIds
+      );
+      shipmentRows = rows;
+    } catch (error) {
+      if (error?.code !== "ER_NO_SUCH_TABLE") {
+        throw error;
+      }
+    }
+
     const addressByUserId = new Map();
     for (const row of addressRows) {
       if (addressByUserId.has(row.user_id)) continue;
@@ -5522,6 +6335,12 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
       timelineByOrderId.set(row.order_id, list);
     }
 
+    const shipmentByOrderId = new Map();
+    for (const row of shipmentRows) {
+      if (shipmentByOrderId.has(row.order_id)) continue;
+      shipmentByOrderId.set(row.order_id, mapOrderShipmentRow(row));
+    }
+
     const orders = orderRows.map((row) => {
       const shippingAddressFromOrder =
         String(row.shipping_street ?? "").trim() ||
@@ -5552,6 +6371,7 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
         status: row.status,
         shippingCompany: row.shipping_company ?? "",
         shippingTrackingNo: row.shipping_tracking_no ?? "",
+        shipment: shipmentByOrderId.get(row.id) ?? null,
         timeline: buildFallbackOrderTimeline(row, timelineByOrderId.get(row.id) ?? []),
         customer: {
           firstName: shippingAddressFromOrder?.firstName ?? row.first_name,
@@ -5566,6 +6386,42 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
     return res.json({ orders });
   } catch (error) {
     return res.status(500).json({ message: "Admin orders fetch failed." });
+  }
+});
+
+app.post("/api/admin/orders/:id/navlungo/create", requireAdminAuth, async (req, res) => {
+  try {
+    if (!isNavlungoConfigured) {
+      return res.status(400).json({
+        message: "Navlungo entegrasyonu için API kullanıcı adı ve şifresi gerekli.",
+      });
+    }
+
+    const orderId = String(req.params?.id ?? "").trim();
+    if (!orderId) {
+      return res.status(400).json({ message: "Geçersiz sipariş numarası." });
+    }
+
+    const context = await getOrderContextForNavlungo(orderId);
+    if (!context || !context.deliveryAddress) {
+      return res.status(404).json({ message: "Sipariş veya teslimat adresi bulunamadı." });
+    }
+
+    const result = await createNavlungoShipmentForOrder({
+      order: context.order,
+      user: context.user,
+      deliveryAddress: context.deliveryAddress,
+      force: true,
+    });
+
+    return res.json({
+      ok: true,
+      shipment: result.shipment,
+      skipped: result.skipped,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Navlungo gönderisi oluşturulamadı.";
+    return res.status(500).json({ message });
   }
 });
 

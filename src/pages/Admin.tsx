@@ -22,6 +22,7 @@ import {
   adminLogin,
   adminLogout,
   createAdminCoupon,
+  createAdminOrderNavlungoShipment,
   deleteAdminCoupon,
   deleteAdminProduct,
   fetchAdminAbandonedCartCampaign,
@@ -167,6 +168,7 @@ export function Admin() {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [statusDrafts, setStatusDrafts] = useState<Record<string, OrderStatusDraft>>({});
   const [statusSavingByOrderId, setStatusSavingByOrderId] = useState<Record<string, boolean>>({});
+  const [navlungoShipmentSavingByOrderId, setNavlungoShipmentSavingByOrderId] = useState<Record<string, boolean>>({});
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsError, setProductsError] = useState("");
@@ -543,6 +545,7 @@ export function Admin() {
     setExpandedOrderId(null);
     setStatusDrafts({});
     setStatusSavingByOrderId({});
+    setNavlungoShipmentSavingByOrderId({});
     setProducts([]);
     setProductsError("");
     setProductsMessage("");
@@ -841,6 +844,28 @@ export function Admin() {
     }
   };
 
+  const getShipmentStatusText = (status?: string) => {
+    switch (status) {
+      case "created":
+        return "Gönderi Oluşturuldu";
+      case "failed":
+        return "Gönderi Hatası";
+      default:
+        return "Beklemede";
+    }
+  };
+
+  const getShipmentTone = (status?: string) => {
+    switch (status) {
+      case "created":
+        return "border-green-200 bg-green-50";
+      case "failed":
+        return "border-red-200 bg-red-50";
+      default:
+        return "border-[#E7E2D8] bg-white";
+    }
+  };
+
   const clearLocalImagePreviews = (images: Array<{ url: string; isLocal: boolean }>) => {
     images.forEach((image) => {
       if (image.isLocal && image.url.startsWith("blob:")) {
@@ -883,6 +908,31 @@ export function Admin() {
       setOrdersError(err instanceof Error ? err.message : "Sipariş durumu güncellenemedi.");
     } finally {
       setStatusSavingByOrderId((prev) => ({ ...prev, [orderId]: false }));
+    }
+  };
+
+  const handleCreateNavlungoShipment = async (orderId: string) => {
+    const token = getStoredAdminToken();
+    if (!token) return;
+
+    setNavlungoShipmentSavingByOrderId((prev) => ({ ...prev, [orderId]: true }));
+    setOrdersError("");
+    try {
+      const response = await createAdminOrderNavlungoShipment(token, orderId);
+      setOrders((prev) =>
+        prev.map((order) =>
+          order.id === orderId
+            ? {
+                ...order,
+                shipment: response.shipment,
+              }
+            : order
+        )
+      );
+    } catch (err) {
+      setOrdersError(err instanceof Error ? err.message : "Navlungo gönderisi oluşturulamadı.");
+    } finally {
+      setNavlungoShipmentSavingByOrderId((prev) => ({ ...prev, [orderId]: false }));
     }
   };
 
@@ -2582,6 +2632,75 @@ export function Admin() {
                             {order.status === "shipped" && order.shippingTrackingNo && (
                               <p>Takip No: {order.shippingTrackingNo}</p>
                             )}
+                          </div>
+                          <div className="mt-5">
+                            <h3 className="text-sm font-medium mb-3">Navlungo Gönderisi</h3>
+                            <div className={`rounded-xl border px-4 py-4 ${getShipmentTone(order.shipment?.status)}`}>
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="space-y-1 text-sm text-gray-700">
+                                  <p className="font-medium text-black">
+                                    Durum: {getShipmentStatusText(order.shipment?.status)}
+                                  </p>
+                                  {order.shipment?.postNumber ? (
+                                    <p>Gönderi No: {order.shipment.postNumber}</p>
+                                  ) : null}
+                                  {order.shipment?.carrierName ? (
+                                    <p>Taşıyıcı: {order.shipment.carrierName}</p>
+                                  ) : null}
+                                  {order.shipment?.referenceId ? (
+                                    <p>Referans: {order.shipment.referenceId}</p>
+                                  ) : null}
+                                  {order.shipment?.updatedAt ? (
+                                    <p>Son Güncelleme: {formatOrderDateTime(order.shipment.updatedAt)}</p>
+                                  ) : null}
+                                  {order.shipment?.errorMessage ? (
+                                    <p className="text-red-600">{order.shipment.errorMessage}</p>
+                                  ) : (
+                                    <p className="text-gray-500">
+                                      {order.shipment?.status === "created"
+                                        ? "Navlungo gönderi kaydı başarıyla oluşturuldu."
+                                        : "Sipariş için henüz Navlungo gönderisi oluşturulmadı."}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex flex-col gap-2 sm:items-end">
+                                  {order.shipment?.trackingUrl ? (
+                                    <a
+                                      href={order.shipment.trackingUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
+                                    >
+                                      Takip Linki
+                                    </a>
+                                  ) : null}
+                                  {order.shipment?.barcodeUrl ? (
+                                    <a
+                                      href={order.shipment.barcodeUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
+                                    >
+                                      Barkod PDF
+                                    </a>
+                                  ) : null}
+                                  {order.shipment?.status !== "created" ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCreateNavlungoShipment(order.id)}
+                                      disabled={Boolean(navlungoShipmentSavingByOrderId[order.id])}
+                                      className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
+                                    >
+                                      {navlungoShipmentSavingByOrderId[order.id]
+                                        ? "Oluşturuluyor..."
+                                        : order.shipment?.status === "failed"
+                                          ? "Tekrar Dene"
+                                          : "Gönderi Oluştur"}
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                           <div className="mt-5">
                             <h3 className="text-sm font-medium mb-3">Sipariş Zaman Çizelgesi</h3>

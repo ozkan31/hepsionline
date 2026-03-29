@@ -115,9 +115,23 @@ export interface AdminOrderTimelineEvent {
   shippingTrackingNo?: string;
 }
 
+export interface AdminOrderShipment {
+  provider: string;
+  status: "created" | "failed";
+  referenceId?: string;
+  postNumber?: string;
+  carrierName?: string;
+  trackingUrl?: string;
+  barcodeUrl?: string;
+  errorMessage?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface AdminOrder extends Order {
   shippingCompany?: string;
   shippingTrackingNo?: string;
+  shipment?: AdminOrderShipment | null;
   customer: AdminOrderCustomer;
   timeline: AdminOrderTimelineEvent[];
 }

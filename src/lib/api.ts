@@ -735,6 +735,29 @@ export async function updateAdminOrderStatus(
   }>(response);
 }
 
+export async function createAdminOrderNavlungoShipment(
+  token: string,
+  orderId: string
+): Promise<{
+  ok: boolean;
+  skipped: boolean;
+  shipment: import("@/types").AdminOrderShipment | null;
+}> {
+  const response = await fetch(`/api/admin/orders/${orderId}/navlungo/create`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({}),
+  });
+  return parseResponse<{
+    ok: boolean;
+    skipped: boolean;
+    shipment: import("@/types").AdminOrderShipment | null;
+  }>(response);
+}
+
 export async function fetchAdminProducts(
   token: string,
   params?: { limit?: number; offset?: number }

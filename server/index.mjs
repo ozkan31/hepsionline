@@ -4176,6 +4176,43 @@ async function listNavlungoSenderAddresses() {
   return [];
 }
 
+function normalizeNavlungoComparableValue(value) {
+  return String(value ?? "")
+    .trim()
+    .toLocaleLowerCase("tr-TR")
+    .replace(/\s+/g, " ");
+}
+
+function doesNavlungoSenderAddressMatchConfig(address = {}) {
+  if (!hasNavlungoSenderCreateConfig) {
+    return false;
+  }
+
+  const configuredLocationName = normalizeNavlungoComparableValue(NAVLUNGO_SENDER_LOCATION_NAME || NAVLUNGO_SENDER_NAME);
+  const configuredAddressName = normalizeNavlungoComparableValue(NAVLUNGO_SENDER_NAME);
+  const configuredAddressLine = normalizeNavlungoComparableValue(NAVLUNGO_SENDER_ADDRESS_LINE);
+  const configuredCity = normalizeNavlungoComparableValue(NAVLUNGO_SENDER_CITY);
+  const configuredDistrict = normalizeNavlungoComparableValue(NAVLUNGO_SENDER_DISTRICT);
+
+  const candidateLocationName = normalizeNavlungoComparableValue(
+    address?.location_name ?? address?.locationName ?? address?.address_name ?? address?.addressName ?? ""
+  );
+  const candidateAddressName = normalizeNavlungoComparableValue(address?.address_name ?? address?.addressName ?? address?.name ?? "");
+  const candidateAddressLine = normalizeNavlungoComparableValue(
+    address?.address_line ?? address?.addressLine ?? address?.address ?? ""
+  );
+  const candidateCity = normalizeNavlungoComparableValue(address?.address_city ?? address?.city ?? "");
+  const candidateDistrict = normalizeNavlungoComparableValue(address?.address_district ?? address?.district ?? "");
+
+  return (
+    candidateLocationName === configuredLocationName &&
+    candidateAddressName === configuredAddressName &&
+    candidateAddressLine === configuredAddressLine &&
+    candidateCity === configuredCity &&
+    candidateDistrict === configuredDistrict
+  );
+}
+
 async function createNavlungoSenderAddress() {
   if (!hasNavlungoSenderCreateConfig) {
     throw new Error("Navlungo gonderici adres bilgileri eksik.");
@@ -4184,15 +4221,15 @@ async function createNavlungoSenderAddress() {
   const payload = await requestNavlungoJson("address-book/create", {
     method: "POST",
     body: JSON.stringify({
-      name: NAVLUNGO_SENDER_NAME,
-      address_name: NAVLUNGO_SENDER_LOCATION_NAME || NAVLUNGO_SENDER_NAME,
+      location_name: NAVLUNGO_SENDER_LOCATION_NAME || NAVLUNGO_SENDER_NAME,
+      address_name: NAVLUNGO_SENDER_NAME,
       address_type: "sender",
-      email: NAVLUNGO_SENDER_EMAIL,
-      phone: normalizeNavlungoPhone(NAVLUNGO_SENDER_PHONE),
-      address: NAVLUNGO_SENDER_ADDRESS_LINE,
-      country: NAVLUNGO_SENDER_COUNTRY,
-      city: NAVLUNGO_SENDER_CITY,
-      district: NAVLUNGO_SENDER_DISTRICT,
+      address_email: NAVLUNGO_SENDER_EMAIL,
+      address_phone: normalizeNavlungoPhone(NAVLUNGO_SENDER_PHONE),
+      address_line: NAVLUNGO_SENDER_ADDRESS_LINE,
+      address_country: NAVLUNGO_SENDER_COUNTRY,
+      address_city: NAVLUNGO_SENDER_CITY,
+      address_district: NAVLUNGO_SENDER_DISTRICT,
       post_code: NAVLUNGO_SENDER_POST_CODE,
       is_main_warehouse: 1,
     }),
@@ -4218,16 +4255,23 @@ async function getNavlungoSenderAddressId() {
   }
 
   const senderAddresses = await listNavlungoSenderAddresses();
+  if (hasNavlungoSenderCreateConfig) {
+    const configuredAddress = senderAddresses.find((address) => doesNavlungoSenderAddressMatchConfig(address)) ?? null;
+    const configuredAddressId = extractNavlungoAddressId(configuredAddress);
+    if (configuredAddressId) {
+      await setTextAppSetting(NAVLUNGO_SENDER_ADDRESS_SETTING_KEY, configuredAddressId);
+      return configuredAddressId;
+    }
+
+    return createNavlungoSenderAddress();
+  }
+
   const primaryAddress =
     senderAddresses.find((address) => Number(address?.is_main_warehouse ?? 0) === 1) ?? senderAddresses[0] ?? null;
   const primaryAddressId = extractNavlungoAddressId(primaryAddress);
   if (primaryAddressId) {
     await setTextAppSetting(NAVLUNGO_SENDER_ADDRESS_SETTING_KEY, primaryAddressId);
     return primaryAddressId;
-  }
-
-  if (hasNavlungoSenderCreateConfig) {
-    return createNavlungoSenderAddress();
   }
 
   throw new Error("Navlungo gonderici adresi bulunamadi. sender address id ya da gonderici adres bilgilerini ekleyin.");

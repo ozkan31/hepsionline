@@ -37,7 +37,6 @@ import {
   fetchAdminProducts,
   updateAdminSettings,
   syncAdminGoogleMerchant,
-  updateAdminOrderStatus,
   updateAdminAbandonedCartCampaign,
   updateAdminCoupon,
   updateAdminProduct,
@@ -56,9 +55,6 @@ import type {
 const ADMIN_TOKEN_KEY = "parisMoveAdminToken";
 const ADMIN_REMEMBER_KEY = "parisMoveAdminRemember";
 type AdminSection = "overview" | "orders" | "products" | "users" | "contactRequests" | "marketing" | "campaigns" | "settings";
-type OrderStatusDraft = {
-  status: "processing" | "shipped" | "delivered";
-};
 type ProductEditorDraft = {
   id: string;
   name: string;
@@ -156,8 +152,6 @@ export function Admin() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState("");
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
-  const [statusDrafts, setStatusDrafts] = useState<Record<string, OrderStatusDraft>>({});
-  const [statusSavingByOrderId, setStatusSavingByOrderId] = useState<Record<string, boolean>>({});
   const [navlungoShipmentSavingByOrderId, setNavlungoShipmentSavingByOrderId] = useState<Record<string, boolean>>({});
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
@@ -272,14 +266,6 @@ export function Admin() {
       try {
         const data = await fetchAdminOrders(token);
         setOrders(data);
-        setStatusDrafts(data.reduce<Record<string, OrderStatusDraft>>((acc, order) => {
-          const normalizedStatus =
-            order.status === "shipped" || order.status === "delivered" ? order.status : "processing";
-          acc[order.id] = {
-            status: normalizedStatus,
-          };
-          return acc;
-        }, {}));
       } catch (err) {
         setOrdersError(err instanceof Error ? err.message : "Siparişler alınamadı.");
       } finally {
@@ -531,8 +517,6 @@ export function Admin() {
     setActiveSection("overview");
     setOrders([]);
     setExpandedOrderId(null);
-    setStatusDrafts({});
-    setStatusSavingByOrderId({});
     setNavlungoShipmentSavingByOrderId({});
     setProducts([]);
     setProductsError("");
@@ -860,41 +844,6 @@ export function Admin() {
         URL.revokeObjectURL(image.url);
       }
     });
-  };
-
-  const handleSaveOrderStatus = async (orderId: string) => {
-    const token = getStoredAdminToken();
-    const draft = statusDrafts[orderId];
-    if (!token || !draft) return;
-
-    setStatusSavingByOrderId((prev) => ({ ...prev, [orderId]: true }));
-    setOrdersError("");
-    try {
-      const response = await updateAdminOrderStatus(token, orderId, {
-        status: draft.status,
-      });
-      setOrders((prev) =>
-        prev.map((order) =>
-          order.id === orderId
-            ? {
-                ...order,
-                status: draft.status,
-                shippingCompany: response.shippingCompany ?? "",
-                shippingTrackingNo: response.shippingTrackingNo ?? "",
-                timeline: response.event
-                  ? [...order.timeline, response.event].sort(
-                      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-                    )
-                  : order.timeline,
-              }
-            : order
-        )
-      );
-    } catch (err) {
-      setOrdersError(err instanceof Error ? err.message : "Sipariş durumu güncellenemedi.");
-    } finally {
-      setStatusSavingByOrderId((prev) => ({ ...prev, [orderId]: false }));
-    }
   };
 
   const handleCreateNavlungoShipment = async (orderId: string) => {
@@ -2565,9 +2514,6 @@ export function Admin() {
                   const productName = firstItem?.product?.name ?? "Ürün adı yok";
                   const productImage = firstItem?.product?.image ?? "";
                   const isExpanded = expandedOrderId === order.id;
-                  const draft = statusDrafts[order.id] ?? {
-                    status: "processing" as const,
-                  };
 
                   return (
                     <div key={order.id} className="border border-[#E7E2D8] rounded-lg overflow-hidden bg-white">
@@ -2730,52 +2676,6 @@ export function Admin() {
                                 );
                               })}
                             </div>
-                          </div>
-                          <div className="mt-4 flex flex-col gap-2">
-                            <h3 className="text-sm font-medium">Durum Güncelle</h3>
-                            <select
-                              value={draft.status}
-                              onChange={(e) =>
-                                setStatusDrafts((prev) => ({
-                                  ...prev,
-                                  [order.id]: {
-                                    ...(prev[order.id] ?? {
-                                      status: "processing" as const,
-                                    }),
-                                    status: e.target.value as "processing" | "shipped" | "delivered",
-                                  },
-                                }))
-                              }
-                              className="w-full sm:w-[240px] bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
-                            >
-                              <option value="processing">Hazırlanıyor</option>
-                              <option value="shipped">Kargoya Verildi</option>
-                              <option value="delivered">Teslim Edildi</option>
-                            </select>
-                            {draft.status === "shipped" ? (
-                              <div className="space-y-2">
-                                <p className="text-xs text-gray-500">
-                                  Kargo bilgileri Navlungo gönderisinden otomatik alınır. Kargoya verildi durumuna geçmeden önce sipariş için Navlungo gönderisinin oluşturulmuş olması gerekir.
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveOrderStatus(order.id)}
-                                  disabled={Boolean(statusSavingByOrderId[order.id])}
-                                  className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50 w-full sm:w-auto"
-                                >
-                                  {statusSavingByOrderId[order.id] ? "Kaydediliyor..." : "Durumu Kaydet"}
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleSaveOrderStatus(order.id)}
-                                disabled={Boolean(statusSavingByOrderId[order.id])}
-                                className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50 w-full sm:w-auto"
-                              >
-                                {statusSavingByOrderId[order.id] ? "Kaydediliyor..." : "Durumu Kaydet"}
-                              </button>
-                            )}
                           </div>
                         </div>
                       )}

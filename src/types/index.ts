@@ -124,6 +124,8 @@ export interface AdminOrderShipment {
   trackingUrl?: string;
   barcodeUrl?: string;
   errorMessage?: string;
+  providerStatusCode?: number;
+  providerStatusName?: string;
   createdAt?: string;
   updatedAt?: string;
 }

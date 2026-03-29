@@ -404,8 +404,8 @@ const CUSTOMER_COUPON_SETTING_KEY = "marketing_customer_coupon";
 const NAVLUNGO_SENDER_ADDRESS_SETTING_KEY = "navlungo_sender_address_id";
 const ABANDONED_CART_SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const NAVLUNGO_STATUS_SYNC_INTERVAL_MS = Math.max(
-  60 * 1000,
-  Number.parseInt(String(process.env.NAVLUNGO_STATUS_SYNC_INTERVAL_MS ?? `${5 * 60 * 1000}`), 10) || 5 * 60 * 1000
+  10 * 1000,
+  Number.parseInt(String(process.env.NAVLUNGO_STATUS_SYNC_INTERVAL_MS ?? `${10 * 1000}`), 10) || 10 * 1000
 );
 const DEFAULT_ABANDONED_CART_SETTINGS = Object.freeze({
   enabled: false,
@@ -3904,6 +3904,21 @@ async function insertOrderStatusTimelineEvent(
 function mapOrderShipmentRow(row) {
   const rawStatus = String(row.status ?? "").trim().toLowerCase();
   const status = rawStatus === "created" || rawStatus === "failed" ? rawStatus : "failed";
+  let providerStatusCode = null;
+  let providerStatusName = "";
+
+  try {
+    const parsedResponsePayload = row.response_payload_json ? JSON.parse(row.response_payload_json) : null;
+    const extractedStatus = extractNavlungoCheckPayload(parsedResponsePayload);
+    if (Number.isFinite(Number(extractedStatus.statusCode)) && Number(extractedStatus.statusCode) > 0) {
+      providerStatusCode = Number(extractedStatus.statusCode);
+    }
+    providerStatusName = String(extractedStatus.statusName ?? "").trim();
+  } catch {
+    providerStatusCode = null;
+    providerStatusName = "";
+  }
+
   return {
     provider: String(row.provider ?? "").trim() || "navlungo",
     status,
@@ -3913,6 +3928,8 @@ function mapOrderShipmentRow(row) {
     trackingUrl: String(row.tracking_url ?? "").trim() || undefined,
     barcodeUrl: String(row.barcode_url ?? "").trim() || undefined,
     errorMessage: String(row.error_message ?? "").trim() || undefined,
+    providerStatusCode: providerStatusCode ?? undefined,
+    providerStatusName: providerStatusName || undefined,
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : undefined,
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : undefined,
   };
@@ -4467,7 +4484,7 @@ async function upsertOrderShipmentRecord({
   const [rows] = await pool.query(
     `
     SELECT provider, status, provider_reference_id, provider_post_number, carrier_name, tracking_url, barcode_url,
-           error_message, created_at, updated_at
+           error_message, response_payload_json, created_at, updated_at
     FROM order_shipments
     WHERE order_id = ? AND provider = ?
     LIMIT 1
@@ -4483,7 +4500,7 @@ async function getOrderShipmentRecord(orderId, provider = "navlungo") {
     const [rows] = await pool.query(
       `
       SELECT provider, status, provider_reference_id, provider_post_number, carrier_name, tracking_url, barcode_url,
-             error_message, created_at, updated_at
+             error_message, response_payload_json, created_at, updated_at
       FROM order_shipments
       WHERE order_id = ? AND provider = ?
       LIMIT 1
@@ -6637,6 +6654,7 @@ app.get("/api/admin/orders", requireAdminAuth, async (_req, res) => {
           tracking_url,
           barcode_url,
           error_message,
+          response_payload_json,
           created_at,
           updated_at
         FROM order_shipments

@@ -6,6 +6,7 @@ import {
   checkAuthEmailStatus,
   clearAuthToken,
   deleteAddress,
+  fetchOrders,
   fetchCurrentUser,
   getAuthRememberPreference,
   getAuthToken,
@@ -206,6 +207,33 @@ export function Account() {
   }, [dispatch]);
 
   useEffect(() => {
+    if (!state.isAuthenticated || !state.user) return;
+
+    let cancelled = false;
+    const refreshOrders = async () => {
+      try {
+        const nextOrders = await fetchOrders();
+        if (cancelled) return;
+        dispatch({ type: "SET_ORDERS", payload: nextOrders });
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Sipariş yenileme başarısız:", error instanceof Error ? error.message : error);
+        }
+      }
+    };
+
+    void refreshOrders();
+    const interval = window.setInterval(() => {
+      void refreshOrders();
+    }, 10000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [dispatch, state.isAuthenticated, state.user?.id]);
+
+  useEffect(() => {
     if (!state.user) return;
     setProfileForm({
       firstName: state.user.firstName,
@@ -379,9 +407,9 @@ export function Account() {
       case "shipped":
         return "Kargoya Verildi";
       case "processing":
-        return "Haz\u0131rlan\u0131yor";
+        return "Sipariş Alındı";
       default:
-        return status;
+        return "Sipariş Alındı";
     }
   };
 
@@ -1293,7 +1321,7 @@ export function Account() {
                             </div>
                           ))}
                         </div>
-                        {order.status === "shipped" && (
+                        {(order.status === "shipped" || order.status === "delivered") && (
                           <div className="mb-4 text-sm text-gray-600 space-y-1">
                             {order.shippingCompany ? <p>Kargo Firması: {order.shippingCompany}</p> : null}
                             {order.shippingTrackingNo ? (

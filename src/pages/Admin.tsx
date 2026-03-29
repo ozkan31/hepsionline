@@ -256,25 +256,46 @@ export function Admin() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || (activeSection !== "overview" && activeSection !== "orders")) return;
     const token = getStoredAdminToken();
     if (!token) return;
 
+    let mounted = true;
     const loadOrders = async () => {
-      setOrdersLoading(true);
-      setOrdersError("");
+      if (mounted) {
+        setOrdersLoading(true);
+        setOrdersError("");
+      }
       try {
         const data = await fetchAdminOrders(token);
+        if (!mounted) return;
         setOrders(data);
       } catch (err) {
+        if (!mounted) return;
         setOrdersError(err instanceof Error ? err.message : "Siparişler alınamadı.");
       } finally {
-        setOrdersLoading(false);
+        if (mounted) {
+          setOrdersLoading(false);
+        }
       }
     };
 
-    loadOrders();
-  }, [isAuthenticated]);
+    const handleFocus = () => {
+      void loadOrders();
+    };
+
+    void loadOrders();
+    const interval = window.setInterval(() => {
+      void loadOrders();
+    }, 10000);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [activeSection, isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated || activeSection !== "products") return;
@@ -2582,6 +2603,14 @@ export function Admin() {
                                   ) : null}
                                   {order.shipment?.updatedAt ? (
                                     <p>Son Güncelleme: {formatOrderDateTime(order.shipment.updatedAt)}</p>
+                                  ) : null}
+                                  {order.shipment?.providerStatusName ? (
+                                    <p>
+                                      Navlungo Durumu: {order.shipment.providerStatusName}
+                                      {typeof order.shipment.providerStatusCode === "number"
+                                        ? ` (#${order.shipment.providerStatusCode})`
+                                        : ""}
+                                    </p>
                                   ) : null}
                                   {order.shipment?.errorMessage ? (
                                     <p className="text-red-600">{order.shipment.errorMessage}</p>

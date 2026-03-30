@@ -60,6 +60,10 @@ export interface Order {
     status?: "created" | "failed";
     providerStatusCode?: number;
     providerStatusName?: string;
+    postNumber?: string;
+    carrierName?: string;
+    trackingUrl?: string;
+    barcodeUrl?: string;
   } | null;
   shippingAddress?: {
     addressName?: string;

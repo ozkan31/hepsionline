@@ -1323,15 +1323,22 @@ export function Account() {
                             </div>
                           ))}
                         </div>
-                        {(order.status === "shipped" || order.status === "delivered") && (
+                        {(order.status === "shipped" || order.status === "delivered") && (() => {
+                          const carrierName = String(order.shippingCompany || order.shipment?.carrierName || "").trim();
+                          const trackingNo = String(order.shippingTrackingNo || order.shipment?.postNumber || "").trim();
+                          const trackingUrl = String(
+                            order.shipment?.trackingUrl || (carrierName && trackingNo ? getTrackingUrl(carrierName, trackingNo) : "")
+                          ).trim();
+
+                          return (
                           <div className="mb-4 text-sm text-gray-600 space-y-1">
-                            {order.shippingCompany ? <p>Kargo Firması: {order.shippingCompany}</p> : null}
-                            {order.shippingTrackingNo ? (
+                            {carrierName ? <p>Kargo Firması: {carrierName}</p> : null}
+                            {trackingNo ? (
                               <div className="flex items-center gap-2 flex-wrap">
-                                <p>Takip No: {order.shippingTrackingNo}</p>
+                                <p>Takip No: {trackingNo}</p>
                                 <button
                                   type="button"
-                                  onClick={() => handleCopyTrackingNo(order.id, order.shippingTrackingNo || "")}
+                                  onClick={() => handleCopyTrackingNo(order.id, trackingNo)}
                                   className={`inline-flex items-center justify-center w-6 h-6 border rounded transition-colors ${
                                     copiedTrackingOrderId === order.id
                                       ? "bg-black text-white border-black"
@@ -1344,18 +1351,19 @@ export function Account() {
                                 </button>
                               </div>
                             ) : null}
-                            {order.shippingCompany && order.shippingTrackingNo && (
+                            {trackingUrl && (
                               <a
-                                href={getTrackingUrl(order.shippingCompany, order.shippingTrackingNo)}
+                                href={trackingUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex text-xs px-3 py-1 border border-black rounded-full hover:bg-black hover:text-white transition-colors"
+                                className="inline-flex items-center text-xs px-3 py-1 border border-black rounded-full hover:bg-black hover:text-white transition-colors"
                               >
                                 Kargo Takip
                               </a>
                             )}
                           </div>
-                        )}
+                          );
+                        })()}
                         <div className="text-right">
                           <p className="text-sm text-gray-500">Toplam</p>
                           <p className="font-medium">{order.total.toLocaleString("tr-TR")} TL</p>

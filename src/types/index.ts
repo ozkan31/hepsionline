@@ -47,6 +47,7 @@ export interface AppliedAbandonedCartCoupon {
 export interface Order {
   id: string;
   date: string;
+  merchantOid?: string;
   items: CartItem[];
   total: number;
   subtotal?: number;

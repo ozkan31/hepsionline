@@ -329,84 +329,98 @@ export function Checkout() {
 
   useEffect(() => {
     if (isPaymentSuccessPath) {
-      if (processedPathRef.current === `success:${location.pathname}`) return;
+      const successMerchantOid = new URLSearchParams(location.search).get("merchantOid") ?? "";
+      const successKey = `success:${location.pathname}:${successMerchantOid}`;
+      if (processedPathRef.current === successKey) return;
+      if (!state.user) return;
+      if (!successMerchantOid) {
+        setStep("payment");
+        setPaytrError("Ödeme doğrulama bilgisi eksik. Lütfen tekrar deneyin.");
+        processedPathRef.current = successKey;
+        return;
+      }
 
-      // Wait for persisted store hydration after external PAYTR redirect.
-      if (state.cart.length === 0 && state.orders.length === 0) return;
+      const orderDraft = {
+        id: generateOrderId(),
+        date: new Date().toISOString().split("T")[0],
+        merchantOid: successMerchantOid,
+        items: [...state.cart],
+        total,
+        subtotal: cartTotal,
+        shippingTotal: shippingCost,
+        discountTotal: discountAmount,
+        couponCode: appliedCoupon?.code ?? "",
+        status: "processing" as const,
+        shippingAddress: {
+          addressName:
+            shippingInfo.addressName ||
+            (() => {
+              const fallbackAddress =
+                selectedAddress ?? savedAddresses.find((address) => address.isDefault) ?? savedAddresses[0] ?? null;
+              if (!fallbackAddress) return "";
+              return splitStreetParts(fallbackAddress.street).addressName;
+            })(),
+          firstName:
+            shippingInfo.firstName ||
+            selectedAddress?.firstName ||
+            savedAddresses.find((address) => address.isDefault)?.firstName ||
+            savedAddresses[0]?.firstName ||
+            state.user?.firstName ||
+            "",
+          lastName:
+            shippingInfo.lastName ||
+            selectedAddress?.lastName ||
+            savedAddresses.find((address) => address.isDefault)?.lastName ||
+            savedAddresses[0]?.lastName ||
+            state.user?.lastName ||
+            "",
+          phone:
+            shippingInfo.phone ||
+            selectedAddress?.phone ||
+            savedAddresses.find((address) => address.isDefault)?.phone ||
+            savedAddresses[0]?.phone ||
+            state.user?.phone ||
+            "",
+          street:
+            shippingInfo.street ||
+            (() => {
+              const fallbackAddress =
+                selectedAddress ?? savedAddresses.find((address) => address.isDefault) ?? savedAddresses[0] ?? null;
+              if (!fallbackAddress) return "";
+              const parsed = splitStreetParts(fallbackAddress.street);
+              return parsed.addressDetail || parsed.addressName;
+            })(),
+          province:
+            shippingInfo.province ||
+            selectedAddress?.province ||
+            savedAddresses.find((address) => address.isDefault)?.province ||
+            savedAddresses[0]?.province ||
+            "",
+          district:
+            shippingInfo.district ||
+            selectedAddress?.district ||
+            savedAddresses.find((address) => address.isDefault)?.district ||
+            savedAddresses[0]?.district ||
+            "",
+          neighborhood:
+            shippingInfo.neighborhood ||
+            selectedAddress?.neighborhood ||
+            savedAddresses.find((address) => address.isDefault)?.neighborhood ||
+            savedAddresses[0]?.neighborhood ||
+            "",
+        },
+      };
 
-      if (state.cart.length > 0) {
-        const orderDraft = {
-          id: generateOrderId(),
-          date: new Date().toISOString().split("T")[0],
-          items: [...state.cart],
-          total,
-          subtotal: cartTotal,
-          shippingTotal: shippingCost,
-          discountTotal: discountAmount,
-          couponCode: appliedCoupon?.code ?? "",
-          status: "processing" as const,
-          // Prefer current shipping form data; if redirect wiped state, recover from selected/default address.
-          shippingAddress: {
-            addressName:
-              shippingInfo.addressName ||
-              (() => {
-                const fallbackAddress =
-                  selectedAddress ?? savedAddresses.find((address) => address.isDefault) ?? savedAddresses[0] ?? null;
-                if (!fallbackAddress) return "";
-                return splitStreetParts(fallbackAddress.street).addressName;
-              })(),
-            firstName:
-              shippingInfo.firstName ||
-              selectedAddress?.firstName ||
-              savedAddresses.find((address) => address.isDefault)?.firstName ||
-              savedAddresses[0]?.firstName ||
-              state.user?.firstName ||
-              "",
-            lastName:
-              shippingInfo.lastName ||
-              selectedAddress?.lastName ||
-              savedAddresses.find((address) => address.isDefault)?.lastName ||
-              savedAddresses[0]?.lastName ||
-              state.user?.lastName ||
-              "",
-            phone:
-              shippingInfo.phone ||
-              selectedAddress?.phone ||
-              savedAddresses.find((address) => address.isDefault)?.phone ||
-              savedAddresses[0]?.phone ||
-              state.user?.phone ||
-              "",
-            street:
-              shippingInfo.street ||
-              (() => {
-                const fallbackAddress =
-                  selectedAddress ?? savedAddresses.find((address) => address.isDefault) ?? savedAddresses[0] ?? null;
-                if (!fallbackAddress) return "";
-                const parsed = splitStreetParts(fallbackAddress.street);
-                return parsed.addressDetail || parsed.addressName;
-              })(),
-            province:
-              shippingInfo.province ||
-              selectedAddress?.province ||
-              savedAddresses.find((address) => address.isDefault)?.province ||
-              savedAddresses[0]?.province ||
-              "",
-            district:
-              shippingInfo.district ||
-              selectedAddress?.district ||
-              savedAddresses.find((address) => address.isDefault)?.district ||
-              savedAddresses[0]?.district ||
-              "",
-            neighborhood:
-              shippingInfo.neighborhood ||
-              selectedAddress?.neighborhood ||
-              savedAddresses.find((address) => address.isDefault)?.neighborhood ||
-              savedAddresses[0]?.neighborhood ||
-              "",
-          },
-        };
-        createOrder(orderDraft)
-          .then((createdOrder) => {
+      let cancelled = false;
+      const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+      void (async () => {
+        let lastErrorMessage = "Ödeme doğrulanamadı. Lütfen birkaç saniye sonra tekrar deneyin.";
+
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          if (cancelled) return;
+          try {
+            const createdOrder = await createOrder(orderDraft);
+            if (cancelled) return;
             dispatch({ type: "ADD_ORDER", payload: createdOrder });
             setCompletedOrder(createdOrder);
             trackPurchase({
@@ -426,38 +440,28 @@ export function Checkout() {
             dispatch({ type: "CLEAR_CART" });
             clearStoredAbandonedCartCoupon(couponOwner);
             setAppliedCoupon(null);
-          })
-          .catch(() => {
-            // Fallback keeps UX working even if API fails.
-            dispatch({ type: "ADD_ORDER", payload: orderDraft });
-            setCompletedOrder(orderDraft);
-            trackPurchase({
-              id: orderDraft.id,
-              total: orderDraft.total,
-              items: orderDraft.items.map((item) => ({
-                product: {
-                  id: item.product.id,
-                  name: item.product.name,
-                  category: item.product.category,
-                  price: item.product.price,
-                },
-                quantity: item.quantity,
-                color: item.color,
-              })),
-            });
-            dispatch({ type: "CLEAR_CART" });
-            clearStoredAbandonedCartCoupon(couponOwner);
-            setAppliedCoupon(null);
-          });
-      } else if (state.orders.length > 0) {
-        setCompletedOrder(state.orders[state.orders.length - 1]);
-      }
+            setStep("confirmation");
+            setPaytrError("");
+            setPaytrIframeUrl("");
+            processedPathRef.current = successKey;
+            return;
+          } catch (error) {
+            lastErrorMessage = error instanceof Error ? error.message : lastErrorMessage;
+            if (attempt < 3) {
+              await wait(2000);
+            }
+          }
+        }
 
-      setStep("confirmation");
-      setPaytrError("");
-      setPaytrIframeUrl("");
-      processedPathRef.current = `success:${location.pathname}`;
-      return;
+        if (cancelled) return;
+        setStep("payment");
+        setPaytrError(lastErrorMessage);
+        processedPathRef.current = successKey;
+      })();
+
+      return () => {
+        cancelled = true;
+      };
     }
 
     if (isPaymentFailPath) {
@@ -469,7 +473,7 @@ export function Checkout() {
     }
 
     processedPathRef.current = "";
-  }, [dispatch, isPaymentFailPath, isPaymentSuccessPath, location.pathname, savedAddresses, selectedAddress, shippingInfo, state.cart, state.orders, state.user, total]);
+  }, [appliedCoupon?.code, cartTotal, couponOwner, discountAmount, dispatch, isPaymentFailPath, isPaymentSuccessPath, location.pathname, location.search, savedAddresses, selectedAddress, shippingCost, shippingInfo, state.cart, state.orders, state.user, total]);
 
   const handleSavedAddressContinue = () => {
     if (!selectedAddress) return;

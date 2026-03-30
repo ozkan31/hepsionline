@@ -544,6 +544,7 @@ const adminImageUpload = multer({
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const REMEMBER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MINUTES = 30;
+const PAYTR_PAYMENT_INTENT_TTL_MINUTES = 60;
 const GOOGLE_CLIENT_IDS = Array.from(
   new Set(
     [process.env.GOOGLE_CLIENT_ID, process.env.VITE_GOOGLE_CLIENT_ID]
@@ -800,6 +801,19 @@ function buildPublicBaseUrl(req) {
     return normalizedBase.replace(/\/+$/, "");
   }
   return `${req.protocol}://${req.get("host")}`;
+}
+
+function appendQueryParamToUrl(rawUrl, key, value) {
+  const input = String(rawUrl ?? "").trim();
+  if (!input) return "";
+
+  try {
+    const parsed = new URL(input);
+    parsed.searchParams.set(String(key), String(value));
+    return parsed.toString();
+  } catch {
+    return input;
+  }
 }
 
 function buildSitemapBaseUrl(req) {
@@ -2883,6 +2897,24 @@ function buildAbandonedCartSignature(items) {
   return sha256(JSON.stringify(normalizedItems));
 }
 
+function buildCartIntegritySignature(items) {
+  return buildAbandonedCartSignature(items);
+}
+
+function buildShippingIntegritySignature(shippingInput = {}) {
+  const normalized = {
+    addressName: String(shippingInput?.addressName ?? "").trim().toLocaleLowerCase("tr-TR"),
+    firstName: String(shippingInput?.firstName ?? "").trim().toLocaleLowerCase("tr-TR"),
+    lastName: String(shippingInput?.lastName ?? "").trim().toLocaleLowerCase("tr-TR"),
+    phone: String(shippingInput?.phone ?? "").trim(),
+    street: String(shippingInput?.street ?? "").trim().toLocaleLowerCase("tr-TR"),
+    province: String(shippingInput?.province ?? "").trim().toLocaleLowerCase("tr-TR"),
+    district: String(shippingInput?.district ?? "").trim().toLocaleLowerCase("tr-TR"),
+    neighborhood: String(shippingInput?.neighborhood ?? "").trim().toLocaleLowerCase("tr-TR"),
+  };
+  return sha256(JSON.stringify(normalized));
+}
+
 function serializeAbandonedCartSnapshot(items) {
   const snapshot = (Array.isArray(items) ? items : []).map((item) => ({
     product: normalizeProductMedia(item?.product ?? {}),
@@ -3487,6 +3519,143 @@ async function getSessionUser(token) {
   return mapUserRow(user, addresses);
 }
 
+async function upsertPaytrPaymentIntent(input) {
+  await ensurePaytrPaymentIntentsTable();
+  await pool.query(
+    `
+    INSERT INTO paytr_payment_intents (
+      merchant_oid, user_id, cart_signature, shipping_signature, coupon_code, amount, currency, status, expires_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', DATE_ADD(NOW(), INTERVAL ? MINUTE))
+    ON DUPLICATE KEY UPDATE
+      user_id = VALUES(user_id),
+      cart_signature = VALUES(cart_signature),
+      shipping_signature = VALUES(shipping_signature),
+      coupon_code = VALUES(coupon_code),
+      amount = VALUES(amount),
+      currency = VALUES(currency),
+      status = 'pending',
+      paytr_status = NULL,
+      paytr_payment_type = NULL,
+      order_id = NULL,
+      consumed_at = NULL,
+      expires_at = DATE_ADD(NOW(), INTERVAL ? MINUTE)
+    `,
+    [
+      input.merchantOid,
+      input.userId,
+      input.cartSignature,
+      input.shippingSignature,
+      input.couponCode || null,
+      input.amount,
+      input.currency || "TL",
+      PAYTR_PAYMENT_INTENT_TTL_MINUTES,
+      PAYTR_PAYMENT_INTENT_TTL_MINUTES,
+    ]
+  );
+}
+
+async function getPaytrPaymentIntent(merchantOid, userId) {
+  await ensurePaytrPaymentIntentsTable();
+  const [rows] = await pool.query(
+    `
+    SELECT
+      merchant_oid,
+      user_id,
+      cart_signature,
+      shipping_signature,
+      coupon_code,
+      amount,
+      currency,
+      status,
+      paytr_status,
+      paytr_payment_type,
+      order_id,
+      expires_at,
+      consumed_at
+    FROM paytr_payment_intents
+    WHERE merchant_oid = ? AND user_id = ? AND expires_at > NOW()
+    LIMIT 1
+    `,
+    [merchantOid, userId]
+  );
+  return rows[0] ?? null;
+}
+
+async function markPaytrPaymentIntentChecked(merchantOid, updates = {}) {
+  await ensurePaytrPaymentIntentsTable();
+  await pool.query(
+    `
+    UPDATE paytr_payment_intents
+    SET
+      status = COALESCE(?, status),
+      paytr_status = COALESCE(?, paytr_status),
+      paytr_payment_type = COALESCE(?, paytr_payment_type),
+      order_id = COALESCE(?, order_id),
+      consumed_at = CASE WHEN ? IS NULL THEN consumed_at ELSE NOW() END,
+      last_checked_at = NOW()
+    WHERE merchant_oid = ?
+    `,
+    [
+      updates.status ?? null,
+      updates.paytrStatus ?? null,
+      updates.paymentType ?? null,
+      updates.orderId ?? null,
+      updates.consume ? 1 : null,
+      merchantOid,
+    ]
+  );
+}
+
+async function queryPaytrPaymentStatus(merchantOid) {
+  const merchantId = String(process.env.PAYTR_MERCHANT_ID ?? "").trim();
+  const merchantKey = String(process.env.PAYTR_MERCHANT_KEY ?? "").trim();
+  const merchantSalt = String(process.env.PAYTR_MERCHANT_SALT ?? "").trim();
+
+  if (!merchantId || !merchantKey || !merchantSalt) {
+    throw new Error("PAYTR_STATUS_CONFIG_MISSING");
+  }
+
+  const paytrToken = crypto
+    .createHmac("sha256", merchantKey)
+    .update(`${merchantId}${merchantOid}${merchantSalt}`)
+    .digest("base64");
+
+  const payload = new URLSearchParams({
+    merchant_id: merchantId,
+    merchant_oid: merchantOid,
+    paytr_token: paytrToken,
+  });
+
+  const response = await fetch("https://www.paytr.com/odeme/durum-sorgu", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: payload,
+  });
+
+  const json = await response.json().catch(() => null);
+  if (!response.ok || !json || String(json.status ?? "").toLowerCase() !== "success") {
+    const reason = String(json?.err_msg ?? json?.reason ?? `HTTP ${response.status}`).trim();
+    throw new Error(reason || "PAYTR_STATUS_QUERY_FAILED");
+  }
+
+  const paymentTotalRaw =
+    json.payment_amount ??
+    json.payment_total ??
+    json.total_amount ??
+    json.total ??
+    json.amount ??
+    0;
+  const normalizedPaymentAmount = Number.parseInt(String(paymentTotalRaw ?? "0"), 10) || 0;
+
+  return {
+    paytrStatus: String(json.payment_status ?? json.status ?? "").trim().toLowerCase(),
+    paymentAmount: normalizedPaymentAmount,
+    paymentType: String(json.payment_type ?? json.odeme_tipi ?? "").trim().toLowerCase(),
+    raw: json,
+  };
+}
+
 async function requireAuth(req, res, next) {
   const token = extractBearerToken(req);
   if (!token) {
@@ -3708,6 +3877,32 @@ async function ensureContactRequestsTable() {
       subject VARCHAR(255) NOT NULL,
       message TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+}
+
+async function ensurePaytrPaymentIntentsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS paytr_payment_intents (
+      merchant_oid VARCHAR(120) PRIMARY KEY,
+      user_id VARCHAR(64) NOT NULL,
+      cart_signature CHAR(64) NOT NULL,
+      shipping_signature CHAR(64) NOT NULL,
+      coupon_code VARCHAR(64) NULL,
+      amount INT NOT NULL,
+      currency VARCHAR(8) NOT NULL DEFAULT 'TL',
+      status VARCHAR(32) NOT NULL DEFAULT 'pending',
+      paytr_status VARCHAR(32) NULL,
+      paytr_payment_type VARCHAR(32) NULL,
+      order_id VARCHAR(64) NULL,
+      consumed_at DATETIME NULL,
+      expires_at DATETIME NOT NULL,
+      last_checked_at DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_paytr_payment_intents_user_id (user_id),
+      KEY idx_paytr_payment_intents_status (status),
+      KEY idx_paytr_payment_intents_expires_at (expires_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 }
@@ -6045,11 +6240,8 @@ app.get("/api/orders", requireAuth, async (req, res) => {
 });
 
 app.post("/api/orders", requireAuth, async (req, res) => {
-  const { id, date, status, items, shippingAddress, couponCode } = req.body ?? {};
-  const orderId = String(id ?? "").trim();
-  const orderDate = String(date ?? "").trim();
-  const orderStatus = String(status ?? "processing").trim();
-  const inputItems = Array.isArray(items) ? items : [];
+  const { merchantOid, shippingAddress, couponCode } = req.body ?? {};
+  const normalizedMerchantOid = String(merchantOid ?? "").trim();
   const shipping = shippingAddress && typeof shippingAddress === "object" ? shippingAddress : {};
   const shippingAddressName = String(shipping.addressName ?? "").trim();
   const shippingFirstName = String(shipping.firstName ?? "").trim();
@@ -6059,16 +6251,26 @@ app.post("/api/orders", requireAuth, async (req, res) => {
   const shippingProvince = String(shipping.province ?? "").trim();
   const shippingDistrict = String(shipping.district ?? "").trim();
   const shippingNeighborhood = String(shipping.neighborhood ?? "").trim();
+  const orderStatus = "processing";
+  const orderDate = new Date().toISOString();
 
-  if (!orderId || !orderDate) {
-    return res.status(400).json({ message: "Invalid order payload." });
+  if (!normalizedMerchantOid) {
+    return res.status(400).json({ message: "Ödeme doğrulama bilgisi eksik." });
+  }
+
+  const paymentIntent = await getPaytrPaymentIntent(normalizedMerchantOid, req.authUser.id);
+  if (!paymentIntent) {
+    return res.status(404).json({ message: "Ödeme oturumu bulunamadı." });
+  }
+  if (String(paymentIntent.status ?? "").trim() === "consumed" || paymentIntent.consumed_at) {
+    return res.status(409).json({ message: "Bu ödeme oturumu daha önce kullanılmış." });
   }
 
   const serverCartItems = await getUserCartItems(req.authUser.id);
-  const trustedOrderItems = serverCartItems.length > 0 ? serverCartItems : inputItems;
-  if (trustedOrderItems.length === 0) {
+  if (serverCartItems.length === 0) {
     return res.status(400).json({ message: "Invalid order payload." });
   }
+  const trustedOrderItems = serverCartItems;
 
   const normalizedItems = [];
   for (const item of trustedOrderItems) {
@@ -6093,6 +6295,67 @@ app.post("/api/orders", requireAuth, async (req, res) => {
   }
   const discountTotal = coupon?.valid ? coupon.discountAmount : 0;
   const orderTotal = Math.max(0, subtotal + shippingTotal - discountTotal);
+  const expectedCartSignature = buildCartIntegritySignature(trustedOrderItems);
+  const expectedShippingSignature = buildShippingIntegritySignature({
+    addressName: shippingAddressName,
+    firstName: shippingFirstName,
+    lastName: shippingLastName,
+    phone: shippingPhone,
+    street: shippingStreet,
+    province: shippingProvince,
+    district: shippingDistrict,
+    neighborhood: shippingNeighborhood,
+  });
+  const expectedPaymentAmount = Math.round(orderTotal * 100);
+  const expectedCouponCode = coupon?.valid ? coupon.code : "";
+
+  if (
+    String(paymentIntent.cart_signature ?? "") !== expectedCartSignature ||
+    String(paymentIntent.shipping_signature ?? "") !== expectedShippingSignature ||
+    Number(paymentIntent.amount ?? 0) !== expectedPaymentAmount ||
+    String(paymentIntent.coupon_code ?? "") !== expectedCouponCode
+  ) {
+    return res.status(409).json({
+      message: "Ödeme oturumu ile sipariş içeriği eşleşmiyor. Lütfen ödemeyi yeniden başlatın.",
+    });
+  }
+
+  let paytrStatusResult;
+  try {
+    paytrStatusResult = await queryPaytrPaymentStatus(normalizedMerchantOid);
+  } catch (error) {
+    await markPaytrPaymentIntentChecked(normalizedMerchantOid, {
+      status: "pending",
+      paytrStatus: "check_failed",
+    });
+    return res.status(409).json({
+      message: "Ödeme henüz doğrulanamadı. Lütfen birkaç saniye sonra tekrar deneyin.",
+    });
+  }
+
+  if (String(paytrStatusResult.paytrStatus ?? "") !== "success") {
+    await markPaytrPaymentIntentChecked(normalizedMerchantOid, {
+      status: "pending",
+      paytrStatus: paytrStatusResult.paytrStatus || "pending",
+      paymentType: paytrStatusResult.paymentType || null,
+    });
+    return res.status(409).json({
+      message: "Ödeme henüz onaylanmadı. Sipariş oluşturulmadı.",
+    });
+  }
+
+  if (Number(paytrStatusResult.paymentAmount ?? 0) !== expectedPaymentAmount) {
+    await markPaytrPaymentIntentChecked(normalizedMerchantOid, {
+      status: "failed",
+      paytrStatus: "amount_mismatch",
+      paymentType: paytrStatusResult.paymentType || null,
+    });
+    return res.status(409).json({
+      message: "Ödeme tutarı doğrulanamadı. Sipariş oluşturulmadı.",
+    });
+  }
+
+  const orderId = String(Math.floor(1000000000 + Math.random() * 9000000000));
 
   const createdOrder = {
     id: orderId,
@@ -6185,6 +6448,27 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     // if order is committed, user's server-side cart is guaranteed to be empty.
     await connection.query(`DELETE FROM user_cart_items WHERE user_id = ?`, [req.authUser.id]);
 
+    await connection.query(
+      `
+      UPDATE paytr_payment_intents
+      SET
+        status = 'consumed',
+        paytr_status = ?,
+        paytr_payment_type = ?,
+        order_id = ?,
+        consumed_at = NOW(),
+        last_checked_at = NOW()
+      WHERE merchant_oid = ? AND user_id = ?
+      `,
+      [
+        paytrStatusResult.paytrStatus || "success",
+        paytrStatusResult.paymentType || null,
+        orderId,
+        normalizedMerchantOid,
+        req.authUser.id,
+      ]
+    );
+
     await connection.commit();
 
     const fallbackAddress =
@@ -6262,11 +6546,11 @@ app.post("/api/paytr/token", requireAuth, async (req, res) => {
     const merchantId = process.env.PAYTR_MERCHANT_ID;
     const merchantKey = process.env.PAYTR_MERCHANT_KEY;
     const merchantSalt = process.env.PAYTR_MERCHANT_SALT;
-    const merchantOkUrl = normalizePaytrReturnUrl(process.env.PAYTR_OK_URL, "/odeme/basarili");
-    const merchantFailUrl = normalizePaytrReturnUrl(process.env.PAYTR_FAIL_URL, "/odeme/basarisiz");
+    const baseMerchantOkUrl = normalizePaytrReturnUrl(process.env.PAYTR_OK_URL, "/odeme/basarili");
+    const baseMerchantFailUrl = normalizePaytrReturnUrl(process.env.PAYTR_FAIL_URL, "/odeme/basarisiz");
     const testMode = String(process.env.PAYTR_TEST_MODE ?? "1");
 
-    if (!merchantId || !merchantKey || !merchantSalt || !merchantOkUrl || !merchantFailUrl) {
+    if (!merchantId || !merchantKey || !merchantSalt || !baseMerchantOkUrl || !baseMerchantFailUrl) {
       return res.status(500).json({ message: "PAYTR env settings are missing." });
     }
 
@@ -6315,6 +6599,8 @@ app.post("/api/paytr/token", requireAuth, async (req, res) => {
 
     const userIp = getClientIp(req);
     const merchantOid = `OID${Date.now()}${Math.floor(Math.random() * 1000000)}`;
+    const merchantOkUrl = appendQueryParamToUrl(baseMerchantOkUrl, "merchantOid", merchantOid);
+    const merchantFailUrl = appendQueryParamToUrl(baseMerchantFailUrl, "merchantOid", merchantOid);
     const noInstallment = "0";
     const maxInstallment = "0";
     const currency = "TL";
@@ -6366,6 +6652,23 @@ app.post("/api/paytr/token", requireAuth, async (req, res) => {
         reason: paytrJson?.reason || `HTTP ${paytrResponse.status}`,
       });
     }
+
+    await upsertPaytrPaymentIntent({
+      merchantOid,
+      userId: req.authUser.id,
+      cartSignature: buildCartIntegritySignature(orderItems),
+      shippingSignature: buildShippingIntegritySignature({
+        firstName: normalizedFirstName,
+        lastName: normalizedLastName,
+        phone: normalizedPhone,
+        street: normalizedStreet,
+        province: normalizedProvince,
+        district: normalizedDistrict,
+      }),
+      couponCode: coupon?.valid ? coupon.code : "",
+      amount: paymentAmount,
+      currency,
+    });
 
     return res.json({
       iframeUrl: `https://www.paytr.com/odeme/guvenli/${paytrJson.token}`,

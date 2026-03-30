@@ -1423,10 +1423,52 @@ async function sendOrderWhatsappNotification({ order, deliveryAddress }) {
 function normalizeMediaPath(rawValue) {
   const value = String(rawValue ?? "").trim();
   if (!value) return "";
-  if (/^(https?:)?\/\//i.test(value)) return value;
-  if (/^(data:|blob:)/i.test(value)) return value;
-  if (value.startsWith("/uploads/")) return `/api${value}`;
-  return value.startsWith("/") ? value : `/${value}`;
+  const normalizedUploadPath = normalizeLocalUploadWebPath(value, { apiPrefix: true });
+  if (normalizedUploadPath) return normalizedUploadPath;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(value)) return value;
+  if (/^\/api\/products\/[^/]+\/image\/\d+(?:\?.*)?$/i.test(value)) return value;
+  return "";
+}
+
+function normalizeLocalUploadWebPath(rawValue, { apiPrefix = true } = {}) {
+  const value = String(rawValue ?? "").trim();
+  if (!value) return "";
+
+  const match = value.match(/^\/(?:api\/)?uploads\/(.+)$/i);
+  if (!match) return "";
+
+  const sanitizedRelativePath = String(match[1] ?? "")
+    .split(/[?#]/, 1)[0]
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
+  if (!sanitizedRelativePath) return "";
+
+  const segments = sanitizedRelativePath.split("/").filter(Boolean);
+  if (segments.length === 0 || segments.some((segment) => segment === "." || segment === "..")) {
+    return "";
+  }
+
+  const normalizedRelativePath = segments.join("/");
+  const resolvedPath = path.resolve(uploadsDir, normalizedRelativePath);
+  const relativeFromRoot = path.relative(uploadsDir, resolvedPath);
+  if (!relativeFromRoot || relativeFromRoot.startsWith("..") || path.isAbsolute(relativeFromRoot)) {
+    return "";
+  }
+
+  return `${apiPrefix ? "/api" : ""}/uploads/${normalizedRelativePath}`;
+}
+
+function sanitizeStoredProductMediaSource(rawValue) {
+  const value = String(rawValue ?? "").trim();
+  if (!value) return "";
+
+  const normalizedUploadPath = normalizeLocalUploadWebPath(value, { apiPrefix: false });
+  if (normalizedUploadPath) return normalizedUploadPath;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(value)) return value;
+  if (/^\/api\/products\/[^/]+\/image\/\d+(?:\?.*)?$/i.test(value)) return value;
+  return "";
 }
 
 function normalizeProductMedia(product) {
@@ -2440,34 +2482,26 @@ function parseProductImageSources(row) {
 }
 
 function isLocalUploadPath(value) {
-  const normalized = String(value ?? "").trim();
-  return normalized.startsWith("/uploads/") || normalized.startsWith("/api/uploads/");
+  return Boolean(normalizeLocalUploadWebPath(value, { apiPrefix: true }));
 }
 
 function localUploadExists(value) {
   const normalized = String(value ?? "").trim();
   if (!normalized) return false;
   if (!isLocalUploadPath(normalized)) return true;
-  const relativePath = normalized
-    .replace(/^\/api\/uploads\//, "")
-    .replace(/^\/uploads\//, "")
-    .replace(/^\/+/, "");
-  if (!relativePath) return false;
-  const filePath = path.join(uploadsDir, relativePath);
-  return fs.existsSync(filePath);
+  const fileInfo = resolveLocalUploadFileInfo(normalized);
+  if (!fileInfo) return false;
+  return fs.existsSync(fileInfo.filePath);
 }
 
 function resolveLocalUploadFileInfo(value) {
-  const normalized = String(value ?? "").trim();
-  if (!normalized || !isLocalUploadPath(normalized)) return null;
-  const relativePath = normalized
-    .replace(/^\/api\/uploads\//, "")
-    .replace(/^\/uploads\//, "")
-    .replace(/^\/+/, "");
-  if (!relativePath) return null;
+  const normalized = normalizeLocalUploadWebPath(value, { apiPrefix: true });
+  if (!normalized) return null;
+  const relativePath = normalized.replace(/^\/api\/uploads\//, "");
   return {
+    webPath: normalized,
     relativePath,
-    filePath: path.join(uploadsDir, relativePath),
+    filePath: path.resolve(uploadsDir, relativePath),
   };
 }
 
@@ -7745,12 +7779,12 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
     }
 
     const normalizedImages = images
-      .map((item) => String(item ?? "").trim())
+      .map((item) => sanitizeStoredProductMediaSource(item))
       .filter((item) => item.length > 0)
       .slice(0, 15);
-    const primaryImage = normalizedImages[0] ?? image;
+    const primaryImage = normalizedImages[0] ?? sanitizeStoredProductMediaSource(image);
     if (!primaryImage) {
-      return res.status(400).json({ message: "En az bir urun gorseli zorunludur." });
+      return res.status(400).json({ message: "Geçerli bir ürün görseli zorunludur." });
     }
 
     const normalizedFeatures = features
@@ -7902,13 +7936,15 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     const existingImageSources = parseProductImageSources(existing);
     const normalizedImages = images
       .map((item) => resolveAdminImageSource(item, productId, existingImageSources))
-      .map((item) => String(item ?? "").trim())
+      .map((item) => sanitizeStoredProductMediaSource(item))
       .filter((item) => item.length > 0)
       .slice(0, 15);
-    const resolvedImage = resolveAdminImageSource(image, productId, existingImageSources);
+    const resolvedImage = sanitizeStoredProductMediaSource(
+      resolveAdminImageSource(image, productId, existingImageSources)
+    );
     const primaryImage = normalizedImages[0] ?? resolvedImage;
     if (!primaryImage) {
-      return res.status(400).json({ message: "En az bir urun gorseli zorunludur." });
+      return res.status(400).json({ message: "Geçerli bir ürün görseli zorunludur." });
     }
 
     const normalizedFeatures = features

@@ -105,6 +105,13 @@ const IMAGE_VARIANT_SPECS = {
   card: { width: 480, quality: 78 },
   detail: { width: 960, quality: 84 },
 };
+const BLOCKED_PUBLIC_PATH_PATTERNS = [
+  /(?:^|\/)\.(?:env|git|svn|hg)(?:$|[./~_-])/i,
+  /(?:^|\/)\.ht(?:access|passwd)(?:$|[./~_-])/i,
+  /(?:^|\/).+\.env(?:$|[.~_-])/i,
+  /(?:^|\/).+\.(?:bak|backup|old|orig|save|swp)(?:$|[./_-])/i,
+  /(?:^|\/)(?:docker-compose|compose)\.(?:ya?ml)(?:$|[.~_-])/i,
+];
 
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -469,6 +476,21 @@ app.use((req, res, next) => {
   );
   next();
 });
+app.use((req, res, next) => {
+  const decodedPath = (() => {
+    try {
+      return decodeURIComponent(String(req.path || ""));
+    } catch {
+      return String(req.path || "");
+    }
+  })();
+
+  if (BLOCKED_PUBLIC_PATH_PATTERNS.some((pattern) => pattern.test(decodedPath))) {
+    return res.status(404).type("text/plain; charset=utf-8").send("Not Found");
+  }
+
+  return next();
+});
 app.use(
   cors({
     origin(origin, callback) {
@@ -486,6 +508,7 @@ app.use(express.json({ limit: "50mb" }));
 const staticUploadOptions = {
   maxAge: "365d",
   immutable: true,
+  dotfiles: "deny",
   setHeaders: (res, filePath) => {
     res.setHeader("X-Robots-Tag", "all");
     res.setHeader("Content-Disposition", "inline");
@@ -8916,7 +8939,7 @@ ${urlset}
 });
 
 if (fs.existsSync(distIndexHtml)) {
-  app.use(express.static(distDir));
+  app.use(express.static(distDir, { dotfiles: "deny" }));
   app.get(/^\/(?!api\/).*/, (_req, res) => {
     res.sendFile(distIndexHtml);
   });

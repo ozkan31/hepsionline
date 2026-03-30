@@ -16,6 +16,11 @@ ErrorDocument 404 /error404.html
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
+  RewriteRule "(^|/)\.(env|git|svn|hg)([./_-].*)?$" - [R=404,L,NC]
+  RewriteRule "(^|/).+\.env([.~_-].*)?$" - [R=404,L,NC]
+  RewriteRule "(^|/).+\.(bak|backup|old|orig|save|swp)([./_-].*)?$" - [R=404,L,NC]
+  RewriteRule "(^|/)\.ht(access|passwd)([./_-].*)?$" - [R=404,L,NC]
+
   RewriteCond %{HTTP_HOST} ^www\.stilbagsfashion\.com$ [NC]
   RewriteRule ^ https://stilbagsfashion.com%{REQUEST_URI} [R=301,L]
 

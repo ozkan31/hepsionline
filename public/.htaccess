@@ -6,6 +6,9 @@ AddDefaultCharset UTF-8
 
 <IfModule mod_headers.c>
   Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  <FilesMatch "\.(html|htm)$">
+    Header always set Content-Type "text/html; charset=UTF-8"
+  </FilesMatch>
 </IfModule>
 
 ErrorDocument 404 /error404.html

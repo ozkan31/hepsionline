@@ -30,7 +30,7 @@ const NotFoundPage = lazy(() => import('@/pages/SupportPages').then((module) => 
 function RouteFallback() {
   return (
     <div className="min-h-[40vh] flex items-center justify-center text-gray-500">
-      Sayfa yükleniyor...
+      {'Sayfa y\u00fckleniyor...'}
     </div>
   );
 }

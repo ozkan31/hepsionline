@@ -4,8 +4,10 @@ import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import https from "node:https";
+import net from "node:net";
 import nodemailer from "nodemailer";
 import multer from "multer";
+import { promises as dnsPromises } from "node:dns";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1459,13 +1461,87 @@ function normalizeLocalUploadWebPath(rawValue, { apiPrefix = true } = {}) {
   return `${apiPrefix ? "/api" : ""}/uploads/${normalizedRelativePath}`;
 }
 
+function isPrivateIpAddress(address) {
+  const normalized = String(address ?? "").trim().toLowerCase();
+  const ipVersion = net.isIP(normalized);
+  if (!ipVersion) return false;
+
+  const mappedIpv4Match = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  if (mappedIpv4Match) {
+    return isPrivateIpAddress(mappedIpv4Match[1]);
+  }
+
+  if (ipVersion === 4) {
+    const octets = normalized.split(".").map((part) => Number(part));
+    if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+      return true;
+    }
+    const [a, b] = octets;
+    if (a === 10 || a === 127 || a === 0) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    if (a === 198 && (b === 18 || b === 19)) return true;
+    return false;
+  }
+
+  if (normalized === "::1" || normalized === "::") return true;
+  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
+  if (/^fe[89ab]/i.test(normalized)) return true;
+  return false;
+}
+
+function isObviouslyUnsafeRemoteHostname(hostname) {
+  const normalized = String(hostname ?? "").trim().toLowerCase();
+  if (!normalized) return true;
+  if (normalized === "localhost" || normalized.endsWith(".localhost")) return true;
+  if (normalized.endsWith(".local") || normalized.endsWith(".internal")) return true;
+  if (isPrivateIpAddress(normalized)) return true;
+  return false;
+}
+
+function isSafeRemoteMediaUrlCandidate(rawUrl) {
+  const value = String(rawUrl ?? "").trim();
+  if (!value) return false;
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+    if (parsed.username || parsed.password) return false;
+    if (isObviouslyUnsafeRemoteHostname(parsed.hostname)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isSafeRemoteMediaUrl(rawUrl) {
+  if (!isSafeRemoteMediaUrlCandidate(rawUrl)) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(String(rawUrl ?? "").trim());
+    const results = await dnsPromises.lookup(parsed.hostname, { all: true, verbatim: true });
+    if (!Array.isArray(results) || results.length === 0) {
+      return false;
+    }
+    return results.every((entry) => !isPrivateIpAddress(entry?.address));
+  } catch {
+    return false;
+  }
+}
+
 function sanitizeStoredProductMediaSource(rawValue) {
   const value = String(rawValue ?? "").trim();
   if (!value) return "";
 
   const normalizedUploadPath = normalizeLocalUploadWebPath(value, { apiPrefix: false });
   if (normalizedUploadPath) return normalizedUploadPath;
-  if (/^https?:\/\//i.test(value)) return value;
+  if (/^https?:\/\//i.test(value)) {
+    return isSafeRemoteMediaUrlCandidate(value) ? value : "";
+  }
   if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(value)) return value;
   if (/^\/api\/products\/[^/]+\/image\/\d+(?:\?.*)?$/i.test(value)) return value;
   return "";
@@ -2730,10 +2806,34 @@ async function sendImageSourceAsMerchantJpeg(res, source) {
       }
       inputPath = fileInfo.filePath;
     } else if (/^https?:\/\//i.test(normalized)) {
-      const response = await fetch(normalized);
-      if (!response.ok) {
+      let currentUrl = normalized;
+      let redirectCount = 0;
+      let response = null;
+
+      for (;;) {
+        if (!(await isSafeRemoteMediaUrl(currentUrl))) {
+          return res.status(404).json({ message: "Image not found." });
+        }
+        response = await fetch(currentUrl, { redirect: "manual" });
+        if ([301, 302, 303, 307, 308].includes(response.status)) {
+          if (redirectCount >= 3) {
+            return res.status(404).json({ message: "Image not found." });
+          }
+          const location = response.headers.get("location");
+          if (!location) {
+            return res.status(404).json({ message: "Image not found." });
+          }
+          currentUrl = new URL(location, currentUrl).toString();
+          redirectCount += 1;
+          continue;
+        }
+        break;
+      }
+
+      if (!response?.ok) {
         return res.status(404).json({ message: "Image not found." });
       }
+
       const arrayBuffer = await response.arrayBuffer();
       inputBuffer = Buffer.from(arrayBuffer);
     } else {

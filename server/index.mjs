@@ -92,6 +92,13 @@ const AUTH_SECURITY_LIMITS = Object.freeze({
     ipLimit: 10,
     identifierLimit: 3,
   },
+  couponApply: {
+    scope: "coupon-apply",
+    message: "Çok fazla kupon denemesi yapıldı. Lütfen biraz sonra tekrar deneyin.",
+    windowSeconds: 10 * 60,
+    ipLimit: 20,
+    identifierLimit: 0,
+  },
 });
 const IMAGE_VARIANT_SPECS = {
   thumb: { width: 200, quality: 72 },
@@ -674,6 +681,10 @@ const DEFAULT_CUSTOMER_COUPON_SETTINGS = Object.freeze({
   value: 10,
   minimumSubtotal: 750,
   description: "Müşterilerinize özel indirim kodunuz hazır.",
+  singleUsePerCustomer: true,
+  startsAt: "",
+  expiresAt: "",
+  usageCount: 0,
 });
 let abandonedCartScanTimeout = null;
 let abandonedCartScanInFlight = null;
@@ -3025,7 +3036,7 @@ async function getCouponRequestCartItems(items) {
     .filter(Boolean);
 }
 
-async function resolveAnyCoupon({ code, cartItems }) {
+async function resolveAnyCoupon({ code, cartItems, userId = "" }) {
   const normalizedCode = normalizeCustomerCouponCode(code);
   if (!normalizedCode) {
     return null;
@@ -3035,6 +3046,7 @@ async function resolveAnyCoupon({ code, cartItems }) {
     resolveCustomerCoupon({
       code: normalizedCode,
       cartItems,
+      userId,
     }),
     getAbandonedCartSettings(),
   ]);
@@ -3175,6 +3187,53 @@ function calculateCustomerCouponDiscount(subtotal, coupon) {
   return Math.min(normalizedSubtotal, Math.round((normalizedSubtotal * percentage) / 100));
 }
 
+function createHttpError(statusCode, message) {
+  const error = new Error(String(message || "Request failed."));
+  error.statusCode = Number(statusCode) || 500;
+  return error;
+}
+
+function normalizeOptionalCouponDateTime(input) {
+  const raw = String(input ?? "").trim();
+  if (!raw) {
+    return "";
+  }
+  const parsed = Date.parse(raw);
+  if (!Number.isFinite(parsed)) {
+    return "";
+  }
+  return new Date(parsed).toISOString();
+}
+
+function couponDateTimeToDbValue(value) {
+  const normalized = normalizeOptionalCouponDateTime(value);
+  return normalized ? new Date(normalized) : null;
+}
+
+function formatCouponDateTimeForResponse(value) {
+  if (!value) {
+    return "";
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+}
+
+async function getCustomerCouponRedemptionCount(couponId, userId) {
+  if (!couponId || !userId) {
+    return 0;
+  }
+
+  const [rows] = await pool.query(
+    `
+    SELECT COUNT(*) AS total
+    FROM coupon_redemptions
+    WHERE coupon_id = ? AND user_id = ?
+    `,
+    [couponId, userId]
+  );
+  return Math.max(0, Number(rows[0]?.total || 0));
+}
+
 function resolveAbandonedCartCoupon({ code, cartItems, settings }) {
   const configuredCoupon = getConfiguredAbandonedCartCoupon(settings);
   const normalizedCode = normalizeAbandonedCartCouponCode(code);
@@ -3220,6 +3279,11 @@ function mapAdminCouponRow(row) {
     value: Math.max(1, Math.round(Number(row.value) || 0)),
     minimumSubtotal: Math.max(0, Math.round(Number(row.minimum_subtotal) || 0)),
     description: String(row.description ?? "").trim() || DEFAULT_CUSTOMER_COUPON_SETTINGS.description,
+    singleUsePerCustomer:
+      row.single_use_per_customer == null ? true : Boolean(Number(row.single_use_per_customer)),
+    startsAt: formatCouponDateTimeForResponse(row.starts_at),
+    expiresAt: formatCouponDateTimeForResponse(row.expires_at),
+    usageCount: Math.max(0, Math.round(Number(row.usage_count) || 0)),
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : "",
   };
@@ -3288,7 +3352,20 @@ async function listCustomerCoupons() {
   await migrateLegacyCustomerCouponSettingToCoupons();
   const [rows] = await pool.query(
     `
-    SELECT id, code, type, value, minimum_subtotal, description, enabled, created_at, updated_at
+    SELECT
+      id,
+      code,
+      type,
+      value,
+      minimum_subtotal,
+      description,
+      enabled,
+      starts_at,
+      expires_at,
+      usage_count,
+      single_use_per_customer,
+      created_at,
+      updated_at
     FROM coupons
     ORDER BY updated_at DESC, created_at DESC, code ASC
     `
@@ -3302,9 +3379,9 @@ async function createCustomerCoupon(input) {
   await pool.query(
     `
     INSERT INTO coupons (
-      id, code, type, value, minimum_subtotal, description, enabled
+      id, code, type, value, minimum_subtotal, description, enabled, starts_at, expires_at, single_use_per_customer
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       couponId,
@@ -3314,12 +3391,28 @@ async function createCustomerCoupon(input) {
       normalized.minimumSubtotal,
       normalized.description,
       normalized.enabled,
+      couponDateTimeToDbValue(normalized.startsAt),
+      couponDateTimeToDbValue(normalized.expiresAt),
+      normalized.singleUsePerCustomer,
     ]
   );
 
   const [rows] = await pool.query(
     `
-    SELECT id, code, type, value, minimum_subtotal, description, enabled, created_at, updated_at
+    SELECT
+      id,
+      code,
+      type,
+      value,
+      minimum_subtotal,
+      description,
+      enabled,
+      starts_at,
+      expires_at,
+      usage_count,
+      single_use_per_customer,
+      created_at,
+      updated_at
     FROM coupons
     WHERE id = ?
     LIMIT 1
@@ -3340,7 +3433,10 @@ async function updateCustomerCoupon(couponId, input) {
       value = ?,
       minimum_subtotal = ?,
       description = ?,
-      enabled = ?
+      enabled = ?,
+      starts_at = ?,
+      expires_at = ?,
+      single_use_per_customer = ?
     WHERE id = ?
     `,
     [
@@ -3350,6 +3446,9 @@ async function updateCustomerCoupon(couponId, input) {
       normalized.minimumSubtotal,
       normalized.description,
       normalized.enabled,
+      couponDateTimeToDbValue(normalized.startsAt),
+      couponDateTimeToDbValue(normalized.expiresAt),
+      normalized.singleUsePerCustomer,
       couponId,
     ]
   );
@@ -3359,7 +3458,20 @@ async function updateCustomerCoupon(couponId, input) {
 
   const [rows] = await pool.query(
     `
-    SELECT id, code, type, value, minimum_subtotal, description, enabled, created_at, updated_at
+    SELECT
+      id,
+      code,
+      type,
+      value,
+      minimum_subtotal,
+      description,
+      enabled,
+      starts_at,
+      expires_at,
+      usage_count,
+      single_use_per_customer,
+      created_at,
+      updated_at
     FROM coupons
     WHERE id = ?
     LIMIT 1
@@ -3388,7 +3500,20 @@ async function getCustomerCouponByCode(code) {
   await migrateLegacyCustomerCouponSettingToCoupons();
   const [rows] = await pool.query(
     `
-    SELECT id, code, type, value, minimum_subtotal, description, enabled, created_at, updated_at
+    SELECT
+      id,
+      code,
+      type,
+      value,
+      minimum_subtotal,
+      description,
+      enabled,
+      starts_at,
+      expires_at,
+      usage_count,
+      single_use_per_customer,
+      created_at,
+      updated_at
     FROM coupons
     WHERE code = ?
     LIMIT 1
@@ -3398,7 +3523,7 @@ async function getCustomerCouponByCode(code) {
   return rows.length > 0 ? mapAdminCouponRow(rows[0]) : null;
 }
 
-async function resolveCustomerCoupon({ code, cartItems }) {
+async function resolveCustomerCoupon({ code, cartItems, userId = "" }) {
   const configuredCoupon = await getCustomerCouponByCode(code);
   const normalizedCode = normalizeCustomerCouponCode(code);
 
@@ -3410,6 +3535,30 @@ async function resolveCustomerCoupon({ code, cartItems }) {
       valid: false,
       reason: "Kupon kodu şu anda aktif değil.",
     };
+  }
+  const now = Date.now();
+  const startsAtMs = configuredCoupon.startsAt ? Date.parse(configuredCoupon.startsAt) : NaN;
+  if (Number.isFinite(startsAtMs) && startsAtMs > now) {
+    return {
+      valid: false,
+      reason: "Bu kupon henüz aktif değil.",
+    };
+  }
+  const expiresAtMs = configuredCoupon.expiresAt ? Date.parse(configuredCoupon.expiresAt) : NaN;
+  if (Number.isFinite(expiresAtMs) && expiresAtMs <= now) {
+    return {
+      valid: false,
+      reason: "Bu kuponun kullanım süresi dolmuş.",
+    };
+  }
+  if (configuredCoupon.singleUsePerCustomer && userId) {
+    const redemptionCount = await getCustomerCouponRedemptionCount(configuredCoupon.id, userId);
+    if (redemptionCount > 0) {
+      return {
+        valid: false,
+        reason: "Bu kuponu hesabınızda daha önce kullandınız.",
+      };
+    }
   }
 
   const subtotal = getCartSubtotal(cartItems);
@@ -3427,17 +3576,106 @@ async function resolveCustomerCoupon({ code, cartItems }) {
 
   return {
     valid: true,
+    id: configuredCoupon.id,
+    source: "customer",
     code: configuredCoupon.code,
     type: configuredCoupon.type,
     value: configuredCoupon.value,
     minimumSubtotal: configuredCoupon.minimumSubtotal,
     description: configuredCoupon.description,
+    singleUsePerCustomer: configuredCoupon.singleUsePerCustomer,
+    startsAt: configuredCoupon.startsAt,
+    expiresAt: configuredCoupon.expiresAt,
     discountAmount,
     subtotal,
     shippingAmount,
     totalBeforeDiscount: subtotal + shippingAmount,
     totalAfterDiscount: Math.max(0, subtotal + shippingAmount - discountAmount),
   };
+}
+
+async function recordCustomerCouponRedemption(connection, { coupon, userId, orderId, discountAmount }) {
+  if (!coupon?.valid || coupon.source !== "customer" || !coupon.id || !userId || !orderId) {
+    return;
+  }
+
+  const [rows] = await connection.query(
+    `
+    SELECT
+      id,
+      code,
+      enabled,
+      starts_at,
+      expires_at,
+      single_use_per_customer,
+      usage_count
+    FROM coupons
+    WHERE id = ?
+    LIMIT 1
+    FOR UPDATE
+    `,
+    [coupon.id]
+  );
+
+  if (rows.length === 0) {
+    throw createHttpError(409, "Kupon artık kullanılamıyor.");
+  }
+
+  const lockedCoupon = mapAdminCouponRow(rows[0]);
+  if (!lockedCoupon.enabled) {
+    throw createHttpError(409, "Kupon artık aktif değil.");
+  }
+
+  const now = Date.now();
+  const startsAtMs = lockedCoupon.startsAt ? Date.parse(lockedCoupon.startsAt) : NaN;
+  if (Number.isFinite(startsAtMs) && startsAtMs > now) {
+    throw createHttpError(409, "Kupon henüz aktif değil.");
+  }
+  const expiresAtMs = lockedCoupon.expiresAt ? Date.parse(lockedCoupon.expiresAt) : NaN;
+  if (Number.isFinite(expiresAtMs) && expiresAtMs <= now) {
+    throw createHttpError(409, "Kuponun kullanım süresi dolmuş.");
+  }
+
+  if (lockedCoupon.singleUsePerCustomer) {
+    const [redemptionRows] = await connection.query(
+      `
+      SELECT COUNT(*) AS total
+      FROM coupon_redemptions
+      WHERE coupon_id = ? AND user_id = ?
+      `,
+      [coupon.id, userId]
+    );
+    const redemptionCount = Math.max(0, Number(redemptionRows[0]?.total || 0));
+    if (redemptionCount > 0) {
+      throw createHttpError(409, "Bu kuponu hesabınızda daha önce kullandınız.");
+    }
+  }
+
+  await connection.query(
+    `
+    INSERT INTO coupon_redemptions (
+      id, coupon_id, user_id, order_id, code, discount_total
+    )
+    VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    [
+      crypto.randomUUID(),
+      coupon.id,
+      userId,
+      orderId,
+      coupon.code,
+      Math.max(0, Math.round(Number(discountAmount) || 0)),
+    ]
+  );
+
+  await connection.query(
+    `
+    UPDATE coupons
+    SET usage_count = usage_count + 1
+    WHERE id = ?
+    `,
+    [coupon.id]
+  );
 }
 
 async function hasSentAbandonedCartEmail(userId, cartSignature) {
@@ -4301,6 +4539,12 @@ function sanitizeCustomerCouponSettings(input = {}) {
   const description = String(input?.description ?? DEFAULT_CUSTOMER_COUPON_SETTINGS.description)
     .trim()
     .slice(0, 200);
+  const singleUsePerCustomer =
+    input?.singleUsePerCustomer == null
+      ? DEFAULT_CUSTOMER_COUPON_SETTINGS.singleUsePerCustomer
+      : Boolean(input.singleUsePerCustomer);
+  const startsAt = normalizeOptionalCouponDateTime(input?.startsAt ?? DEFAULT_CUSTOMER_COUPON_SETTINGS.startsAt);
+  const expiresAt = normalizeOptionalCouponDateTime(input?.expiresAt ?? DEFAULT_CUSTOMER_COUPON_SETTINGS.expiresAt);
 
   return {
     enabled: Boolean(input?.enabled && code),
@@ -4309,7 +4553,30 @@ function sanitizeCustomerCouponSettings(input = {}) {
     value,
     minimumSubtotal,
     description: description || DEFAULT_CUSTOMER_COUPON_SETTINGS.description,
+    singleUsePerCustomer,
+    startsAt,
+    expiresAt,
   };
+}
+
+function validateCustomerCouponSettingsInput(rawInput, normalizedSettings) {
+  const rawStartsAt = String(rawInput?.startsAt ?? "").trim();
+  const rawExpiresAt = String(rawInput?.expiresAt ?? "").trim();
+
+  if (rawStartsAt && !normalizedSettings.startsAt) {
+    return "Kupon başlangıç tarihi geçerli değil.";
+  }
+  if (rawExpiresAt && !normalizedSettings.expiresAt) {
+    return "Kupon bitiş tarihi geçerli değil.";
+  }
+  if (normalizedSettings.startsAt && normalizedSettings.expiresAt) {
+    const startsAtMs = Date.parse(normalizedSettings.startsAt);
+    const expiresAtMs = Date.parse(normalizedSettings.expiresAt);
+    if (Number.isFinite(startsAtMs) && Number.isFinite(expiresAtMs) && expiresAtMs <= startsAtMs) {
+      return "Kupon bitiş tarihi başlangıç tarihinden sonra olmalıdır.";
+    }
+  }
+  return "";
 }
 
 async function getAbandonedCartSettings() {
@@ -6459,7 +6726,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
   const subtotal = getCartSubtotal(trustedOrderItems);
   const shippingTotal = getCartShippingAmount(subtotal);
   const coupon = normalizeCustomerCouponCode(couponCode)
-    ? await resolveAnyCoupon({ code: couponCode, cartItems: trustedOrderItems })
+    ? await resolveAnyCoupon({ code: couponCode, cartItems: trustedOrderItems, userId: req.authUser.id })
     : null;
   if (coupon && !coupon.valid) {
     return res.status(400).json({ message: coupon.reason || "Kupon geçersiz." });
@@ -6615,6 +6882,13 @@ app.post("/api/orders", requireAuth, async (req, res) => {
       params
     );
 
+    await recordCustomerCouponRedemption(connection, {
+      coupon,
+      userId: req.authUser.id,
+      orderId,
+      discountAmount: discountTotal,
+    });
+
     // Keep order creation and cart cleanup atomic:
     // if order is committed, user's server-side cart is guaranteed to be empty.
     await connection.query(`DELETE FROM user_cart_items WHERE user_id = ?`, [req.authUser.id]);
@@ -6703,6 +6977,9 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     return res.status(201).json({ order: createdOrder });
   } catch (error) {
     await connection.rollback();
+    if (Number(error?.statusCode || 0) >= 400) {
+      return res.status(Number(error.statusCode)).json({ message: error.message || "İstek başarısız." });
+    }
     if (error?.code === "ER_DUP_ENTRY") {
       return res.status(409).json({ message: "Order already exists." });
     }
@@ -6739,7 +7016,7 @@ app.post("/api/paytr/token", requireAuth, async (req, res) => {
     const subtotal = getCartSubtotal(orderItems);
     const shippingAmount = getCartShippingAmount(subtotal);
     const coupon = normalizeCustomerCouponCode(couponCode)
-      ? await resolveAnyCoupon({ code: couponCode, cartItems: orderItems })
+      ? await resolveAnyCoupon({ code: couponCode, cartItems: orderItems, userId: req.authUser.id })
       : null;
     if (coupon && !coupon.valid) {
       return res.status(400).json({ message: coupon.reason || "Kupon geçersiz." });
@@ -7006,6 +7283,9 @@ app.get("/api/admin/marketing/abandoned-cart", requireAdminAuth, async (_req, re
 
 app.post("/api/marketing/abandoned-cart/coupon/apply", requireAuth, async (req, res) => {
   try {
+    if (await enforceRateLimit(req, res, AUTH_SECURITY_LIMITS.couponApply)) {
+      return;
+    }
     const code = normalizeCustomerCouponCode(req.body?.code);
     if (!code) {
       return res.status(400).json({ message: "Kupon kodu zorunludur." });
@@ -7016,8 +7296,13 @@ app.post("/api/marketing/abandoned-cart/coupon/apply", requireAuth, async (req, 
       return res.status(400).json({ message: "Sepetiniz boş." });
     }
 
-    const coupon = await resolveAnyCoupon({ code, cartItems });
+    const coupon = await resolveAnyCoupon({ code, cartItems, userId: req.authUser.id });
     if (!coupon?.valid) {
+      const blocked = await recordRateLimitFailure(req, AUTH_SECURITY_LIMITS.couponApply);
+      if (blocked) {
+        res.setHeader("Retry-After", String(blocked.retryAfterSeconds));
+        return res.status(429).json({ message: AUTH_SECURITY_LIMITS.couponApply.message });
+      }
       return res.status(400).json({
         message: coupon?.reason || "Kupon kodu geçersiz veya şu anda aktif değil.",
       });
@@ -7031,6 +7316,9 @@ app.post("/api/marketing/abandoned-cart/coupon/apply", requireAuth, async (req, 
 
 app.post("/api/coupons/apply", async (req, res) => {
   try {
+    if (await enforceRateLimit(req, res, AUTH_SECURITY_LIMITS.couponApply)) {
+      return;
+    }
     const code = normalizeCustomerCouponCode(req.body?.code);
     if (!code) {
       return res.status(400).json({ message: "Kupon kodu zorunludur." });
@@ -7043,6 +7331,11 @@ app.post("/api/coupons/apply", async (req, res) => {
 
     const coupon = await resolveAnyCoupon({ code, cartItems });
     if (!coupon?.valid) {
+      const blocked = await recordRateLimitFailure(req, AUTH_SECURITY_LIMITS.couponApply);
+      if (blocked) {
+        res.setHeader("Retry-After", String(blocked.retryAfterSeconds));
+        return res.status(429).json({ message: AUTH_SECURITY_LIMITS.couponApply.message });
+      }
       return res.status(400).json({
         message: coupon?.reason || "Kupon kodu geçersiz veya şu anda aktif değil.",
       });
@@ -7065,12 +7358,17 @@ app.get("/api/admin/coupons", requireAdminAuth, async (_req, res) => {
 
 app.post("/api/admin/coupons", requireAdminAuth, async (req, res) => {
   try {
-    const couponInput = sanitizeCustomerCouponSettings(req.body ?? {});
+    const rawCouponInput = req.body ?? {};
+    const couponInput = sanitizeCustomerCouponSettings(rawCouponInput);
     if (!String(couponInput.code ?? "").trim()) {
       return res.status(400).json({ message: "Kupon kodu zorunludur." });
     }
     if (!Number.isFinite(Number(couponInput.value)) || Number(couponInput.value) <= 0) {
       return res.status(400).json({ message: "Kupon değeri 0'dan büyük olmalıdır." });
+    }
+    const validationMessage = validateCustomerCouponSettingsInput(rawCouponInput, couponInput);
+    if (validationMessage) {
+      return res.status(400).json({ message: validationMessage });
     }
 
     const coupon = await createCustomerCoupon(couponInput);
@@ -7093,12 +7391,17 @@ app.put("/api/admin/coupons/:id", requireAdminAuth, async (req, res) => {
       return res.status(400).json({ message: "Geçersiz kupon." });
     }
 
-    const couponInput = sanitizeCustomerCouponSettings(req.body ?? {});
+    const rawCouponInput = req.body ?? {};
+    const couponInput = sanitizeCustomerCouponSettings(rawCouponInput);
     if (!String(couponInput.code ?? "").trim()) {
       return res.status(400).json({ message: "Kupon kodu zorunludur." });
     }
     if (!Number.isFinite(Number(couponInput.value)) || Number(couponInput.value) <= 0) {
       return res.status(400).json({ message: "Kupon değeri 0'dan büyük olmalıdır." });
+    }
+    const validationMessage = validateCustomerCouponSettingsInput(rawCouponInput, couponInput);
+    if (validationMessage) {
+      return res.status(400).json({ message: validationMessage });
     }
 
     const coupon = await updateCustomerCoupon(couponId, couponInput);
@@ -7127,6 +7430,9 @@ app.delete("/api/admin/coupons/:id", requireAdminAuth, async (req, res) => {
     }
     return res.json({ ok: true });
   } catch (error) {
+    if (error?.code === "ER_ROW_IS_REFERENCED_2" || error?.code === "ER_ROW_IS_REFERENCED") {
+      return res.status(409).json({ message: "Kullanılmış kupon silinemez. Kuponu pasif hale getirin." });
+    }
     return res.status(500).json({ message: "Kupon silinemedi." });
   }
 });
@@ -7145,6 +7451,10 @@ app.put("/api/admin/marketing/customer-coupon", requireAdminAuth, async (req, re
   try {
     const rawSettings = req.body ?? {};
     const settings = sanitizeCustomerCouponSettings(rawSettings);
+    const validationMessage = validateCustomerCouponSettingsInput(rawSettings, settings);
+    if (validationMessage) {
+      return res.status(400).json({ message: validationMessage });
+    }
 
     if (Boolean(rawSettings?.enabled)) {
       if (!String(settings.code ?? "").trim()) {

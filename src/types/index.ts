@@ -201,6 +201,10 @@ export interface AdminCustomerCouponSettings {
   value: number;
   minimumSubtotal: number;
   description: string;
+  singleUsePerCustomer: boolean;
+  startsAt?: string;
+  expiresAt?: string;
+  usageCount?: number;
   createdAt?: string;
   updatedAt?: string;
 }

@@ -303,11 +303,47 @@ CREATE TABLE IF NOT EXISTS coupons (
   minimum_subtotal INT NOT NULL DEFAULT 0,
   description VARCHAR(200) NOT NULL,
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  starts_at DATETIME NULL,
+  expires_at DATETIME NULL,
+  usage_count INT NOT NULL DEFAULT 0,
+  single_use_per_customer BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_coupons_code (code),
   KEY idx_coupons_enabled (enabled),
+  KEY idx_coupons_starts_at (starts_at),
+  KEY idx_coupons_expires_at (expires_at),
   KEY idx_coupons_updated_at (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
+const createCouponRedemptionsSql = `
+CREATE TABLE IF NOT EXISTS coupon_redemptions (
+  id CHAR(36) PRIMARY KEY,
+  coupon_id CHAR(36) NOT NULL,
+  user_id CHAR(36) NOT NULL,
+  order_id VARCHAR(20) NOT NULL,
+  code VARCHAR(40) NOT NULL,
+  discount_total INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_coupon_redemptions_coupon
+    FOREIGN KEY (coupon_id)
+    REFERENCES coupons(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+  CONSTRAINT fk_coupon_redemptions_user
+    FOREIGN KEY (user_id)
+    REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+  CONSTRAINT fk_coupon_redemptions_order
+    FOREIGN KEY (order_id)
+    REFERENCES user_orders(id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+  UNIQUE KEY uq_coupon_redemptions_order (order_id),
+  KEY idx_coupon_redemptions_coupon_user (coupon_id, user_id),
+  KEY idx_coupon_redemptions_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
@@ -361,6 +397,7 @@ async function migrate() {
   await pool.query(createAppSettingsSql);
   await pool.query(createContactRequestsSql);
   await pool.query(createCouponsSql);
+  await pool.query(createCouponRedemptionsSql);
   await pool.query(createMarketingAbandonedCartEmailsSql);
 
   // Backward-compatible migration for existing databases.
@@ -458,6 +495,42 @@ async function migrate() {
   try {
     await pool.query(
       `ALTER TABLE user_orders ADD COLUMN coupon_code VARCHAR(80) NULL AFTER discount_total`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE coupons ADD COLUMN starts_at DATETIME NULL AFTER description`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE coupons ADD COLUMN expires_at DATETIME NULL AFTER starts_at`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE coupons ADD COLUMN usage_count INT NOT NULL DEFAULT 0 AFTER enabled`
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE coupons ADD COLUMN single_use_per_customer BOOLEAN NOT NULL DEFAULT TRUE AFTER usage_count`
     );
   } catch (error) {
     if (error?.code !== "ER_DUP_FIELDNAME") {
@@ -648,6 +721,21 @@ async function migrate() {
     "products",
     "idx_products_category_new_id",
     `CREATE INDEX idx_products_category_new_id ON products (category_id, is_new, id)`
+  );
+  await ensureIndex(
+    "coupons",
+    "idx_coupons_starts_at",
+    `CREATE INDEX idx_coupons_starts_at ON coupons (starts_at)`
+  );
+  await ensureIndex(
+    "coupons",
+    "idx_coupons_expires_at",
+    `CREATE INDEX idx_coupons_expires_at ON coupons (expires_at)`
+  );
+  await ensureIndex(
+    "coupon_redemptions",
+    "idx_coupon_redemptions_coupon_user",
+    `CREATE INDEX idx_coupon_redemptions_coupon_user ON coupon_redemptions (coupon_id, user_id)`
   );
   await ensureIndex(
     "user_orders",

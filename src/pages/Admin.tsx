@@ -97,6 +97,10 @@ const defaultCustomerCouponSettings: AdminCustomerCouponSettings = {
   value: 10,
   minimumSubtotal: 750,
   description: "Müşterilerinize özel indirim kodunuz hazır.",
+  singleUsePerCustomer: true,
+  startsAt: "",
+  expiresAt: "",
+  usageCount: 0,
 };
 
 function sortAdminCoupons(coupons: AdminCustomerCouponSettings[]) {
@@ -112,6 +116,29 @@ function generateAdminCouponCode() {
   const randomChunk = (length: number) =>
     Array.from({ length }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
   return `STIL-${randomChunk(4)}-${randomChunk(4)}`;
+}
+
+function toDateTimeLocalInput(value?: string) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const offsetMs = parsed.getTimezoneOffset() * 60 * 1000;
+  return new Date(parsed.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function normalizeAdminCouponDraft(
+  coupon?: Partial<AdminCustomerCouponSettings> | null
+): AdminCustomerCouponSettings {
+  return {
+    ...defaultCustomerCouponSettings,
+    ...(coupon ?? {}),
+    singleUsePerCustomer:
+      coupon?.singleUsePerCustomer == null ? true : Boolean(coupon.singleUsePerCustomer),
+    startsAt: toDateTimeLocalInput(coupon?.startsAt),
+    expiresAt: toDateTimeLocalInput(coupon?.expiresAt),
+    usageCount: Math.max(0, Number(coupon?.usageCount || 0)),
+  };
 }
 
 function getStoredAdminToken() {
@@ -178,7 +205,7 @@ export function Admin() {
   const [marketingLoading, setMarketingLoading] = useState(false);
   const [marketingMessage, setMarketingMessage] = useState("");
   const [customerCouponSettings, setCustomerCouponSettings] =
-    useState<AdminCustomerCouponSettings>(defaultCustomerCouponSettings);
+    useState<AdminCustomerCouponSettings>(() => normalizeAdminCouponDraft(defaultCustomerCouponSettings));
   const [customerCoupons, setCustomerCoupons] = useState<AdminCustomerCouponSettings[]>([]);
   const [customerCouponsLoading, setCustomerCouponsLoading] = useState(false);
   const [customerCouponMessage, setCustomerCouponMessage] = useState("");
@@ -231,7 +258,7 @@ export function Admin() {
   const deliveredOrderCount = orders.filter((order) => order.status === "delivered").length;
 
   const resetCustomerCouponDraft = () => {
-    setCustomerCouponSettings(defaultCustomerCouponSettings);
+    setCustomerCouponSettings(normalizeAdminCouponDraft(defaultCustomerCouponSettings));
     setCustomerCouponMessage("");
   };
 
@@ -487,7 +514,9 @@ export function Admin() {
             return prev;
           }
           const matchedCoupon = coupons.find((coupon) => coupon.id === prev.id);
-          return matchedCoupon ? matchedCoupon : defaultCustomerCouponSettings;
+          return matchedCoupon
+            ? normalizeAdminCouponDraft(matchedCoupon)
+            : normalizeAdminCouponDraft(defaultCustomerCouponSettings);
         });
       } catch (err) {
         if (!mounted) return;
@@ -556,7 +585,7 @@ export function Admin() {
     setMarketingSettings(defaultMarketingSettings);
     setMarketingLoading(false);
     setMarketingMessage("");
-    setCustomerCouponSettings(defaultCustomerCouponSettings);
+    setCustomerCouponSettings(normalizeAdminCouponDraft(defaultCustomerCouponSettings));
     setCustomerCoupons([]);
     setCustomerCouponsLoading(false);
     setCustomerCouponMessage("");
@@ -641,7 +670,7 @@ export function Admin() {
   };
 
   const handleEditCoupon = (coupon: AdminCustomerCouponSettings) => {
-    setCustomerCouponSettings(coupon);
+    setCustomerCouponSettings(normalizeAdminCouponDraft(coupon));
     setCustomerCouponMessage("");
     setActiveSection("campaigns");
     setActiveCampaignsPanel("createCoupon");
@@ -718,7 +747,7 @@ export function Admin() {
         const filteredCoupons = prev.filter((coupon) => coupon.id !== savedCoupon.id);
         return sortAdminCoupons([savedCoupon, ...filteredCoupons]);
       });
-      setCustomerCouponSettings(savedCoupon);
+      setCustomerCouponSettings(normalizeAdminCouponDraft(savedCoupon));
       setCustomerCouponMessage(savingExistingCoupon ? "Kupon güncellendi." : "Kupon oluşturuldu.");
     } catch (err) {
       setCustomerCouponMessage(err instanceof Error ? err.message : "Kupon kaydedilemedi.");
@@ -743,7 +772,9 @@ export function Admin() {
       await deleteAdminCoupon(token, coupon.id);
       setCustomerCoupons((prev) => prev.filter((item) => item.id !== coupon.id));
       setCustomerCouponSettings((prev) =>
-        prev.id === coupon.id ? defaultCustomerCouponSettings : prev
+        prev.id === coupon.id
+          ? normalizeAdminCouponDraft(defaultCustomerCouponSettings)
+          : prev
       );
       setCustomerCouponMessage("Kupon silindi.");
     } catch (err) {
@@ -3273,7 +3304,7 @@ export function Admin() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
                     <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
                       <p className="text-[11px] uppercase tracking-wide text-gray-500">Toplam Kupon</p>
                       <p className="mt-2 text-sm font-medium text-black">
@@ -3298,6 +3329,14 @@ export function Admin() {
                         {latestCustomerCoupon?.updatedAt
                           ? formatOrderDateTime(latestCustomerCoupon.updatedAt)
                           : "-"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-[#E7E2D8] bg-[#FAF9F6] px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Toplam Kullanım</p>
+                      <p className="mt-2 text-sm font-medium text-black">
+                        {customerCouponsLoading
+                          ? "Yükleniyor..."
+                          : customerCoupons.reduce((total, coupon) => total + Number(coupon.usageCount || 0), 0).toLocaleString("tr-TR")}
                       </p>
                     </div>
                   </div>
@@ -3335,6 +3374,9 @@ export function Admin() {
                                     ? `${Number(coupon.value || 0).toLocaleString("tr-TR")} TL indirim`
                                     : `%${Number(coupon.value || 0).toLocaleString("tr-TR")} indirim`}
                                 </span>
+                                <span className="text-sm text-gray-700">
+                                  Kullanım: {Number(coupon.usageCount || 0).toLocaleString("tr-TR")}
+                                </span>
                               </div>
                               <p className="text-sm text-gray-700">
                                 {coupon.description || "Bu kupon için açıklama girilmedi."}
@@ -3343,6 +3385,17 @@ export function Admin() {
                                 <span>
                                   Minimum Sepet: {Number(coupon.minimumSubtotal || 0).toLocaleString("tr-TR")} TL
                                 </span>
+                                <span>
+                                  {coupon.singleUsePerCustomer
+                                    ? "Müşteri başına tek kullanım"
+                                    : "Müşteri başına tekrar kullanılabilir"}
+                                </span>
+                                {coupon.startsAt ? (
+                                  <span>Başlangıç: {formatOrderDateTime(coupon.startsAt)}</span>
+                                ) : null}
+                                {coupon.expiresAt ? (
+                                  <span>Bitiş: {formatOrderDateTime(coupon.expiresAt)}</span>
+                                ) : null}
                                 <span>
                                   Son Güncelleme: {coupon.updatedAt ? formatOrderDateTime(coupon.updatedAt) : "-"}
                                 </span>
@@ -3423,7 +3476,7 @@ export function Admin() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
                       <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
                         <p className="text-[11px] uppercase tracking-wide text-gray-500">Durum</p>
                         <p className={`mt-2 text-sm font-medium ${customerCouponSettings.enabled ? "text-green-700" : "text-gray-600"}`}>
@@ -3450,6 +3503,12 @@ export function Admin() {
                           {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL
                         </p>
                       </div>
+                      <div className="rounded-lg border border-[#E7E2D8] bg-white px-4 py-3">
+                        <p className="text-[11px] uppercase tracking-wide text-gray-500">Kullanım</p>
+                        <p className="mt-2 text-sm font-medium text-black">
+                          {Number(customerCouponSettings.usageCount || 0).toLocaleString("tr-TR")}
+                        </p>
+                      </div>
                     </div>
                   </div>
 
@@ -3460,16 +3519,31 @@ export function Admin() {
                         Buradaki kupon ayarları veritabanına kaydedilir ve müşterilerin sepette manuel kullanacağı indirim kodunu belirler.
                       </p>
                     </div>
-                    <label className="inline-flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={customerCouponSettings.enabled}
-                        onChange={(e) =>
-                          setCustomerCouponSettings((prev) => ({ ...prev, enabled: e.target.checked }))
-                        }
-                      />
-                      Kupon aktif
-                    </label>
+                    <div className="flex flex-col gap-2 sm:items-end">
+                      <label className="inline-flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={customerCouponSettings.enabled}
+                          onChange={(e) =>
+                            setCustomerCouponSettings((prev) => ({ ...prev, enabled: e.target.checked }))
+                          }
+                        />
+                        Kupon aktif
+                      </label>
+                      <label className="inline-flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={customerCouponSettings.singleUsePerCustomer}
+                          onChange={(e) =>
+                            setCustomerCouponSettings((prev) => ({
+                              ...prev,
+                              singleUsePerCustomer: e.target.checked,
+                            }))
+                          }
+                        />
+                        Müşteri başına tek kullanım
+                      </label>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3543,6 +3617,39 @@ export function Admin() {
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Başlangıç Tarihi</label>
+                      <input
+                        type="datetime-local"
+                        value={customerCouponSettings.startsAt || ""}
+                        onChange={(e) =>
+                          setCustomerCouponSettings((prev) => ({
+                            ...prev,
+                            startsAt: e.target.value,
+                          }))
+                        }
+                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">Boş bırakırsanız kupon hemen aktif olabilir.</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Bitiş Tarihi</label>
+                      <input
+                        type="datetime-local"
+                        value={customerCouponSettings.expiresAt || ""}
+                        onChange={(e) =>
+                          setCustomerCouponSettings((prev) => ({
+                            ...prev,
+                            expiresAt: e.target.value,
+                          }))
+                        }
+                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-black"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">Boş bırakırsanız kupon süresiz kalır.</p>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium mb-1">Kupon Açıklaması</label>
                     <input
@@ -3577,10 +3684,25 @@ export function Admin() {
                     <p className="mt-2 text-xs text-gray-500">
                       Müşteri bu kodu minimum {Number(customerCouponSettings.minimumSubtotal || 0).toLocaleString("tr-TR")} TL sepette kullanabilir.
                     </p>
+                    <p className="mt-2 text-xs text-gray-500">
+                      {customerCouponSettings.singleUsePerCustomer
+                        ? "Kupon aynı müşteri hesabında yalnızca bir kez kullanılabilir."
+                        : "Kupon aynı müşteri hesabında tekrar kullanılabilir."}
+                    </p>
+                    {customerCouponSettings.startsAt ? (
+                      <p className="mt-2 text-xs text-gray-500">
+                        Başlangıç: {formatOrderDateTime(customerCouponSettings.startsAt)}
+                      </p>
+                    ) : null}
+                    {customerCouponSettings.expiresAt ? (
+                      <p className="mt-2 text-xs text-gray-500">
+                        Bitiş: {formatOrderDateTime(customerCouponSettings.expiresAt)}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="rounded-lg border border-[#E7E2D8] bg-[#F8F7F4] px-4 py-3 text-sm text-gray-600">
-                    Müşteri kupon kodunu sepette girdiğinde, minimum tutar sağlanıyorsa indirim uygulanır ve ödeme sırasında sunucuda tekrar doğrulanır.
+                    Müşteri kupon kodunu sepette girdiğinde, minimum tutar sağlanıyorsa indirim uygulanır ve ödeme sırasında sunucuda tekrar doğrulanır. Tek kullanım ve tarih aralığı kontrolleri de sipariş anında sunucuda yeniden denetlenir.
                   </div>
 
                   {customerCouponMessage ? (

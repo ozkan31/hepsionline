@@ -20,9 +20,11 @@ type PaytrPayload = {
   firstName: string;
   lastName: string;
   phone: string;
+  addressName?: string;
   street: string;
   province: string;
   district: string;
+  neighborhood?: string;
   total: number;
   items: Array<{ name: string; unitPrice: number; quantity: number }>;
   couponCode?: string | null;
@@ -174,9 +176,11 @@ export function Checkout() {
       firstName: info.firstName,
       lastName: info.lastName,
       phone: info.phone,
+      addressName: info.addressName,
       street: info.street,
       province: info.province,
       district: info.district,
+      neighborhood: info.neighborhood,
       total,
       couponCode: appliedCoupon?.code ?? null,
       items: state.cart.map((item) => ({

@@ -6554,14 +6554,16 @@ app.post("/api/paytr/token", requireAuth, async (req, res) => {
       return res.status(500).json({ message: "PAYTR env settings are missing." });
     }
 
-    const { email, firstName, lastName, phone, street, province, district, couponCode } = req.body ?? {};
+    const { email, firstName, lastName, phone, street, province, district, neighborhood, addressName, couponCode } = req.body ?? {};
     const normalizedEmail = String(email ?? "").trim();
     const normalizedFirstName = String(firstName ?? "").trim();
     const normalizedLastName = String(lastName ?? "").trim();
     const normalizedPhone = String(phone ?? "").trim();
+    const normalizedAddressName = String(addressName ?? "").trim();
     const normalizedStreet = String(street ?? "").trim();
     const normalizedProvince = String(province ?? "").trim();
     const normalizedDistrict = String(district ?? "").trim();
+    const normalizedNeighborhood = String(neighborhood ?? "").trim();
     const orderItems = await getUserCartItems(req.authUser.id);
     const subtotal = getCartSubtotal(orderItems);
     const shippingAmount = getCartShippingAmount(subtotal);
@@ -6658,12 +6660,14 @@ app.post("/api/paytr/token", requireAuth, async (req, res) => {
       userId: req.authUser.id,
       cartSignature: buildCartIntegritySignature(orderItems),
       shippingSignature: buildShippingIntegritySignature({
+        addressName: normalizedAddressName,
         firstName: normalizedFirstName,
         lastName: normalizedLastName,
         phone: normalizedPhone,
         street: normalizedStreet,
         province: normalizedProvince,
         district: normalizedDistrict,
+        neighborhood: normalizedNeighborhood,
       }),
       couponCode: coupon?.valid ? coupon.code : "",
       amount: paymentAmount,

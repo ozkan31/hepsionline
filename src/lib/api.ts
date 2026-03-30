@@ -414,9 +414,11 @@ export async function createPaytrIframe(input: {
   firstName: string;
   lastName: string;
   phone: string;
+  addressName?: string;
   street: string;
   province: string;
   district: string;
+  neighborhood?: string;
   total: number;
   items: Array<{ name: string; unitPrice: number; quantity: number }>;
   couponCode?: string | null;

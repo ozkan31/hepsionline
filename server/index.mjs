@@ -1651,6 +1651,15 @@ function escapeHtml(input) {
     .replaceAll("'", "&#39;");
 }
 
+function serializeJsonForHtmlScript(value) {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
 function formatOrderDateForEmail(value) {
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) return "-";
@@ -8446,7 +8455,7 @@ app.get(["/api/merchant/product/:id", "/merchant/product/:id"], async (req, res)
     </a>
   </p>
   <script type="application/ld+json">
-  ${JSON.stringify({
+  ${serializeJsonForHtmlScript({
     "@context": "https://schema.org",
     "@type": "Product",
     name: String(product.name ?? ""),

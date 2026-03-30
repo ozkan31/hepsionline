@@ -101,6 +101,15 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function serializeJsonForHtmlScript(value) {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
 function escapeXml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -221,7 +230,10 @@ function applySeo(template, payload) {
   if (schemas.length > 0) {
     const schemaMarkup = schemas
       .filter(Boolean)
-      .map((item) => `    <script type="application/ld+json" data-prerender="true">${JSON.stringify(item)}</script>`)
+      .map(
+        (item) =>
+          `    <script type="application/ld+json" data-prerender="true">${serializeJsonForHtmlScript(item)}</script>`
+      )
       .join("\n");
     html = html.replace("</head>", `${schemaMarkup}\n  </head>`);
   }

@@ -1,5 +1,5 @@
 ﻿import { Link } from 'react-router-dom';
-import { Instagram, ArrowRight } from 'lucide-react';
+import { Instagram } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { fetchPublicSettings } from '@/lib/api';
 
@@ -24,32 +24,6 @@ export function Footer() {
     <footer className="w-full bg-black text-white py-12 md:py-16 overflow-x-hidden">
       <div className="w-full px-4 md:px-8">
         <div className="max-w-6xl mx-auto">
-          {/* Newsletter */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-12 border-b border-white/20">
-            <div>
-              <h3 className="text-xl md:text-2xl font-light mb-2">
-                Bültenimize Katılın
-              </h3>
-              <p className="text-sm text-white/60">
-                Yeni ürünler ve özel indirimlerden ilk siz haberdar olun.
-              </p>
-            </div>
-            <form className="flex w-full md:w-auto gap-3" onSubmit={(e) => e.preventDefault()}>
-              <input
-                type="email"
-                placeholder="E-posta adresiniz"
-                className="flex-1 md:w-64 bg-transparent border-b border-white/30 focus:border-white text-white placeholder:text-white/40 py-3 outline-none text-sm"
-              />
-              <button
-                type="submit"
-                className="bg-white text-black px-6 py-3 rounded-full text-sm font-medium hover:bg-gray-200 transition-colors flex items-center gap-2"
-              >
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </form>
-          </div>
-
-          {/* Links */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 py-12">
             {/* Müşteri Hizmetleri */}
             <div>
@@ -163,4 +137,5 @@ export function Footer() {
     </footer>
   );
 }
+
 

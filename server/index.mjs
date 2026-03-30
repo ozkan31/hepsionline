@@ -2933,8 +2933,20 @@ function mapUserRow(row, addresses = []) {
 
 function extractBearerToken(req) {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
-  return authHeader.slice("Bearer ".length).trim();
+  if (typeof authHeader !== "string") return null;
+  const match = authHeader.match(/^Bearer ([a-f0-9]{96})$/i);
+  return match ? match[1] : null;
+}
+
+function logAuthorizationScopeMismatch(req, expectedScope, detectedScope) {
+  console.warn("Authorization scope mismatch:", {
+    expectedScope,
+    detectedScope,
+    method: req.method,
+    path: req.originalUrl,
+    ip: getClientIp(req),
+    userAgent: String(req.get("user-agent") || ""),
+  });
 }
 
 function getUserSessionTtlMs(rememberMe = false) {
@@ -4096,6 +4108,11 @@ async function requireAuth(req, res, next) {
 
   const user = await getSessionUser(token);
   if (!user) {
+    const adminSession = await getAdminSession(token, { touch: false });
+    if (adminSession) {
+      logAuthorizationScopeMismatch(req, "user", "admin");
+      return res.status(403).json({ message: "Forbidden." });
+    }
     return res.status(401).json({ message: "Session expired or invalid." });
   }
 
@@ -4281,6 +4298,11 @@ async function requireAdminAuth(req, res, next) {
 
   const session = await getAdminSession(token, { touch: true });
   if (!session) {
+    const user = await getSessionUser(token);
+    if (user) {
+      logAuthorizationScopeMismatch(req, "admin", "user");
+      return res.status(403).json({ message: "Forbidden." });
+    }
     return res.status(401).json({ message: "Session expired or invalid." });
   }
 

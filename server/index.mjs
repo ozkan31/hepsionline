@@ -496,7 +496,6 @@ const allowedUploadMimeTypes = new Set([
   "image/gif",
   "image/avif",
   "image/bmp",
-  "image/svg+xml",
   "image/heic",
   "image/heif",
 ]);
@@ -517,7 +516,6 @@ const uploadStorage = multer.diskStorage({
       "image/avif": ".avif",
       "image/heic": ".heic",
       "image/heif": ".heif",
-      "image/svg+xml": ".svg",
     };
     const extFromMime = normalizedExtByMime[mime] || "";
     const extFromName = path.extname(file.originalname || "").toLowerCase();
@@ -2559,6 +2557,21 @@ async function normalizeUploadedImageFile(file) {
     mimetype: "image/jpeg",
     size: normalizedBuffer.length,
   };
+}
+
+async function cleanupUploadedFiles(files) {
+  const uploadList = Array.isArray(files) ? files : [];
+  await Promise.all(
+    uploadList.map(async (file) => {
+      const filePath = String(file?.path ?? "").trim();
+      if (!filePath) return;
+      try {
+        await fs.promises.unlink(filePath);
+      } catch {
+        // ignore cleanup failures
+      }
+    })
+  );
 }
 
 function resolveAdminImageSource(inputValue, productId, existingSources) {
@@ -7681,6 +7694,7 @@ app.get("/api/admin/users", requireAdminAuth, async (_req, res) => {
 app.post("/api/admin/upload-images", requireAdminAuth, (req, res) => {
   adminImageUpload.array("images", 15)(req, res, async (error) => {
     if (error) {
+      await cleanupUploadedFiles(req.files);
       if (error?.message === "INVALID_IMAGE_TYPE") {
         return res.status(400).json({ message: "Sadece görsel dosyaları yüklenebilir." });
       }
@@ -7703,6 +7717,7 @@ app.post("/api/admin/upload-images", requireAdminAuth, (req, res) => {
       const urls = normalizedFiles.map((file) => `/api/uploads/${file.filename}`);
       return res.json({ urls });
     } catch {
+      await cleanupUploadedFiles(files);
       return res.status(500).json({ message: "Görsel standart formata dönüştürülemedi." });
     }
   });

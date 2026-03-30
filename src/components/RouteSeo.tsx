@@ -3,7 +3,6 @@ import { useLocation } from 'react-router-dom';
 import { Seo } from '@/components/Seo';
 import {
   SEO_BRAND_NAME,
-  SEO_DEFAULT_DESCRIPTION,
   getSiteOrigin,
   normalizeSeoText,
   type SeoPayload,
@@ -60,7 +59,6 @@ export function RouteSeo() {
     const lowerPath = pathname.toLowerCase();
     const baseSchemas = createBaseSchemas();
     const normalizedPath = withTrailingSlash(lowerPath || '/');
-    const noindexPaths = new Set(['/giris/', '/hesabim/', '/sepet/', '/favoriler/', '/odeme/', '/akalin1453/']);
 
     if (lowerPath.startsWith('/product/')) {
       return null;
@@ -202,6 +200,16 @@ export function RouteSeo() {
         description: 'StilBags&Fashion kariyer fırsatları ve başvuru süreçleri hakkında bilgi alın.',
         canonical: '/kariyer/',
       },
+      '/yardim-merkezi': {
+        title: `Yardım Merkezi | ${SEO_BRAND_NAME}`,
+        description: 'Sipariş, kargo, iade ve hesap işlemleri için ihtiyaç duyduğunuz tüm yardım bağlantılarına tek yerden ulaşın.',
+        canonical: '/yardim-merkezi/',
+      },
+      '/404': {
+        title: `Sayfa Bulunamadı | ${SEO_BRAND_NAME}`,
+        description: 'Aradığınız sayfa bulunamadı. Yardım Merkezi veya mağaza bağlantılarıyla doğru bölüme geçin.',
+        canonical: '/404/',
+      },
     };
 
     const staticSeo = staticPages[lowerPath.replace(/\/+$/, '')];
@@ -215,15 +223,20 @@ export function RouteSeo() {
         schema: [...baseSchemas, pageSchema(staticSeo.canonical, staticSeo.title, staticSeo.description)],
       };
     }
-
-    const title = `${SEO_BRAND_NAME} | Kadın Çanta ve Aksesuar`;
     return {
-      title,
-      description: SEO_DEFAULT_DESCRIPTION,
+      title: `Sayfa Bulunamadı | ${SEO_BRAND_NAME}`,
+      description: 'Aradığınız sayfa bulunamadı. Yardım Merkezi, ürünler ve iletişim bağlantılarıyla doğru sayfaya geçebilirsiniz.',
       canonicalPath: normalizedPath,
       image: '/banner1.jpg',
-      noindex: noindexPaths.has(normalizedPath),
-      schema: [...baseSchemas, pageSchema(normalizedPath, title, SEO_DEFAULT_DESCRIPTION)],
+      noindex: true,
+      schema: [
+        ...baseSchemas,
+        pageSchema(
+          normalizedPath,
+          `Sayfa Bulunamadı | ${SEO_BRAND_NAME}`,
+          'Aradığınız sayfa bulunamadı. Yardım Merkezi, ürünler ve iletişim bağlantılarıyla doğru sayfaya geçebilirsiniz.'
+        ),
+      ],
     };
   }, [location.pathname, location.search]);
 

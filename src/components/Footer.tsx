@@ -56,6 +56,11 @@ export function Footer() {
               <h4 className="text-xs uppercase tracking-wider text-white/50 mb-4">Müşteri Hizmetleri</h4>
               <ul className="space-y-3">
                 <li>
+                  <Link to="/yardim-merkezi" className="text-sm text-white/80 hover:text-white transition-colors">
+                    Yardım Merkezi
+                  </Link>
+                </li>
+                <li>
                   <Link to="/iletisim" className="text-sm text-white/80 hover:text-white transition-colors">
                     İletişim
                   </Link>

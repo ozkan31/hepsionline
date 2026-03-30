@@ -329,6 +329,13 @@ function buildStaticPageConfigs() {
       type: "website",
     },
     {
+      route: "yardim-merkezi",
+      title: `Yardım Merkezi | ${BRAND}`,
+      description: "Sipariş, kargo, iade ve hesap işlemleri için ihtiyaç duyduğunuz tüm yardım bağlantılarına tek yerden ulaşın.",
+      image: "/banner3.jpg",
+      type: "website",
+    },
+    {
       route: "giris",
       title: `Giriş Yap | ${BRAND}`,
       description: "StilBags&Fashion hesabınıza giriş yapın veya yeni hesap oluşturun.",
@@ -372,6 +379,14 @@ function buildStaticPageConfigs() {
       route: "akalin1453",
       title: `Admin Paneli | ${BRAND}`,
       description: "Yönetim paneli.",
+      image: "/banner1.jpg",
+      type: "website",
+      noindex: true,
+    },
+    {
+      route: "404",
+      title: `Sayfa Bulunamadı | ${BRAND}`,
+      description: "Aradığınız sayfa bulunamadı. Yardım Merkezi veya mağaza bağlantılarıyla doğru sayfaya geçin.",
       image: "/banner1.jpg",
       type: "website",
       noindex: true,

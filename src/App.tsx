@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { lazy, Suspense, useEffect } from 'react';
 import { StoreProvider } from '@/store/StoreContext';
 import { Header } from '@/components/Header';
@@ -24,11 +24,13 @@ const PrivacyPolicyPage = lazy(() => import('@/pages/InfoPages').then((module) =
 const ReturnPolicyPage = lazy(() => import('@/pages/InfoPages').then((module) => ({ default: module.ReturnPolicyPage })));
 const SustainabilityPage = lazy(() => import('@/pages/InfoPages').then((module) => ({ default: module.SustainabilityPage })));
 const TermsPage = lazy(() => import('@/pages/InfoPages').then((module) => ({ default: module.TermsPage })));
+const HelpCenterPage = lazy(() => import('@/pages/SupportPages').then((module) => ({ default: module.HelpCenterPage })));
+const NotFoundPage = lazy(() => import('@/pages/SupportPages').then((module) => ({ default: module.NotFoundPage })));
 
 function RouteFallback() {
   return (
     <div className="min-h-[40vh] flex items-center justify-center text-gray-500">
-      Sayfa yÃ¼kleniyor...
+      Sayfa yükleniyor...
     </div>
   );
 }
@@ -120,7 +122,9 @@ function AppLayout() {
               <Route path="/kariyer" element={<CareerPage />} />
               <Route path="/gizlilik" element={<PrivacyPolicyPage />} />
               <Route path="/kullanim-kosullari" element={<TermsPage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
+              <Route path="/yardim-merkezi" element={<HelpCenterPage />} />
+              <Route path="/404" element={<NotFoundPage />} />
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
           )}
         </Suspense>
@@ -145,4 +149,5 @@ function App() {
 }
 
 export default App;
+
 

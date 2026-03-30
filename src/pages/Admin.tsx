@@ -43,6 +43,7 @@ import {
   uploadAdminProductImages,
   runAdminAbandonedCartCampaign,
 } from "@/lib/api";
+import { sanitizeExternalUrl } from "@/lib/safeLinks";
 import type {
   AdminAbandonedCartSettings,
   AdminContactRequest,
@@ -2623,9 +2624,9 @@ export function Admin() {
                                   )}
                                 </div>
                                 <div className="flex flex-col gap-2 sm:items-end">
-                                  {order.shipment?.trackingUrl ? (
+                                  {sanitizeExternalUrl(order.shipment?.trackingUrl) ? (
                                     <a
-                                      href={order.shipment.trackingUrl}
+                                      href={sanitizeExternalUrl(order.shipment?.trackingUrl)}
                                       target="_blank"
                                       rel="noreferrer"
                                       className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"
@@ -2633,9 +2634,9 @@ export function Admin() {
                                       Takip Linki
                                     </a>
                                   ) : null}
-                                  {order.shipment?.barcodeUrl ? (
+                                  {sanitizeExternalUrl(order.shipment?.barcodeUrl) ? (
                                     <a
-                                      href={order.shipment.barcodeUrl}
+                                      href={sanitizeExternalUrl(order.shipment?.barcodeUrl)}
                                       target="_blank"
                                       rel="noreferrer"
                                       className="border border-black text-black px-4 py-2 rounded-full text-sm hover:bg-black hover:text-white transition-colors"

@@ -22,6 +22,7 @@ import {
   verifyAuthFlowCode,
 } from "@/lib/api";
 import { clearStoredAbandonedCartCoupon } from "@/lib/abandonedCartCoupon";
+import { sanitizeExternalUrl } from "@/lib/safeLinks";
 import { loadTurkeyLocations } from "@/lib/turkiye";
 import type { Address } from "@/types";
 
@@ -1321,9 +1322,9 @@ export function Account() {
                         {(order.status === "shipped" || order.status === "delivered") && (() => {
                           const carrierName = String(order.shippingCompany || order.shipment?.carrierName || "").trim();
                           const trackingNo = String(order.shippingTrackingNo || order.shipment?.postNumber || "").trim();
-                          const trackingUrl = String(
+                          const trackingUrl = sanitizeExternalUrl(
                             order.shipment?.trackingUrl || (carrierName && trackingNo ? getTrackingUrl(carrierName, trackingNo) : "")
-                          ).trim();
+                          );
 
                           return (
                           <div className="mb-4 text-sm text-gray-600 space-y-1">

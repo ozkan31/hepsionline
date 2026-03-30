@@ -816,6 +816,21 @@ function appendQueryParamToUrl(rawUrl, key, value) {
   }
 }
 
+function sanitizeExternalHttpUrl(rawUrl) {
+  const input = String(rawUrl ?? "").trim();
+  if (!input) return "";
+
+  try {
+    const parsed = new URL(input);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return "";
+    }
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
 function buildSitemapBaseUrl(req) {
   const rawBase = String(
     process.env.PUBLIC_SITE_URL ??
@@ -4401,8 +4416,8 @@ function mapOrderShipmentRow(row) {
     referenceId: String(row.provider_reference_id ?? "").trim() || undefined,
     postNumber: String(row.provider_post_number ?? "").trim() || undefined,
     carrierName: String(row.carrier_name ?? "").trim() || undefined,
-    trackingUrl: String(row.tracking_url ?? "").trim() || undefined,
-    barcodeUrl: String(row.barcode_url ?? "").trim() || undefined,
+    trackingUrl: sanitizeExternalHttpUrl(row.tracking_url) || undefined,
+    barcodeUrl: sanitizeExternalHttpUrl(row.barcode_url) || undefined,
     errorMessage: String(row.error_message ?? "").trim() || undefined,
     providerStatusCode: providerStatusCode ?? undefined,
     providerStatusName: providerStatusName || undefined,
@@ -4468,9 +4483,9 @@ function extractNavlungoCheckPayload(payload) {
     referenceId: String(data.reference_id ?? "").trim(),
     postNumber: String(data.post_number ?? "").trim(),
     carrierName: String(post.carrier_name ?? data.carrier_name ?? "").trim(),
-    trackingUrl: String(data.tracking_url ?? "").trim(),
-    carrierTrackingUrl: String(data.carrier_tracking_url ?? "").trim(),
-    barcodeUrl: String(data.barcode_url ?? data.barcode ?? "").trim(),
+    trackingUrl: sanitizeExternalHttpUrl(data.tracking_url),
+    carrierTrackingUrl: sanitizeExternalHttpUrl(data.carrier_tracking_url),
+    barcodeUrl: sanitizeExternalHttpUrl(data.barcode_url ?? data.barcode),
     statusCode: Number(status.status_code ?? data.status_code ?? 0) || 0,
     statusName: String(status.status_name ?? data.status_name ?? "").trim(),
     pickedUpDate: String(status.picked_up_date ?? "").trim(),
@@ -4949,8 +4964,8 @@ async function upsertOrderShipmentRecord({
       String(referenceId ?? "").trim() || null,
       String(postNumber ?? "").trim() || null,
       String(carrierName ?? "").trim() || null,
-      String(trackingUrl ?? "").trim() || null,
-      String(barcodeUrl ?? "").trim() || null,
+      sanitizeExternalHttpUrl(trackingUrl) || null,
+      sanitizeExternalHttpUrl(barcodeUrl) || null,
       String(errorMessage ?? "").trim() || null,
       requestPayload == null ? null : JSON.stringify(requestPayload),
       responsePayload == null ? null : JSON.stringify(responsePayload),
@@ -5056,8 +5071,8 @@ async function createNavlungoShipmentForOrder({ order, user, deliveryAddress, fo
       referenceId: String(postResponse.reference_id ?? requestMeta.referenceId ?? orderId).trim(),
       postNumber: String(postResponse.post_number ?? "").trim(),
       carrierName: String(postResponse.post?.carrier_name ?? postResponse.carrier_name ?? "").trim(),
-      trackingUrl: String(postResponse.tracking_url ?? "").trim(),
-      barcodeUrl: String(postResponse.barcode_url ?? "").trim(),
+      trackingUrl: sanitizeExternalHttpUrl(postResponse.tracking_url),
+      barcodeUrl: sanitizeExternalHttpUrl(postResponse.barcode_url),
     });
 
     console.info("Navlungo shipment created:", {

@@ -98,7 +98,19 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+    .replaceAll("'", "&#39;")
+    .replaceAll("Ç", "&#199;")
+    .replaceAll("ç", "&#231;")
+    .replaceAll("Ğ", "&#286;")
+    .replaceAll("ğ", "&#287;")
+    .replaceAll("İ", "&#304;")
+    .replaceAll("ı", "&#305;")
+    .replaceAll("Ö", "&#214;")
+    .replaceAll("ö", "&#246;")
+    .replaceAll("Ş", "&#350;")
+    .replaceAll("ş", "&#351;")
+    .replaceAll("Ü", "&#220;")
+    .replaceAll("ü", "&#252;");
 }
 
 function serializeJsonForHtmlScript(value) {
@@ -106,6 +118,7 @@ function serializeJsonForHtmlScript(value) {
     .replace(/</g, "\\u003c")
     .replace(/>/g, "\\u003e")
     .replace(/&/g, "\\u0026")
+    .replace(/[\u007F-\uFFFF]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`)
     .replace(/\u2028/g, "\\u2028")
     .replace(/\u2029/g, "\\u2029");
 }

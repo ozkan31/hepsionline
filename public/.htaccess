@@ -8,6 +8,8 @@ AddDefaultCharset UTF-8
   Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 </IfModule>
 
+ErrorDocument 404 /error404.html
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
@@ -38,6 +40,11 @@ AddDefaultCharset UTF-8
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule ^ - [G,L]
+
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteCond %{REQUEST_URI} !^/api/
+  RewriteRule ^ - [R=404,L]
 </IfModule>
 
 DirectoryIndex index.html

@@ -376,6 +376,22 @@ function buildStaticPageConfigs() {
       noindex: true,
     },
     {
+      route: "odeme/basarili",
+      title: `Ödeme Başarılı | ${BRAND}`,
+      description: "Ödemeniz alındı. Sipariş detaylarınızı ve sonraki adımları bu sayfadan takip edebilirsiniz.",
+      image: "/banner1.jpg",
+      type: "website",
+      noindex: true,
+    },
+    {
+      route: "odeme/basarisiz",
+      title: `Ödeme Başarısız | ${BRAND}`,
+      description: "Ödeme işleminiz tamamlanamadı. Bilgilerinizi kontrol ederek işlemi yeniden deneyebilirsiniz.",
+      image: "/banner1.jpg",
+      type: "website",
+      noindex: true,
+    },
+    {
       route: "akalin1453",
       title: `Admin Paneli | ${BRAND}`,
       description: "Yönetim paneli.",
@@ -641,6 +657,9 @@ async function main() {
   for (const config of staticConfigs) {
     const html = applySeo(template, config);
     ensureRouteFile(config.route, html);
+    if (config.route === "404") {
+      fs.writeFileSync(path.join(distDir, "error404.html"), html, "utf8");
+    }
   }
 
   for (const config of productConfigs) {

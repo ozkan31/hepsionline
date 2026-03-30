@@ -210,16 +210,30 @@ export function RouteSeo() {
         description: 'Aradığınız sayfa bulunamadı. Yardım Merkezi veya mağaza bağlantılarıyla doğru bölüme geçin.',
         canonical: '/404/',
       },
+      '/odeme/basarili': {
+        title: `Ödeme Başarılı | ${SEO_BRAND_NAME}`,
+        description: 'Ödemeniz alındı. Sipariş detaylarınızı ve sonraki adımları bu sayfadan takip edebilirsiniz.',
+        canonical: '/odeme/basarili/',
+      },
+      '/odeme/basarisiz': {
+        title: `Ödeme Başarısız | ${SEO_BRAND_NAME}`,
+        description: 'Ödeme işleminiz tamamlanamadı. Bilgilerinizi kontrol ederek işlemi yeniden deneyebilirsiniz.',
+        canonical: '/odeme/basarisiz/',
+      },
     };
 
     const staticSeo = staticPages[lowerPath.replace(/\/+$/, '')];
     if (staticSeo) {
+      const shouldNoindexStatic =
+        staticSeo.canonical.startsWith('/404/') ||
+        staticSeo.canonical.startsWith('/odeme/basarili/') ||
+        staticSeo.canonical.startsWith('/odeme/basarisiz/');
       return {
         title: staticSeo.title,
         description: staticSeo.description,
         canonicalPath: staticSeo.canonical,
         image: staticSeo.image || '/banner3.jpg',
-        noindex: withTrailingSlash(lowerPath) !== staticSeo.canonical,
+        noindex: shouldNoindexStatic || withTrailingSlash(lowerPath) !== staticSeo.canonical,
         schema: [...baseSchemas, pageSchema(staticSeo.canonical, staticSeo.title, staticSeo.description)],
       };
     }

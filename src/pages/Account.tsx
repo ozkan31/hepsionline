@@ -400,14 +400,16 @@ export function Account() {
         });
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
+  const getStatusText = (order: typeof sortedOrders[number]) => {
+    const shipmentStatusName = String(order.shipment?.providerStatusName ?? "").trim().toLocaleLowerCase("tr-TR");
+
+    switch (order.status) {
       case "delivered":
         return "Teslim Edildi";
       case "shipped":
         return "Kargoya Verildi";
       case "processing":
-        return "Sipariş Alındı";
+        return shipmentStatusName.includes("teslim alınacak") ? "Hazırlanıyor" : "Sipariş Alındı";
       default:
         return "Sipariş Alındı";
     }
@@ -1306,7 +1308,7 @@ export function Account() {
                             <p className="text-sm text-gray-500">{formatOrderDate(order.date)}</p>
                           </div>
                           <span className={`text-xs px-3 py-1 rounded-full ${getStatusColor(order.status)}`}>
-                            {getStatusText(order.status)}
+                            {getStatusText(order)}
                           </span>
                         </div>
                         <div className="space-y-3 mb-4">

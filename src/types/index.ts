@@ -56,6 +56,11 @@ export interface Order {
   status: 'processing' | 'shipped' | 'delivered';
   shippingCompany?: string;
   shippingTrackingNo?: string;
+  shipment?: {
+    status?: "created" | "failed";
+    providerStatusCode?: number;
+    providerStatusName?: string;
+  } | null;
   shippingAddress?: {
     addressName?: string;
     firstName: string;

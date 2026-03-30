@@ -3156,6 +3156,36 @@ async function getUserOrders(userId) {
     orderIds
   );
 
+  let shipmentRows = [];
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT
+        order_id,
+        provider,
+        status,
+        provider_reference_id,
+        provider_post_number,
+        carrier_name,
+        tracking_url,
+        barcode_url,
+        error_message,
+        response_payload_json,
+        created_at,
+        updated_at
+      FROM order_shipments
+      WHERE order_id IN (${placeholders}) AND provider = 'navlungo'
+      ORDER BY updated_at DESC, created_at DESC
+      `,
+      orderIds
+    );
+    shipmentRows = rows;
+  } catch (error) {
+    if (error?.code !== "ER_NO_SUCH_TABLE") {
+      throw error;
+    }
+  }
+
   const itemsByOrderId = new Map();
   for (const row of itemRows) {
     const list = itemsByOrderId.get(row.order_id) ?? [];
@@ -3173,6 +3203,12 @@ async function getUserOrders(userId) {
     itemsByOrderId.set(row.order_id, list);
   }
 
+  const shipmentByOrderId = new Map();
+  for (const row of shipmentRows) {
+    if (shipmentByOrderId.has(row.order_id)) continue;
+    shipmentByOrderId.set(row.order_id, mapOrderShipmentRow(row));
+  }
+
   return orderRows.map((row) => ({
     id: row.id,
     date: row.created_at ?? row.order_date,
@@ -3185,6 +3221,7 @@ async function getUserOrders(userId) {
     status: row.status,
     shippingCompany: row.shipping_company ?? "",
     shippingTrackingNo: row.shipping_tracking_no ?? "",
+    shipment: shipmentByOrderId.get(row.id) ?? undefined,
   }));
 }
 

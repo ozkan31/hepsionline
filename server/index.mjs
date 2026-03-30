@@ -28,11 +28,25 @@ const distIndexHtml = path.join(distDir, "index.html");
 const uploadsDir = path.resolve(__dirname, "../uploads");
 const uploadVariantsDir = path.join(uploadsDir, "variants");
 const responseCache = new Map();
+const securityCounterCache = new Map();
 const REDIS_CACHE_PREFIX = String(process.env.REDIS_CACHE_PREFIX || "stilbags-cache:");
 const REDIS_URL = String(process.env.REDIS_URL || "").trim();
 const REDIS_ENABLED = REDIS_URL.length > 0;
 let redisClient = null;
 let redisConnected = false;
+const SECURITY_REDIS_PREFIX = `${REDIS_CACHE_PREFIX}security:`;
+const CORS_ALLOWED_ORIGINS = new Set(
+  [
+    "https://stilbagsfashion.com",
+    "https://www.stilbagsfashion.com",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    String(process.env.FRONTEND_ORIGIN ?? "").trim(),
+    String(process.env.SITE_URL ?? "").trim(),
+  ].filter(Boolean)
+);
 const CACHE_TTL_MS = {
   settings: 15 * 60 * 1000,
   categories: 30 * 60 * 1000,
@@ -40,6 +54,43 @@ const CACHE_TTL_MS = {
   productDetail: 5 * 60 * 1000,
   productMedia: 5 * 60 * 1000,
 };
+const AUTH_SECURITY_LIMITS = Object.freeze({
+  authLogin: {
+    scope: "auth-login",
+    message: "Çok fazla giriş denemesi yapıldı. Lütfen biraz sonra tekrar deneyin.",
+    windowSeconds: 15 * 60,
+    ipLimit: 25,
+    identifierLimit: 6,
+  },
+  adminLogin: {
+    scope: "admin-login",
+    message: "Çok fazla admin giriş denemesi yapıldı. Lütfen biraz sonra tekrar deneyin.",
+    windowSeconds: 15 * 60,
+    ipLimit: 10,
+    identifierLimit: 5,
+  },
+  authFlowStart: {
+    scope: "auth-flow-start",
+    message: "Çok fazla kayıt veya doğrulama kodu talebi yapıldı. Lütfen biraz sonra tekrar deneyin.",
+    windowSeconds: 15 * 60,
+    ipLimit: 12,
+    identifierLimit: 3,
+  },
+  authFlowVerify: {
+    scope: "auth-flow-verify",
+    message: "Çok fazla doğrulama kodu denemesi yapıldı. Lütfen biraz sonra tekrar deneyin.",
+    windowSeconds: 10 * 60,
+    ipLimit: 20,
+    identifierLimit: 5,
+  },
+  passwordForgot: {
+    scope: "auth-password-forgot",
+    message: "Çok fazla şifre yenileme talebi yapıldı. Lütfen biraz sonra tekrar deneyin.",
+    windowSeconds: 15 * 60,
+    ipLimit: 10,
+    identifierLimit: 3,
+  },
+});
 const IMAGE_VARIANT_SPECS = {
   thumb: { width: 200, quality: 72 },
   card: { width: 480, quality: 78 },
@@ -187,6 +238,176 @@ async function invalidateSettingsCache() {
   await invalidateCacheByPrefix("settings:");
 }
 
+function getSecurityRedisKey(counterKey) {
+  return `${SECURITY_REDIS_PREFIX}${counterKey}`;
+}
+
+function getSecurityFallbackEntry(counterKey) {
+  const entry = securityCounterCache.get(counterKey);
+  if (!entry) return null;
+  if (Number(entry.expiresAt || 0) <= Date.now()) {
+    securityCounterCache.delete(counterKey);
+    return null;
+  }
+  return entry;
+}
+
+async function getSecurityCounter(counterKey) {
+  const fallbackEntry = getSecurityFallbackEntry(counterKey);
+  if (fallbackEntry) {
+    return {
+      count: Number(fallbackEntry.count || 0),
+      retryAfterSeconds: Math.max(1, Math.ceil((fallbackEntry.expiresAt - Date.now()) / 1000)),
+    };
+  }
+
+  if (!redisClient || !redisConnected) {
+    return { count: 0, retryAfterSeconds: 0 };
+  }
+
+  try {
+    const redisKey = getSecurityRedisKey(counterKey);
+    const [countRaw, ttlRaw] = await Promise.all([redisClient.get(redisKey), redisClient.ttl(redisKey)]);
+    const count = Number.parseInt(String(countRaw ?? "0"), 10) || 0;
+    const ttl = Number.parseInt(String(ttlRaw ?? "0"), 10) || 0;
+    return {
+      count,
+      retryAfterSeconds: ttl > 0 ? ttl : 0,
+    };
+  } catch (error) {
+    console.warn("Security counter read failed:", error instanceof Error ? error.message : error);
+    return { count: 0, retryAfterSeconds: 0 };
+  }
+}
+
+async function incrementSecurityCounter(counterKey, ttlSeconds) {
+  const normalizedTtl = Math.max(1, Math.ceil(ttlSeconds));
+
+  if (redisClient && redisConnected) {
+    try {
+      const redisKey = getSecurityRedisKey(counterKey);
+      const count = await redisClient.incr(redisKey);
+      if (count === 1) {
+        await redisClient.expire(redisKey, normalizedTtl);
+      }
+      const ttl = await redisClient.ttl(redisKey);
+      return {
+        count,
+        retryAfterSeconds: ttl > 0 ? ttl : normalizedTtl,
+      };
+    } catch (error) {
+      console.warn("Security counter write failed:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  const existing = getSecurityFallbackEntry(counterKey);
+  if (!existing) {
+    const nextEntry = {
+      count: 1,
+      expiresAt: Date.now() + normalizedTtl * 1000,
+    };
+    securityCounterCache.set(counterKey, nextEntry);
+    return {
+      count: 1,
+      retryAfterSeconds: normalizedTtl,
+    };
+  }
+
+  existing.count = Number(existing.count || 0) + 1;
+  securityCounterCache.set(counterKey, existing);
+  return {
+    count: Number(existing.count || 0),
+    retryAfterSeconds: Math.max(1, Math.ceil((existing.expiresAt - Date.now()) / 1000)),
+  };
+}
+
+async function clearSecurityCounter(counterKey) {
+  securityCounterCache.delete(counterKey);
+
+  if (!redisClient || !redisConnected) {
+    return;
+  }
+
+  try {
+    await redisClient.del(getSecurityRedisKey(counterKey));
+  } catch (error) {
+    console.warn("Security counter clear failed:", error instanceof Error ? error.message : error);
+  }
+}
+
+function buildSecurityScopeKeys(req, scope, identifier = "") {
+  const ipHash = sha256(getClientIp(req));
+  const keys = [{ key: `${scope}:ip:${ipHash}`, type: "ip" }];
+  const normalizedIdentifier = String(identifier ?? "").trim().toLowerCase();
+  if (normalizedIdentifier) {
+    keys.push({
+      key: `${scope}:identifier:${sha256(normalizedIdentifier)}`,
+      type: "identifier",
+    });
+  }
+  return keys;
+}
+
+async function getRateLimitBlockState(req, config, identifier = "") {
+  const keys = buildSecurityScopeKeys(req, config.scope, identifier);
+  const states = await Promise.all(
+    keys.map(async (entry) => {
+      const state = await getSecurityCounter(entry.key);
+      const limit = entry.type === "ip" ? Number(config.ipLimit || 0) : Number(config.identifierLimit || 0);
+      return { ...entry, ...state, limit };
+    })
+  );
+  const blocked = states.find((entry) => entry.limit > 0 && entry.count >= entry.limit);
+  if (!blocked) {
+    return null;
+  }
+  return {
+    retryAfterSeconds: Math.max(1, Number(blocked.retryAfterSeconds || config.windowSeconds || 60)),
+  };
+}
+
+async function recordRateLimitFailure(req, config, identifier = "") {
+  const keys = buildSecurityScopeKeys(req, config.scope, identifier);
+  const states = await Promise.all(
+    keys.map(async (entry) => {
+      const state = await incrementSecurityCounter(entry.key, config.windowSeconds);
+      const limit = entry.type === "ip" ? Number(config.ipLimit || 0) : Number(config.identifierLimit || 0);
+      return { ...entry, ...state, limit };
+    })
+  );
+  const blocked = states.find((entry) => entry.limit > 0 && entry.count >= entry.limit);
+  if (!blocked) {
+    return null;
+  }
+  return {
+    retryAfterSeconds: Math.max(1, Number(blocked.retryAfterSeconds || config.windowSeconds || 60)),
+  };
+}
+
+async function clearRateLimitFailures(req, config, identifier = "") {
+  const keys = buildSecurityScopeKeys(req, config.scope, identifier);
+  await Promise.all(keys.map((entry) => clearSecurityCounter(entry.key)));
+}
+
+async function enforceRateLimit(req, res, config, identifier = "") {
+  const blocked = await getRateLimitBlockState(req, config, identifier);
+  if (!blocked) {
+    return false;
+  }
+  res.setHeader("Retry-After", String(blocked.retryAfterSeconds));
+  res.status(429).json({ message: config.message });
+  return true;
+}
+
+function timingSafeStringEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left ?? ""), "utf8");
+  const rightBuffer = Buffer.from(String(right ?? ""), "utf8");
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
 function isGoogleCrawlerRequest(userAgent = "") {
   const normalized = String(userAgent || "").toLowerCase();
   return (
@@ -228,7 +449,30 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors());
+app.disable("x-powered-by");
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), payment=()"
+  );
+  next();
+});
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || CORS_ALLOWED_ORIGINS.has(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error("Not allowed by CORS"));
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 app.use(express.json({ limit: "50mb" }));
 const staticUploadOptions = {
   maxAge: "365d",
@@ -5003,16 +5247,9 @@ app.get("/api/health", async (_req, res) => {
 });
 
 app.post("/api/auth/email/status", async (req, res) => {
-  try {
-    const email = String(req.body?.email ?? "").trim().toLowerCase();
-    if (!email) {
-      return res.status(400).json({ message: "E-posta zorunludur." });
-    }
-    const [rows] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
-    return res.json({ exists: rows.length > 0 });
-  } catch (error) {
-    return res.status(500).json({ message: "E-posta kontrolü başarısız." });
-  }
+  return res.status(410).json({
+    message: "Bu uç güvenlik nedeniyle devre dışı bırakıldı. Lütfen doğrudan giriş veya kayıt akışını kullanın.",
+  });
 });
 
 app.post("/api/auth/flow/start", async (req, res) => {
@@ -5024,8 +5261,11 @@ app.post("/api/auth/flow/start", async (req, res) => {
     const gender = String(req.body?.gender ?? "").trim().toLowerCase();
     const phone = String(req.body?.phone ?? "").trim();
     const termsAccepted = Boolean(req.body?.termsAccepted);
-    const rememberMe = req.body?.rememberMe === undefined ? true : Boolean(req.body?.rememberMe);
     const normalizedGender = gender === "kadin" || gender === "erkek" ? gender : "";
+
+    if (await enforceRateLimit(req, res, AUTH_SECURITY_LIMITS.authFlowStart, email)) {
+      return;
+    }
 
     if (!email || !password) {
       return res.status(400).json({ message: "E-posta ve şifre zorunludur." });
@@ -5034,28 +5274,19 @@ app.post("/api/auth/flow/start", async (req, res) => {
       return res.status(400).json({ message: "Şifre en az 6 karakter olmalı." });
     }
 
-    const [rows] = await pool.query(
-      `SELECT id, first_name, last_name, email, phone, gender, password_hash FROM users WHERE email = ? LIMIT 1`,
-      [email]
-    );
-
-    if (rows.length > 0) {
-      const found = rows[0];
-      const isValid = await bcrypt.compare(password, found.password_hash);
-      if (!isValid) {
-        return res.status(401).json({ message: "Şifre hatalı." });
-      }
-      const token = await createSession(found.id, { rememberMe });
-      const user = await getSessionUser(token);
-      return res.json({ mode: "login", token, user });
-    }
-
     if (!firstName || !lastName) {
       return res.status(400).json({ message: "Ad ve soyad zorunludur." });
     }
 
     if (!termsAccepted) {
       return res.status(400).json({ message: "Gizlilik Politikası ve Kullanım Koşulları onayı zorunludur." });
+    }
+
+    const [rows] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
+    if (rows.length > 0) {
+      return res.status(409).json({
+        message: "Bu e-posta ile bir hesap zaten mevcut. Lütfen giriş yapın veya şifrenizi yenileyin.",
+      });
     }
 
     if (!isSmtpConfigured) {
@@ -5123,6 +5354,9 @@ app.post("/api/auth/flow/verify", async (req, res) => {
     const email = String(req.body?.email ?? "").trim().toLowerCase();
     const code = String(req.body?.code ?? "").trim();
     const rememberMe = req.body?.rememberMe === undefined ? true : Boolean(req.body?.rememberMe);
+    if (await enforceRateLimit(req, res, AUTH_SECURITY_LIMITS.authFlowVerify, email)) {
+      return;
+    }
     if (!email || !code) {
       return res.status(400).json({ message: "E-posta ve doğrulama kodu zorunludur." });
     }
@@ -5139,6 +5373,11 @@ app.post("/api/auth/flow/verify", async (req, res) => {
     );
 
     if (verifyRows.length === 0) {
+      const blocked = await recordRateLimitFailure(req, AUTH_SECURITY_LIMITS.authFlowVerify, email);
+      if (blocked) {
+        res.setHeader("Retry-After", String(blocked.retryAfterSeconds));
+        return res.status(429).json({ message: AUTH_SECURITY_LIMITS.authFlowVerify.message });
+      }
       return res.status(400).json({ message: "Doğrulama kodu geçersiz veya süresi dolmuş." });
     }
 
@@ -5199,6 +5438,7 @@ app.post("/api/auth/flow/verify", async (req, res) => {
 
     const token = await createSession(userId, { rememberMe });
     const user = await getSessionUser(token);
+    await clearRateLimitFailures(req, AUTH_SECURITY_LIMITS.authFlowVerify, email);
     if (createdNewUser && user?.email) {
       queueWelcomeEmail(req, {
         to: user.email,
@@ -5216,55 +5456,9 @@ app.post("/api/auth/flow/verify", async (req, res) => {
 });
 
 app.post("/api/auth/register", async (req, res) => {
-  try {
-    const { firstName, lastName, email, password, confirmPassword } = req.body ?? {};
-    const rememberMe = req.body?.rememberMe === undefined ? true : Boolean(req.body?.rememberMe);
-
-    if (!firstName || !lastName || !email || !password || !confirmPassword) {
-      return res.status(400).json({ message: "All fields are required." });
-    }
-
-    if (password !== confirmPassword) {
-      return res.status(400).json({ message: "Passwords do not match." });
-    }
-
-    if (String(password).length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters." });
-    }
-
-    const normalizedEmail = String(email).trim().toLowerCase();
-    const [existing] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [
-      normalizedEmail,
-    ]);
-
-    if (existing.length > 0) {
-      return res.status(409).json({ message: "This email is already registered." });
-    }
-
-    const userId = crypto.randomUUID();
-    const passwordHash = await bcrypt.hash(String(password), 10);
-
-    await pool.query(
-      `
-      INSERT INTO users (id, first_name, last_name, email, phone, password_hash)
-      VALUES (?, ?, ?, ?, ?, ?)
-      `,
-      [userId, String(firstName).trim(), String(lastName).trim(), normalizedEmail, "", passwordHash]
-    );
-
-    const token = await createSession(userId, { rememberMe });
-    const user = await getSessionUser(token);
-    if (user?.email) {
-      queueWelcomeEmail(req, {
-        to: user.email,
-        firstName: user.firstName,
-        source: "auth-register",
-      });
-    }
-    return res.status(201).json({ token, user });
-  } catch (error) {
-    return res.status(500).json({ message: "Registration failed." });
-  }
+  return res.status(410).json({
+    message: "Bu kayıt ucu devre dışı bırakıldı. Lütfen doğrulama kodlu kayıt akışını kullanın.",
+  });
 });
 
 app.post("/api/auth/login", async (req, res) => {
@@ -5276,6 +5470,9 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
+    if (await enforceRateLimit(req, res, AUTH_SECURITY_LIMITS.authLogin, normalizedEmail)) {
+      return;
+    }
     const [rows] = await pool.query(
       `
       SELECT id, first_name, last_name, email, phone, password_hash
@@ -5287,17 +5484,28 @@ app.post("/api/auth/login", async (req, res) => {
     );
 
     if (rows.length === 0) {
+      const blocked = await recordRateLimitFailure(req, AUTH_SECURITY_LIMITS.authLogin, normalizedEmail);
+      if (blocked) {
+        res.setHeader("Retry-After", String(blocked.retryAfterSeconds));
+        return res.status(429).json({ message: AUTH_SECURITY_LIMITS.authLogin.message });
+      }
       return res.status(401).json({ message: "Invalid email or password." });
     }
 
     const found = rows[0];
     const isValid = await bcrypt.compare(String(password), found.password_hash);
     if (!isValid) {
+      const blocked = await recordRateLimitFailure(req, AUTH_SECURITY_LIMITS.authLogin, normalizedEmail);
+      if (blocked) {
+        res.setHeader("Retry-After", String(blocked.retryAfterSeconds));
+        return res.status(429).json({ message: AUTH_SECURITY_LIMITS.authLogin.message });
+      }
       return res.status(401).json({ message: "Invalid email or password." });
     }
 
     const token = await createSession(found.id, { rememberMe });
     const user = await getSessionUser(token);
+    await clearRateLimitFailures(req, AUTH_SECURITY_LIMITS.authLogin, normalizedEmail);
     return res.json({ token, user });
   } catch (error) {
     return res.status(500).json({ message: "Login failed." });
@@ -5311,9 +5519,18 @@ app.post("/api/auth/password/forgot", async (req, res) => {
       return res.status(400).json({ message: "E-posta zorunludur." });
     }
 
+    if (await enforceRateLimit(req, res, AUTH_SECURITY_LIMITS.passwordForgot, email)) {
+      return;
+    }
+
     if (!isSmtpConfigured) {
       return res.status(500).json({ message: "E-posta servisi henüz yapılandırılmamış." });
     }
+
+    const genericSuccessPayload = {
+      ok: true,
+      message: "Eğer bu e-posta sistemimizde kayıtlıysa, şifre yenileme bağlantısı gönderilecektir.",
+    };
 
     const [rows] = await pool.query(
       `
@@ -5326,7 +5543,7 @@ app.post("/api/auth/password/forgot", async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ message: "Bu e-posta ile kayitli kullanici bulunmuyor." });
+      return res.json(genericSuccessPayload);
     }
 
     const user = rows[0];
@@ -5363,10 +5580,7 @@ app.post("/api/auth/password/forgot", async (req, res) => {
       }
     });
 
-    return res.json({
-      ok: true,
-      message: "Şifre yenileme bağlantısı e-posta adresinize gönderildi.",
-    });
+    return res.json(genericSuccessPayload);
   } catch (error) {
     if (error?.code === "ER_NO_SUCH_TABLE") {
       return res.status(500).json({
@@ -5691,10 +5905,13 @@ app.put("/api/auth/addresses/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/auth/addresses/:id", requireAuth, async (req, res) => {
   try {
-    await pool.query(`DELETE FROM user_addresses WHERE id = ? AND user_id = ?`, [
+    const [result] = await pool.query(`DELETE FROM user_addresses WHERE id = ? AND user_id = ?`, [
       req.params.id,
       req.authUser.id,
     ]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Address not found." });
+    }
     const user = await getSessionUser(req.authToken);
     return res.json({ user });
   } catch (error) {
@@ -6211,17 +6428,29 @@ app.post("/api/admin/login", async (req, res) => {
     return res.status(400).json({ message: "Email and password are required." });
   }
 
+  if (await enforceRateLimit(req, res, AUTH_SECURITY_LIMITS.adminLogin, normalizedEmail)) {
+    return;
+  }
+
   const matched = adminPairs.some(
-    (pair) => pair.email === normalizedEmail && pair.password === normalizedPassword
+    (pair) =>
+      timingSafeStringEqual(pair.email, normalizedEmail) &&
+      timingSafeStringEqual(pair.password, normalizedPassword)
   );
 
   if (!matched) {
+    const blocked = await recordRateLimitFailure(req, AUTH_SECURITY_LIMITS.adminLogin, normalizedEmail);
+    if (blocked) {
+      res.setHeader("Retry-After", String(blocked.retryAfterSeconds));
+      return res.status(429).json({ message: AUTH_SECURITY_LIMITS.adminLogin.message });
+    }
     return res.status(401).json({ message: "Invalid admin credentials." });
   }
 
   const session = await createAdminSession(normalizedEmail, {
     rememberMe: normalizedRememberMe,
   });
+  await clearRateLimitFailures(req, AUTH_SECURITY_LIMITS.adminLogin, normalizedEmail);
 
   return res.json({
     token: session.token,

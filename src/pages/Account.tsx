@@ -3,13 +3,13 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Heart, LogOut, MapPin, Package, User, ChevronDown, ChevronUp, Copy } from "lucide-react";
 import { useStore } from "@/store/StoreContext";
 import {
-  checkAuthEmailStatus,
   clearAuthToken,
   deleteAddress,
   fetchOrders,
   fetchCurrentUser,
   getAuthRememberPreference,
   getAuthToken,
+  loginUser,
   loginWithGoogle,
   logoutUser,
   requestPasswordReset,
@@ -26,6 +26,7 @@ import { loadTurkeyLocations } from "@/lib/turkiye";
 import type { Address } from "@/types";
 
 type AuthMode = "login" | "forgot" | "reset";
+type AuthEntryMode = "login" | "register";
 type ActiveTab = "orders" | "profile" | "addresses" | "wishlist";
 
 const emptyAddressForm: Omit<Address, "id"> = {
@@ -56,7 +57,7 @@ export function Account() {
   const [authPhone, setAuthPhone] = useState("");
   const [authTermsAccepted, setAuthTermsAccepted] = useState(false);
   const [authRememberMe, setAuthRememberMe] = useState(() => getAuthRememberPreference());
-  const [authEmailExists, setAuthEmailExists] = useState<boolean | null>(null);
+  const [authEntryMode, setAuthEntryMode] = useState<AuthEntryMode>("login");
   const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
   const [isVerificationCodeSending, setIsVerificationCodeSending] = useState(false);
   const [verificationDigits, setVerificationDigits] = useState<string[]>(["", "", "", "", "", ""]);
@@ -460,75 +461,60 @@ export function Account() {
     }
   };
 
-  const handleCheckEmailForAuthFlow = async (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
     setSuccessMessage("");
     try {
-      const result = await checkAuthEmailStatus(authEmail);
-      setAuthEmailExists(result.exists);
-      setAuthPassword("");
-      setAuthFirstName("");
-      setAuthLastName("");
-      setAuthGender("");
-      setAuthPhone("");
-      setAuthTermsAccepted(false);
-      setSuccessMessage("");
+      const user = await loginUser({
+        email: authEmail,
+        password: authPassword,
+        rememberMe: authRememberMe,
+      });
+      dispatch({ type: "SET_USER", payload: user });
+      navigateAfterAuth();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "E-posta kontrol edilemedi.");
+      setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "Giriş yapılamadı.");
     }
   };
 
-  const handleStartUnifiedAuthFlow = async (e: React.FormEvent) => {
+  const handleStartRegisterFlow = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
     setSuccessMessage("");
-    const isRegisterAttempt = authEmailExists === false;
-    if (isRegisterAttempt && (!authFirstName.trim() || !authLastName.trim())) {
+    if (!authFirstName.trim() || !authLastName.trim()) {
       setErrorMessage("Ad ve soyad zorunludur.");
       return;
     }
-    if (isRegisterAttempt && !authTermsAccepted) {
+    if (!authTermsAccepted) {
       setErrorMessage("Devam etmek için Gizlilik Politikası ve Kullanım Koşulları'nı onaylayın.");
       return;
     }
 
-    if (isRegisterAttempt) {
-      // Open modal immediately for faster UX while code is being sent in background.
-      setIsVerificationModalOpen(true);
-      setVerificationDigits(["", "", "", "", "", ""]);
-      setIsVerificationCodeSending(true);
-    }
+    setIsVerificationModalOpen(true);
+    setVerificationDigits(["", "", "", "", "", ""]);
+    setIsVerificationCodeSending(true);
 
     try {
       const result = await startAuthFlow({
         email: authEmail,
         password: authPassword,
-        firstName: isRegisterAttempt ? authFirstName.trim() : undefined,
-        lastName: isRegisterAttempt ? authLastName.trim() : undefined,
-        gender: authEmailExists ? undefined : authGender || undefined,
-        phone: isRegisterAttempt ? authPhone.trim() : undefined,
-        termsAccepted: isRegisterAttempt ? authTermsAccepted : undefined,
+        firstName: authFirstName.trim(),
+        lastName: authLastName.trim(),
+        gender: authGender || undefined,
+        phone: authPhone.trim() || undefined,
+        termsAccepted: authTermsAccepted,
         rememberMe: authRememberMe,
       });
-
-      if (result.mode === "login" && result.user) {
-        dispatch({ type: "SET_USER", payload: result.user });
-        navigateAfterAuth();
-        return;
-      }
 
       if (result.mode === "register" && result.requiresVerification) {
         setIsVerificationCodeSending(false);
         setErrorMessage("");
-        setSuccessMessage("Do\u011frulama kodu e-posta adresinize g\u00f6nderildi.");
+        setSuccessMessage("Doğrulama kodu e-posta adresinize gönderildi.");
       }
     } catch (error) {
-      if (isRegisterAttempt) {
-        setIsVerificationCodeSending(false);
-        // Keep verification modal open so the user sees the error in-place.
-        setIsVerificationModalOpen(true);
-      }
+      setIsVerificationCodeSending(false);
+      setIsVerificationModalOpen(true);
       setErrorMessage(error instanceof Error ? normalizeAuthMessage(error.message) : "İşlem başarısız.");
     }
   };
@@ -671,7 +657,7 @@ export function Account() {
       !state.isAuthenticated &&
       !shouldEnterResetFlow &&
       authMode === "login" &&
-      authEmailExists === null;
+      authEntryMode === "login";
 
     if (!canRenderGoogleButton) {
       hasRenderedGoogleButtonRef.current = false;
@@ -739,6 +725,7 @@ export function Account() {
       script.removeEventListener("load", initGoogleButton);
     };
   }, [
+    authEntryMode,
     authMode,
     googleClientId,
     navigate,
@@ -747,7 +734,6 @@ export function Account() {
     dispatch,
     loading,
     shouldEnterResetFlow,
-    authEmailExists,
   ]);
 
   const handleLogout = async () => {
@@ -945,40 +931,37 @@ export function Account() {
               </form>
             ) : (
               <div className="space-y-4">
-                <p className="text-sm font-medium">
-                  {authEmailExists === null
-                    ? "Giri\u015f yap veya kaydol"
-                    : authEmailExists
-                      ? "Giri\u015f Yap"
-                      : "Kay\u0131t Ol"}
-                </p>
-                {authEmailExists === null ? (
-                  <form onSubmit={handleCheckEmailForAuthFlow} className="space-y-4" autoComplete="on">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">E-posta</label>
-                      <input
-                        type="email"
-                        required
-                        value={authEmail}
-                        onChange={(e) => setAuthEmail(e.target.value)}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
-                      />
-                    </div>
-                    <label className="flex items-center gap-3 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={authRememberMe}
-                        onChange={(e) => setAuthRememberMe(e.target.checked)}
-                        className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
-                      />
-                      <span>Bu cihazda beni hatirla</span>
-                    </label>
-                    <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
-                      Devam Et
-                    </button>
-                  </form>
-                ) : (
-                  <form onSubmit={handleStartUnifiedAuthFlow} className="space-y-4" autoComplete="on">
+                <div className="inline-flex w-full rounded-full border border-gray-200 p-1 bg-gray-50">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthEntryMode("login");
+                      setErrorMessage("");
+                      setSuccessMessage("");
+                    }}
+                    className={`flex-1 rounded-full px-4 py-2 text-sm transition-colors ${
+                      authEntryMode === "login" ? "bg-black text-white" : "text-gray-600 hover:text-black"
+                    }`}
+                  >
+                    Giriş Yap
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthEntryMode("register");
+                      setErrorMessage("");
+                      setSuccessMessage("");
+                    }}
+                    className={`flex-1 rounded-full px-4 py-2 text-sm transition-colors ${
+                      authEntryMode === "register" ? "bg-black text-white" : "text-gray-600 hover:text-black"
+                    }`}
+                  >
+                    Kayıt Ol
+                  </button>
+                </div>
+                <p className="text-sm font-medium">{authEntryMode === "login" ? "Giriş Yap" : "Kayıt Ol"}</p>
+                {authEntryMode === "login" ? (
+                  <form onSubmit={handleLoginSubmit} className="space-y-4" autoComplete="on">
                     <div>
                       <label className="block text-sm font-medium mb-2">E-posta</label>
                       <input
@@ -987,24 +970,17 @@ export function Account() {
                         name="email"
                         autoComplete="email"
                         value={authEmail}
-                        readOnly={authEmailExists === true}
-                        onChange={(e) => {
-                          if (authEmailExists === false) {
-                            setAuthEmail(e.target.value);
-                          }
-                        }}
+                        onChange={(e) => setAuthEmail(e.target.value)}
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-2">
-                        {authEmailExists ? "Şifre" : "Şifre Oluştur"}
-                      </label>
+                      <label className="block text-sm font-medium mb-2">Şifre</label>
                       <input
                         type="password"
                         required
                         name="password"
-                        autoComplete={authEmailExists ? "current-password" : "new-password"}
+                        autoComplete="current-password"
                         value={authPassword}
                         onChange={(e) => setAuthPassword(e.target.value)}
                         className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
@@ -1017,125 +993,144 @@ export function Account() {
                         onChange={(e) => setAuthRememberMe(e.target.checked)}
                         className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
                       />
-                      <span>Bu cihazda beni hatirla</span>
+                      <span>Bu cihazda beni hatırla</span>
                     </label>
-                    {!authEmailExists && (
-                      <div>
-                        <div className="grid grid-cols-2 gap-3 mb-4">
-                          <div>
-                            <label className="block text-sm font-medium mb-2">Ad</label>
-                            <input
-                              type="text"
-                              required
-                              name="firstName"
-                              autoComplete="given-name"
-                              value={authFirstName}
-                              onChange={(e) => setAuthFirstName(e.target.value)}
-                              className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium mb-2">Soyad</label>
-                            <input
-                              type="text"
-                              required
-                              name="lastName"
-                              autoComplete="family-name"
-                              value={authLastName}
-                              onChange={(e) => setAuthLastName(e.target.value)}
-                              className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
-                            />
-                          </div>
-                        </div>
-                        <label className="block text-sm font-medium mb-2">
-                          Telefon <span className="text-xs text-gray-500 font-normal">(isteğe bağlı)</span>
-                        </label>
-                        <input
-                          type="tel"
-                          name="phone"
-                          autoComplete="tel"
-                          value={authPhone}
-                          onChange={(e) => setAuthPhone(e.target.value)}
-                          className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black mb-4"
-                        />
-                        <label className="block text-sm font-medium mb-2">
-                          Cinsiyet <span className="text-xs text-gray-500 font-normal">(isteğe bağlı)</span>
-                        </label>
-                        <div className="grid grid-cols-2 gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setAuthGender((prev) => (prev === "kadin" ? "" : "kadin"))}
-                            className={`border rounded-lg py-2 text-sm ${
-                              authGender === "kadin" ? "border-black bg-black text-white" : "border-gray-200"
-                            }`}
-                          >
-                            Kadın
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setAuthGender((prev) => (prev === "erkek" ? "" : "erkek"))}
-                            className={`border rounded-lg py-2 text-sm ${
-                              authGender === "erkek" ? "border-black bg-black text-white" : "border-gray-200"
-                            }`}
-                          >
-                            Erkek
-                          </button>
-                        </div>
-                        <label className="flex items-start gap-2 mt-4 text-sm text-gray-700">
-                          <input
-                            type="checkbox"
-                            checked={authTermsAccepted}
-                            onChange={(e) => setAuthTermsAccepted(e.target.checked)}
-                            required
-                            className="mt-1"
-                          />
-                          <span>
-                            <Link to="/gizlilik" className="underline hover:text-black">
-                              Gizlilik Politikası
-                            </Link>{" "}
-                            ve{" "}
-                            <Link to="/kullanim-kosullari" className="underline hover:text-black">
-                              Kullanım Koşulları
-                            </Link>{" "}
-                            metinlerini okudum, kabul ediyorum.
-                          </span>
-                        </label>
-                      </div>
-                    )}
                     <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
-                      {authEmailExists ? "Giriş Yap" : "Üye Ol"}
+                      Giriş Yap
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        setAuthEmailExists(null);
-                        setAuthPassword("");
-                        setAuthFirstName("");
-                        setAuthLastName("");
-                        setAuthGender("");
-                        setAuthPhone("");
-                        setAuthTermsAccepted(false);
-                        setSuccessMessage("");
+                        setForgotEmail(authEmail);
+                        setAuthMode("forgot");
                       }}
-                      className="w-full border border-gray-200 py-3 rounded-full text-sm hover:border-black transition-colors"
+                      className="w-full text-sm text-gray-600 hover:text-black transition-colors"
                     >
-                      Başka E-posta Kullan
+                      Şifremi Unuttum
                     </button>
-                    {authEmailExists && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setForgotEmail(authEmail);
-                          setAuthMode("forgot");
-                        }}
-                        className="w-full text-sm text-gray-600 hover:text-black transition-colors"
-                      >
-                        Şifremi Unuttum
-                      </button>
-                    )}
+                  </form>
+                ) : (
+                  <form onSubmit={handleStartRegisterFlow} className="space-y-4" autoComplete="on">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">E-posta</label>
+                      <input
+                        type="email"
+                        required
+                        name="email"
+                        autoComplete="email"
+                        value={authEmail}
+                        onChange={(e) => setAuthEmail(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Şifre Oluştur</label>
+                      <input
+                        type="password"
+                        required
+                        name="password"
+                        autoComplete="new-password"
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                      />
+                    </div>
+                    <label className="flex items-center gap-3 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={authRememberMe}
+                        onChange={(e) => setAuthRememberMe(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
+                      />
+                      <span>Bu cihazda beni hatırla</span>
+                    </label>
+                    <div>
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-2">Ad</label>
+                          <input
+                            type="text"
+                            required
+                            name="firstName"
+                            autoComplete="given-name"
+                            value={authFirstName}
+                            onChange={(e) => setAuthFirstName(e.target.value)}
+                            className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-2">Soyad</label>
+                          <input
+                            type="text"
+                            required
+                            name="lastName"
+                            autoComplete="family-name"
+                            value={authLastName}
+                            onChange={(e) => setAuthLastName(e.target.value)}
+                            className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black"
+                          />
+                        </div>
+                      </div>
+                      <label className="block text-sm font-medium mb-2">
+                        Telefon <span className="text-xs text-gray-500 font-normal">(isteğe bağlı)</span>
+                      </label>
+                      <input
+                        type="tel"
+                        name="phone"
+                        autoComplete="tel"
+                        value={authPhone}
+                        onChange={(e) => setAuthPhone(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm outline-none focus:border-black mb-4"
+                      />
+                      <label className="block text-sm font-medium mb-2">
+                        Cinsiyet <span className="text-xs text-gray-500 font-normal">(isteğe bağlı)</span>
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setAuthGender((prev) => (prev === "kadin" ? "" : "kadin"))}
+                          className={`border rounded-lg py-2 text-sm ${
+                            authGender === "kadin" ? "border-black bg-black text-white" : "border-gray-200"
+                          }`}
+                        >
+                          Kadın
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAuthGender((prev) => (prev === "erkek" ? "" : "erkek"))}
+                          className={`border rounded-lg py-2 text-sm ${
+                            authGender === "erkek" ? "border-black bg-black text-white" : "border-gray-200"
+                          }`}
+                        >
+                          Erkek
+                        </button>
+                      </div>
+                      <label className="flex items-start gap-2 mt-4 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={authTermsAccepted}
+                          onChange={(e) => setAuthTermsAccepted(e.target.checked)}
+                          required
+                          className="mt-1"
+                        />
+                        <span>
+                          <Link to="/gizlilik" className="underline hover:text-black">
+                            Gizlilik Politikası
+                          </Link>{" "}
+                          ve{" "}
+                          <Link to="/kullanim-kosullari" className="underline hover:text-black">
+                            Kullanım Koşulları
+                          </Link>{" "}
+                          metinlerini okudum, kabul ediyorum.
+                        </span>
+                      </label>
+                    </div>
+                    <button type="submit" className="w-full bg-black text-white py-3 rounded-full text-sm">
+                      Üye Ol
+                    </button>
                   </form>
                 )}
-                {googleClientId && authEmailExists === null && (
+                {googleClientId && authEntryMode === "login" && (
                   <div className="pt-2">
                     <div className="relative mb-3">
                       <div className="h-px bg-gray-200" />

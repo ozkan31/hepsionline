@@ -1,7 +1,8 @@
-﻿import { Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Instagram } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { fetchPublicSettings } from '@/lib/api';
+import footerIyzicoBandWhite from '../../footer_iyzico_ile_ode/White/logo_band_white.svg';
 
 export function Footer() {
   const [siteName, setSiteName] = useState('StilBags&Fashion');
@@ -25,7 +26,6 @@ export function Footer() {
       <div className="w-full px-4 md:px-8">
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 py-12">
-            {/* Müşteri Hizmetleri */}
             <div>
               <h4 className="text-xs uppercase tracking-wider text-white/50 mb-4">Müşteri Hizmetleri</h4>
               <ul className="space-y-3">
@@ -57,7 +57,6 @@ export function Footer() {
               </ul>
             </div>
 
-            {/* Hakkımızda */}
             <div>
               <h4 className="text-xs uppercase tracking-wider text-white/50 mb-4">Hakkımızda</h4>
               <ul className="space-y-3">
@@ -79,12 +78,11 @@ export function Footer() {
               </ul>
             </div>
 
-            {/* Sosyal Medya */}
             <div>
               <h4 className="text-xs uppercase tracking-wider text-white/50 mb-4">Bizi Takip Edin</h4>
               <ul className="space-y-3">
                 <li>
-                  <a 
+                  <a
                     href="https://www.instagram.com/stilbagsfashion?igsh=ZWtrZ2RuYjQ2eWZ2"
                     target="_blank"
                     rel="noopener noreferrer"
@@ -97,7 +95,6 @@ export function Footer() {
               </ul>
             </div>
 
-            {/* İletişim */}
             <div>
               <h4 className="text-xs uppercase tracking-wider text-white/50 mb-4">İletişim</h4>
               <ul className="space-y-3">
@@ -115,7 +112,6 @@ export function Footer() {
             </div>
           </div>
 
-          {/* Bottom */}
           <div className="flex flex-col md:flex-row justify-between items-center gap-4 pt-8 border-t border-white/10">
             <div className="flex gap-6">
               <Link to="/gizlilik" className="text-xs text-white/50 hover:text-white transition-colors">
@@ -128,14 +124,21 @@ export function Footer() {
             <p className="font-serif text-lg">
               {siteName}
             </p>
-            <p className="text-xs text-white/50">
-              © 2026 {siteName}. Tüm hakları saklıdır.
-            </p>
+            <div className="flex flex-col items-center gap-3">
+              <img
+                src={footerIyzicoBandWhite}
+                alt="iyzico ile Öde, Visa ve Mastercard"
+                loading="lazy"
+                decoding="async"
+                className="h-8 w-auto max-w-[280px]"
+              />
+              <p className="text-xs text-white/50">
+                © 2026 {siteName}. Tüm hakları saklıdır.
+              </p>
+            </div>
           </div>
         </div>
       </div>
     </footer>
   );
 }
-
-

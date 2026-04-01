@@ -12,6 +12,7 @@ import {
 import { loadTurkeyLocations } from "@/lib/turkiye";
 import { trackPurchase } from "@/lib/analytics";
 import type { AppliedAbandonedCartCoupon, Order } from "@/types";
+import checkoutIyzicoLogo from "../../checkout_iyzico_ile_ode/TR/Tr_Colored_Horizontal/iyzico_ile_ode_colored_horizontal.svg";
 
 const PAYTR_PREFETCH_MAX_AGE_MS = 90 * 1000;
 
@@ -35,6 +36,8 @@ type PaytrPreparedIframe = {
   token: string;
   merchantOid: string;
 };
+
+const SHOW_PAYTR_IFRAME_ON_CHECKOUT = false;
 
 export function Checkout() {
   const navigate = useNavigate();
@@ -577,7 +580,7 @@ export function Checkout() {
       })
       .catch((error) => {
         if (!isMounted) return;
-        setPaytrError(error instanceof Error ? error.message : "PAYTR başlatılamadı.");
+        setPaytrError(error instanceof Error ? error.message : "Ödeme başlatılamadı.");
       })
       .finally(() => {
         if (isMounted) setIsPaytrLoading(false);
@@ -929,7 +932,7 @@ export function Checkout() {
                     </p>
                     <p>
                       <strong>4. Ödeme Yöntemi</strong><br />
-                      Ödemeler PayTR ödeme altyapısı aracılığıyla kredi kartı ve banka kartı ile yapılmaktadır.
+                      Ödemeler güvenli ödeme altyapısı aracılığıyla kredi kartı ve banka kartı ile yapılmaktadır.
                       ALICI, ödeme işlemini tamamladığında sipariş kesinleşmiş sayılır.
                     </p>
                     <p>
@@ -973,9 +976,22 @@ export function Checkout() {
             {step === "payment" && (
               <div>
                 <div className="space-y-4">
+                  <div className="bg-white border border-gray-200 rounded-lg p-5">
+                    <p className="text-xs uppercase tracking-wide text-gray-500 mb-3">Ödeme Yöntemi</p>
+                    <div className="flex items-center justify-center rounded-lg border border-gray-100 bg-[#F8F7F4] px-4 py-4">
+                      <img
+                        src={checkoutIyzicoLogo}
+                        alt="iyzico ile Öde"
+                        loading="lazy"
+                        decoding="async"
+                        className="h-10 w-auto max-w-full"
+                      />
+                    </div>
+                  </div>
+
                   {isPaytrLoading && (
                     <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-600">
-                      {"PAYTR ödeme ekranı hazırlanıyor..."}
+                      {"Ödeme ekranı hazırlanıyor..."}
                     </div>
                   )}
 
@@ -985,10 +1001,10 @@ export function Checkout() {
                     </div>
                   )}
 
-                  {paytrIframeUrl && (
+                  {SHOW_PAYTR_IFRAME_ON_CHECKOUT && paytrIframeUrl && (
                     <div className="bg-white border border-gray-200 rounded-lg p-3">
                       <iframe
-                        title="PAYTR Ödeme"
+                        title="Ödeme Ekranı"
                         src={paytrIframeUrl}
                         className="w-full max-w-[420px] h-[520px] mx-auto rounded-md"
                         frameBorder={0}

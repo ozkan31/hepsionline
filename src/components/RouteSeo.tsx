@@ -205,6 +205,31 @@ export function RouteSeo() {
         description: 'Sipariş, kargo, iade ve hesap işlemleri için ihtiyaç duyduğunuz tüm yardım bağlantılarına tek yerden ulaşın.',
         canonical: '/yardim-merkezi/',
       },
+      '/giris': {
+        title: `Giriş Yap | ${SEO_BRAND_NAME}`,
+        description: 'StilBags&Fashion hesabınıza giriş yapın veya yeni hesap oluşturun.',
+        canonical: '/giris/',
+      },
+      '/hesabim': {
+        title: `Hesabım | ${SEO_BRAND_NAME}`,
+        description: 'StilBags&Fashion hesap bilgilerinizi ve sipariş geçmişinizi yönetin.',
+        canonical: '/hesabim/',
+      },
+      '/sepet': {
+        title: `Sepetim | ${SEO_BRAND_NAME}`,
+        description: 'Sepetinizdeki ürünleri gözden geçirin ve alışverişinizi tamamlayın.',
+        canonical: '/sepet/',
+      },
+      '/favoriler': {
+        title: `Favorilerim | ${SEO_BRAND_NAME}`,
+        description: 'Beğendiğiniz StilBags&Fashion ürünlerini favorilerinizde saklayın.',
+        canonical: '/favoriler/',
+      },
+      '/odeme': {
+        title: `Ödeme | ${SEO_BRAND_NAME}`,
+        description: 'Siparişinizi güvenli ödeme adımıyla tamamlayın.',
+        canonical: '/odeme/',
+      },
       '/404': {
         title: `Sayfa Bulunamadı | ${SEO_BRAND_NAME}`,
         description: 'Aradığınız sayfa bulunamadı. Yardım Merkezi veya mağaza bağlantılarıyla doğru bölüme geçin.',

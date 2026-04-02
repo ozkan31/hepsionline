@@ -218,3 +218,38 @@ export interface AdminAbandonedCartRunSummary {
   failed: number;
   message: string;
 }
+
+export interface AdminTrendyolStatus {
+  enabled: boolean;
+  configured: boolean;
+  environment: string;
+  sellerId: string;
+  supplierId: string;
+  userAgent: string;
+  autoSyncProducts: boolean;
+  orderFetchReady: boolean;
+  productSyncReady: boolean;
+  missing: string[];
+  notes: string[];
+}
+
+export interface AdminTrendyolOrderLine {
+  barcode: string;
+  productName: string;
+  merchantSku: string;
+  quantity: number;
+  price: number;
+}
+
+export interface AdminTrendyolOrder {
+  id: string;
+  orderNumber: string;
+  packageNumber: string;
+  status: string;
+  customerName: string;
+  createdAt: string;
+  cargoTrackingNumber?: string;
+  cargoProviderName?: string;
+  totalPrice: number;
+  lines: AdminTrendyolOrderLine[];
+}

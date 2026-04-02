@@ -31,6 +31,8 @@ import {
   fetchAdminProductById,
   fetchAdminGoogleMerchantStatus,
   fetchAdminSettings,
+  fetchAdminTrendyolOrders,
+  fetchAdminTrendyolStatus,
   fetchAdminUsers,
   adminValidate,
   fetchAdminOrders,
@@ -49,13 +51,15 @@ import type {
   AdminContactRequest,
   AdminCustomerCouponSettings,
   AdminOrder,
+  AdminTrendyolOrder,
+  AdminTrendyolStatus,
   AdminUserSummary,
   Product,
 } from "@/types";
 
 const ADMIN_TOKEN_KEY = "parisMoveAdminToken";
 const ADMIN_REMEMBER_KEY = "parisMoveAdminRemember";
-type AdminSection = "overview" | "orders" | "products" | "users" | "contactRequests" | "marketing" | "campaigns" | "settings";
+type AdminSection = "overview" | "orders" | "products" | "users" | "contactRequests" | "marketing" | "campaigns" | "trendyol" | "settings";
 type ProductEditorDraft = {
   id: string;
   name: string;
@@ -240,6 +244,10 @@ export function Admin() {
   const [contactRequests, setContactRequests] = useState<AdminContactRequest[]>([]);
   const [contactRequestsLoading, setContactRequestsLoading] = useState(false);
   const [contactRequestsError, setContactRequestsError] = useState("");
+  const [trendyolStatus, setTrendyolStatus] = useState<AdminTrendyolStatus | null>(null);
+  const [trendyolOrders, setTrendyolOrders] = useState<AdminTrendyolOrder[]>([]);
+  const [trendyolLoading, setTrendyolLoading] = useState(false);
+  const [trendyolError, setTrendyolError] = useState("");
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const activeCustomerCoupons = customerCoupons.filter((coupon) => coupon.enabled);
   const latestCustomerCoupon = customerCoupons[0] ?? null;
@@ -497,6 +505,36 @@ export function Admin() {
   }, [activeSection, isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated || activeSection !== "trendyol") return;
+    const token = getStoredAdminToken();
+    if (!token) return;
+
+    let cancelled = false;
+    setTrendyolLoading(true);
+    setTrendyolError("");
+
+    Promise.all([fetchAdminTrendyolStatus(token), fetchAdminTrendyolOrders(token)])
+      .then(([statusData, ordersData]) => {
+        if (cancelled) return;
+        setTrendyolStatus(statusData);
+        setTrendyolOrders(ordersData);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setTrendyolError(err instanceof Error ? err.message : "Trendyol verileri yüklenemedi.");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTrendyolLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, isAuthenticated]);
+
+  useEffect(() => {
     if (!isAuthenticated || (activeSection !== "marketing" && activeSection !== "campaigns")) return;
     const token = getStoredAdminToken();
     if (!token) return;
@@ -606,6 +644,10 @@ export function Admin() {
     setContactRequests([]);
     setContactRequestsLoading(false);
     setContactRequestsError("");
+    setTrendyolStatus(null);
+    setTrendyolOrders([]);
+    setTrendyolLoading(false);
+    setTrendyolError("");
     setIsMobileNavOpen(false);
   };
 
@@ -2091,6 +2133,17 @@ export function Admin() {
               </div>
             </div>
             <button
+              onClick={() => handleSectionChange("trendyol")}
+              className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
+                activeSection === "trendyol" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
+              }`}
+            >
+              <span className="inline-flex items-center gap-2">
+                <ShoppingBag className="w-4 h-4" />
+                Trendyol
+              </span>
+            </button>
+            <button
               onClick={() => handleSectionChange("settings")}
               className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
                 activeSection === "settings" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
@@ -2404,6 +2457,17 @@ export function Admin() {
                       </div>
                     </div>
                   </div>
+                  <button
+                    onClick={() => handleSectionChange("trendyol")}
+                    className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
+                      activeSection === "trendyol" ? "bg-black text-white" : "text-black hover:bg-[#ECE7DC]"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <ShoppingBag className="w-4 h-4" />
+                      Trendyol
+                    </span>
+                  </button>
                   <button
                     onClick={() => handleSectionChange("settings")}
                     className={`w-full text-left px-4 py-2 rounded-md text-sm transition-colors ${
@@ -3743,6 +3807,116 @@ export function Admin() {
                   </div>
                 </form>
               )}
+            </div>
+          )}
+
+          {activeSection === "trendyol" && (
+            <div>
+              <h2 className="text-2xl font-light mb-2">Trendyol</h2>
+              <p className="text-sm text-gray-500 mb-5">
+                Trendyol siparişleri bu alanda ayrı gösterilir. Ürün create ve update işlemlerinde otomatik senkronizasyon,
+                `.env` içindeki Trendyol alanları eksiksiz doldurulduğunda backend tarafından tetiklenir.
+              </p>
+              {trendyolLoading ? <p className="text-sm text-gray-500">Trendyol verileri yükleniyor...</p> : null}
+              {trendyolError ? (
+                <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2 mb-4">{trendyolError}</p>
+              ) : null}
+
+              {!trendyolLoading && trendyolStatus ? (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-xl border border-[#E7E2D8] bg-white px-5 py-4">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Entegrasyon</p>
+                      <p className={`mt-2 text-lg font-medium ${trendyolStatus.configured ? "text-green-700" : "text-amber-700"}`}>
+                        {trendyolStatus.configured ? "Hazır" : "Eksik"}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[#E7E2D8] bg-white px-5 py-4">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Sipariş Çekme</p>
+                      <p className={`mt-2 text-lg font-medium ${trendyolStatus.orderFetchReady ? "text-green-700" : "text-amber-700"}`}>
+                        {trendyolStatus.orderFetchReady ? "Hazır" : "Eksik"}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[#E7E2D8] bg-white px-5 py-4">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Oto Ürün Sync</p>
+                      <p className={`mt-2 text-lg font-medium ${trendyolStatus.productSyncReady ? "text-green-700" : "text-amber-700"}`}>
+                        {trendyolStatus.productSyncReady ? "Hazır" : "Eksik"}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[#E7E2D8] bg-white px-5 py-4">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Ortam</p>
+                      <p className="mt-2 text-lg font-medium text-black">{trendyolStatus.environment || "-"}</p>
+                    </div>
+                  </div>
+
+                  {trendyolStatus.missing.length > 0 ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+                      <p className="text-sm font-medium text-amber-900 mb-2">Doldurulması gereken `.env` alanları</p>
+                      <div className="flex flex-wrap gap-2">
+                        {trendyolStatus.missing.map((item) => (
+                          <span key={item} className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs text-amber-900">
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {trendyolStatus.notes.length > 0 ? (
+                    <div className="rounded-xl border border-[#E7E2D8] bg-white px-5 py-4 space-y-2">
+                      <p className="text-sm font-medium text-black">Notlar</p>
+                      {trendyolStatus.notes.map((note, index) => (
+                        <p key={`${note}-${index}`} className="text-sm text-gray-600">
+                          {note}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="rounded-xl border border-[#E7E2D8] bg-white px-5 py-5">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-4">
+                      <div>
+                        <h3 className="text-lg font-medium text-black">Trendyol Siparişleri</h3>
+                        <p className="text-sm text-gray-500">Trendyol paket siparişleri admin panelde ayrı görünür.</p>
+                      </div>
+                      <p className="text-sm text-gray-500">{trendyolOrders.length.toLocaleString("tr-TR")} kayıt</p>
+                    </div>
+
+                    {trendyolOrders.length === 0 ? (
+                      <p className="text-sm text-gray-500">Listelenecek Trendyol siparişi bulunmuyor.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {trendyolOrders.map((order) => (
+                          <div key={order.id} className="rounded-xl border border-[#E7E2D8] bg-[#FCFBF8] px-4 py-4">
+                            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium text-black">
+                                  {order.orderNumber} / Paket {order.packageNumber}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  {order.customerName} • {order.status} • {new Date(order.createdAt).toLocaleString("tr-TR")}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                  {order.cargoProviderName || "Kargo bilgisi yok"}
+                                  {order.cargoTrackingNumber ? ` • ${order.cargoTrackingNumber}` : ""}
+                                </p>
+                              </div>
+                              <p className="text-base font-medium text-black">{order.totalPrice.toLocaleString("tr-TR")} TL</p>
+                            </div>
+                            <div className="mt-3 space-y-1">
+                              {order.lines.map((line, index) => (
+                                <p key={`${order.id}-${line.barcode}-${index}`} className="text-sm text-gray-600">
+                                  {line.productName} • {line.quantity} adet • {line.barcode || line.merchantSku || "-"}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
 

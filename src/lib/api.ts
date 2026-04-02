@@ -807,6 +807,26 @@ export async function fetchAdminUsers(token: string): Promise<AdminUserSummary[]
   return data.users;
 }
 
+export async function fetchAdminTrendyolStatus(
+  token: string
+): Promise<import("@/types").AdminTrendyolStatus> {
+  const response = await fetch("/api/admin/trendyol/status", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await parseResponse<{ status: import("@/types").AdminTrendyolStatus }>(response);
+  return data.status;
+}
+
+export async function fetchAdminTrendyolOrders(
+  token: string
+): Promise<import("@/types").AdminTrendyolOrder[]> {
+  const response = await fetch("/api/admin/trendyol/orders", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await parseResponse<{ orders: import("@/types").AdminTrendyolOrder[] }>(response);
+  return Array.isArray(data.orders) ? data.orders : [];
+}
+
 export async function updateAdminProduct(
   token: string,
   productId: string,

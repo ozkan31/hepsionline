@@ -105,6 +105,27 @@ const IMAGE_VARIANT_SPECS = {
   card: { width: 480, quality: 78 },
   detail: { width: 960, quality: 84 },
 };
+const TRENDYOL_ENABLED = ["1", "true", "yes"].includes(String(process.env.TRENDYOL_ENABLED ?? "").trim().toLowerCase());
+const TRENDYOL_ENVIRONMENT = String(process.env.TRENDYOL_ENVIRONMENT || "production").trim().toLowerCase();
+const TRENDYOL_SELLER_ID = String(process.env.TRENDYOL_SELLER_ID || "").trim();
+const TRENDYOL_SUPPLIER_ID = String(process.env.TRENDYOL_SUPPLIER_ID || TRENDYOL_SELLER_ID).trim();
+const TRENDYOL_API_KEY = String(process.env.TRENDYOL_API_KEY || "").trim();
+const TRENDYOL_API_SECRET = String(process.env.TRENDYOL_API_SECRET || "").trim();
+const TRENDYOL_USER_AGENT_SUFFIX = String(process.env.TRENDYOL_USER_AGENT_SUFFIX || "SelfIntegration").trim();
+const TRENDYOL_AUTO_SYNC_PRODUCTS = ["1", "true", "yes"].includes(
+  String(process.env.TRENDYOL_AUTO_SYNC_PRODUCTS ?? "").trim().toLowerCase()
+);
+const TRENDYOL_DEFAULT_BRAND_ID = String(process.env.TRENDYOL_DEFAULT_BRAND_ID || "").trim();
+const TRENDYOL_DEFAULT_CATEGORY_ID = String(process.env.TRENDYOL_DEFAULT_CATEGORY_ID || "").trim();
+const TRENDYOL_DEFAULT_CARGO_COMPANY_ID = String(process.env.TRENDYOL_DEFAULT_CARGO_COMPANY_ID || "").trim();
+const TRENDYOL_DEFAULT_VAT_RATE = Number(process.env.TRENDYOL_DEFAULT_VAT_RATE || 20);
+const TRENDYOL_DEFAULT_DESI = Number(process.env.TRENDYOL_DEFAULT_DESI || 1);
+const TRENDYOL_DEFAULT_DELIVERY_DURATION = Number(process.env.TRENDYOL_DEFAULT_DELIVERY_DURATION || 3);
+const TRENDYOL_DEFAULT_QUANTITY = Number(process.env.TRENDYOL_DEFAULT_QUANTITY || 100);
+const TRENDYOL_DEFAULT_LIST_PRICE_MULTIPLIER = Number(process.env.TRENDYOL_DEFAULT_LIST_PRICE_MULTIPLIER || 1);
+const TRENDYOL_DEFAULT_IMAGE_TEMPLATE = String(process.env.TRENDYOL_DEFAULT_IMAGE_TEMPLATE || "").trim();
+const TRENDYOL_DEFAULT_ATTRIBUTES_JSON = String(process.env.TRENDYOL_DEFAULT_ATTRIBUTES_JSON || "[]").trim();
+const TRENDYOL_ORDER_STATUS = String(process.env.TRENDYOL_ORDER_STATUS || "Created").trim();
 const BLOCKED_PUBLIC_PATH_PATTERNS = [
   /(?:^|\/)\.(?:env|git|svn|hg)(?:$|[./~_-])/i,
   /(?:^|\/)\.ht(?:access|passwd)(?:$|[./~_-])/i,
@@ -252,6 +273,227 @@ async function invalidateProductCaches() {
 
 async function invalidateSettingsCache() {
   await invalidateCacheByPrefix("settings:");
+}
+
+function getTrendyolApiBaseUrl() {
+  return TRENDYOL_ENVIRONMENT === "stage"
+    ? "https://stageapigw.trendyol.com"
+    : "https://apigw.trendyol.com";
+}
+
+function getTrendyolUserAgent() {
+  const sellerId = TRENDYOL_SELLER_ID || TRENDYOL_SUPPLIER_ID || "unknown";
+  const suffix = TRENDYOL_USER_AGENT_SUFFIX || "SelfIntegration";
+  return `${sellerId} - ${suffix}`;
+}
+
+function getTrendyolMissingFields() {
+  const missing = [];
+  if (!TRENDYOL_SELLER_ID) missing.push("TRENDYOL_SELLER_ID");
+  if (!TRENDYOL_SUPPLIER_ID) missing.push("TRENDYOL_SUPPLIER_ID");
+  if (!TRENDYOL_API_KEY) missing.push("TRENDYOL_API_KEY");
+  if (!TRENDYOL_API_SECRET) missing.push("TRENDYOL_API_SECRET");
+  return missing;
+}
+
+function parseTrendyolAttributes() {
+  try {
+    const parsed = JSON.parse(TRENDYOL_DEFAULT_ATTRIBUTES_JSON);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function getTrendyolStatusSnapshot() {
+  const missing = getTrendyolMissingFields();
+  const notes = [
+    "Trendyol siparişleri resmi order endpoint üzerinden ayrı olarak admin panelde listelenir.",
+    "Otomatik ürün senkronizasyonu create/update sırasında çalışır ve Trendyol zorunlu kategori/brand/attribute bilgilerine ihtiyaç duyar.",
+    "Kategori, brand, cargo ve attribute alanları Trendyol panelinizdeki gerçek değerlerle doldurulmalıdır.",
+  ];
+  const productSyncReady =
+    TRENDYOL_ENABLED &&
+    missing.length === 0 &&
+    TRENDYOL_AUTO_SYNC_PRODUCTS &&
+    Boolean(TRENDYOL_DEFAULT_BRAND_ID) &&
+    Boolean(TRENDYOL_DEFAULT_CATEGORY_ID) &&
+    Boolean(TRENDYOL_DEFAULT_CARGO_COMPANY_ID) &&
+    parseTrendyolAttributes().length > 0;
+
+  return {
+    enabled: TRENDYOL_ENABLED,
+    configured: TRENDYOL_ENABLED && missing.length === 0,
+    environment: TRENDYOL_ENVIRONMENT,
+    sellerId: TRENDYOL_SELLER_ID,
+    supplierId: TRENDYOL_SUPPLIER_ID,
+    userAgent: getTrendyolUserAgent(),
+    autoSyncProducts: TRENDYOL_AUTO_SYNC_PRODUCTS,
+    orderFetchReady: TRENDYOL_ENABLED && missing.length === 0,
+    productSyncReady,
+    missing,
+    notes,
+  };
+}
+
+function getTrendyolAuthHeaders() {
+  const basic = Buffer.from(`${TRENDYOL_API_KEY}:${TRENDYOL_API_SECRET}`).toString("base64");
+  return {
+    Authorization: `Basic ${basic}`,
+    "User-Agent": getTrendyolUserAgent(),
+  };
+}
+
+async function trendyolRequest(pathname, { method = "GET", searchParams, body } = {}) {
+  const status = getTrendyolStatusSnapshot();
+  if (!status.orderFetchReady) {
+    throw new Error("Trendyol ayarlari eksik. .env dosyasini doldurun.");
+  }
+
+  const url = new URL(`${getTrendyolApiBaseUrl()}${pathname}`);
+  if (searchParams && typeof searchParams === "object") {
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (value == null || value === "") continue;
+      url.searchParams.set(key, String(value));
+    }
+  }
+
+  const headers = {
+    ...getTrendyolAuthHeaders(),
+  };
+  if (body != null) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: body != null ? JSON.stringify(body) : undefined,
+  });
+
+  const rawText = await response.text();
+  let payload = null;
+  try {
+    payload = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    payload = rawText;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Trendyol istegi basarisiz: ${response.status} ${
+        typeof payload === "string" ? payload.slice(0, 300) : JSON.stringify(payload).slice(0, 300)
+      }`
+    );
+  }
+
+  return payload;
+}
+
+function mapTrendyolOrder(order) {
+  const lines = Array.isArray(order?.lines) ? order.lines : [];
+  const totalPrice = lines.reduce((total, line) => total + Number(line?.price ?? 0) * Number(line?.quantity ?? 0), 0);
+  return {
+    id: String(order?.shipmentPackageId ?? order?.id ?? order?.orderNumber ?? ""),
+    orderNumber: String(order?.orderNumber ?? ""),
+    packageNumber: String(order?.shipmentPackageId ?? order?.packageNumber ?? ""),
+    status: String(order?.status ?? ""),
+    customerName: `${String(order?.customerFirstName ?? "").trim()} ${String(order?.customerLastName ?? "").trim()}`.trim() || "-",
+    createdAt: String(order?.orderDate ?? order?.createdDate ?? new Date().toISOString()),
+    cargoTrackingNumber: String(order?.cargoTrackingNumber ?? ""),
+    cargoProviderName: String(order?.cargoProviderName ?? ""),
+    totalPrice,
+    lines: lines.map((line) => ({
+      barcode: String(line?.barcode ?? ""),
+      productName: String(line?.productName ?? ""),
+      merchantSku: String(line?.merchantSku ?? line?.sku ?? ""),
+      quantity: Number(line?.quantity ?? 0),
+      price: Number(line?.price ?? 0),
+    })),
+  };
+}
+
+async function fetchTrendyolOrders() {
+  const payload = await trendyolRequest(`/integration/order/sellers/${encodeURIComponent(TRENDYOL_SELLER_ID)}/orders`, {
+    searchParams: {
+      status: TRENDYOL_ORDER_STATUS || undefined,
+      size: 50,
+      page: 0,
+    },
+  });
+  const content = Array.isArray(payload?.content) ? payload.content : Array.isArray(payload?.items) ? payload.items : [];
+  return content.map(mapTrendyolOrder).filter((item) => item.id);
+}
+
+function buildAbsoluteStorefrontProductImage(rawValue) {
+  const normalized = normalizeMediaPath(rawValue);
+  if (!normalized) return "";
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  const baseUrl = getBaseUrl();
+  return `${baseUrl}${normalized}`;
+}
+
+function buildTrendyolProductPayload(product) {
+  const attributes = parseTrendyolAttributes();
+  if (attributes.length === 0) {
+    throw new Error("TRENDYOL_DEFAULT_ATTRIBUTES_JSON zorunludur.");
+  }
+
+  const imageUrls = (Array.isArray(product?.images) ? product.images : [product?.image])
+    .map((item) => buildAbsoluteStorefrontProductImage(item))
+    .filter(Boolean);
+  const firstImage = imageUrls[0] || (TRENDYOL_DEFAULT_IMAGE_TEMPLATE ? TRENDYOL_DEFAULT_IMAGE_TEMPLATE.replace(/\{productId\}/g, String(product?.id ?? "")) : "");
+  const title = String(product?.name ?? "").trim();
+  const description = String(product?.description ?? "").trim() || title;
+  const quantity = Math.max(0, Number(product?.stock ?? TRENDYOL_DEFAULT_QUANTITY ?? 0));
+  const salePrice = Number(product?.price ?? 0);
+  const listPrice = Number((salePrice * Math.max(1, TRENDYOL_DEFAULT_LIST_PRICE_MULTIPLIER)).toFixed(2));
+
+  if (!title || !firstImage) {
+    throw new Error("Trendyol ürün senkronu için ürün adı ve görsel zorunludur.");
+  }
+
+  return {
+    items: [
+      {
+        barcode: String(product?.barcode ?? product?.id ?? "").trim() || String(product?.id ?? "").trim(),
+        title,
+        productMainId: String(product?.id ?? "").trim(),
+        brandId: Number(TRENDYOL_DEFAULT_BRAND_ID),
+        categoryId: Number(TRENDYOL_DEFAULT_CATEGORY_ID),
+        quantity,
+        stockCode: String(product?.id ?? "").trim(),
+        dimensionalWeight: Math.max(1, Number(TRENDYOL_DEFAULT_DESI || 1)),
+        description,
+        currencyType: "TRY",
+        listPrice,
+        salePrice,
+        vatRate: Number.isFinite(TRENDYOL_DEFAULT_VAT_RATE) ? TRENDYOL_DEFAULT_VAT_RATE : 20,
+        cargoCompanyId: Number(TRENDYOL_DEFAULT_CARGO_COMPANY_ID),
+        images: imageUrls.length > 0 ? imageUrls.map((url) => ({ url })) : [{ url: firstImage }],
+        attributes,
+        deliveryDuration: Math.max(1, Number(TRENDYOL_DEFAULT_DELIVERY_DURATION || 3)),
+      },
+    ],
+  };
+}
+
+async function syncProductToTrendyol(productRow) {
+  const status = getTrendyolStatusSnapshot();
+  if (!status.productSyncReady) {
+    return { skipped: true, reason: "Trendyol otomatik ürün senkronu hazır değil." };
+  }
+
+  const product = mapProductRow(productRow);
+  const payload = buildTrendyolProductPayload(product);
+  const response = await trendyolRequest(
+    `/integration/product/sellers/${encodeURIComponent(TRENDYOL_SUPPLIER_ID)}/products`,
+    {
+      method: "POST",
+      body: payload,
+    }
+  );
+  return { skipped: false, response };
 }
 
 function getSecurityRedisKey(counterKey) {
@@ -7602,6 +7844,25 @@ app.post("/api/admin/google-merchant/sync", requireAdminAuth, async (req, res) =
   }
 });
 
+app.get("/api/admin/trendyol/status", requireAdminAuth, async (_req, res) => {
+  try {
+    return res.json({ status: getTrendyolStatusSnapshot() });
+  } catch (error) {
+    return res.status(500).json({ message: "Trendyol status fetch failed." });
+  }
+});
+
+app.get("/api/admin/trendyol/orders", requireAdminAuth, async (_req, res) => {
+  try {
+    const orders = await fetchTrendyolOrders();
+    return res.json({ orders });
+  } catch (error) {
+    return res.status(500).json({
+      message: error instanceof Error ? error.message : "Trendyol orders fetch failed.",
+    });
+  }
+});
+
 app.get("/api/admin/google-merchant/products", requireAdminAuth, async (req, res) => {
   try {
     if (!GOOGLE_MERCHANT_ENABLED) {
@@ -8308,6 +8569,9 @@ app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
     }
 
     await invalidateProductCaches();
+    void syncProductToTrendyol(rows[0]).catch((error) => {
+      console.error("Trendyol product sync failed after create:", error instanceof Error ? error.message : error);
+    });
     return res.status(201).json({ product: mapProductRow(rows[0]) });
   } catch (error) {
     if (error?.code === "ER_BAD_FIELD_ERROR") {
@@ -8477,6 +8741,9 @@ app.put("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
     }
 
     await invalidateProductCaches();
+    void syncProductToTrendyol(rows[0]).catch((error) => {
+      console.error("Trendyol product sync failed after update:", error instanceof Error ? error.message : error);
+    });
     return res.json({ product: mapProductRow(rows[0]) });
   } catch (error) {
     if (error?.code === "ER_BAD_FIELD_ERROR") {

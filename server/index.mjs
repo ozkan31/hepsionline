@@ -299,10 +299,109 @@ function getTrendyolMissingFields() {
 function parseTrendyolAttributes() {
   try {
     const parsed = JSON.parse(TRENDYOL_DEFAULT_ATTRIBUTES_JSON);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        const attributeId = Number(item?.attributeId);
+        if (!Number.isFinite(attributeId) || attributeId <= 0) return null;
+
+        const normalized = { attributeId };
+        const attributeValueId = Number(item?.attributeValueId);
+        const attributeValueIds = Array.isArray(item?.attributeValueIds)
+          ? item.attributeValueIds.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0)
+          : [];
+        const customAttributeValue = String(item?.customAttributeValue ?? "").trim();
+
+        if (Number.isFinite(attributeValueId) && attributeValueId > 0) {
+          normalized.attributeValueId = attributeValueId;
+        }
+        if (attributeValueIds.length > 0) {
+          normalized.attributeValueIds = attributeValueIds;
+        }
+        if (customAttributeValue) {
+          normalized.customAttributeValue = customAttributeValue;
+        }
+
+        return normalized.attributeValueId || normalized.attributeValueIds || normalized.customAttributeValue
+          ? normalized
+          : null;
+      })
+      .filter(Boolean);
   } catch {
     return [];
   }
+}
+
+function getPrimaryProductColor(product) {
+  const colorList = Array.isArray(product?.colors) ? product.colors : [];
+  const firstColor = colorList.find((item) => String(item ?? "").trim());
+  return String(firstColor ?? "").trim();
+}
+
+function getTrendyolWebColorValueId(colorName) {
+  const normalized = String(colorName ?? "")
+    .trim()
+    .toLocaleLowerCase("tr-TR");
+
+  if (!normalized) return null;
+
+  const colorMatchers = [
+    { id: 6996, patterns: ["altin", "gold"] },
+    { id: 6997, patterns: ["bej", "beige", "krem"] },
+    { id: 6998, patterns: ["beyaz", "white", "ekru", "kirik beyaz"] },
+    { id: 7013, patterns: ["bordo", "burgundy", "wine"] },
+    { id: 6999, patterns: ["gri", "gray", "grey", "antrasit"] },
+    { id: 7000, patterns: ["gumus", "gümüş", "silver"] },
+    { id: 7015, patterns: ["haki", "khaki", "olive"] },
+    { id: 7001, patterns: ["kahverengi", "vizon", "taba", "camel", "brown", "mocha", "moka"] },
+    { id: 7002, patterns: ["kirmizi", "kırmızı", "red"] },
+    { id: 7003, patterns: ["lacivert", "navy"] },
+    { id: 7004, patterns: ["mavi", "blue", "buz mavisi"] },
+    { id: 7005, patterns: ["metalik", "metallic"] },
+    { id: 7006, patterns: ["mor", "purple", "lila", "lavanta"] },
+    { id: 7007, patterns: ["pembe", "pink", "pudra"] },
+    { id: 7008, patterns: ["sari", "sarı", "yellow", "limon"] },
+    { id: 7009, patterns: ["siyah", "black"] },
+    { id: 7010, patterns: ["turkuaz", "turquoise"] },
+    { id: 7011, patterns: ["turuncu", "orange"] },
+    { id: 7012, patterns: ["yesil", "yeşil", "green"] },
+  ];
+
+  for (const matcher of colorMatchers) {
+    if (matcher.patterns.some((pattern) => normalized.includes(pattern))) {
+      return matcher.id;
+    }
+  }
+
+  return null;
+}
+
+function buildTrendyolAttributes(product) {
+  const defaults = parseTrendyolAttributes();
+  const attributeMap = new Map(defaults.map((item) => [Number(item.attributeId), item]));
+  const primaryColor = getPrimaryProductColor(product);
+
+  if (primaryColor && !attributeMap.has(47)) {
+    attributeMap.set(47, {
+      attributeId: 47,
+      customAttributeValue: primaryColor,
+    });
+  }
+
+  const webColorValueId = getTrendyolWebColorValueId(primaryColor);
+  if (webColorValueId && !attributeMap.has(348)) {
+    attributeMap.set(348, {
+      attributeId: 348,
+      attributeValueId: webColorValueId,
+    });
+  } else if (webColorValueId && attributeMap.has(348)) {
+    attributeMap.set(348, {
+      attributeId: 348,
+      attributeValueId: webColorValueId,
+    });
+  }
+
+  return [...attributeMap.values()];
 }
 
 function getTrendyolStatusSnapshot() {
@@ -310,7 +409,8 @@ function getTrendyolStatusSnapshot() {
   const notes = [
     "Trendyol siparişleri resmi order endpoint üzerinden ayrı olarak admin panelde listelenir.",
     "Otomatik ürün senkronizasyonu create/update sırasında çalışır ve Trendyol zorunlu kategori/brand/attribute bilgilerine ihtiyaç duyar.",
-    "Kategori, brand, cargo ve attribute alanları Trendyol panelinizdeki gerçek değerlerle doldurulmalıdır.",
+    "Varsayılan kategori ve zorunlu attribute seti eklenebilir; ürün rengi varsa Trendyol renk alanına otomatik yansıtılır.",
+    "Brand ve cargoCompanyId alanları Trendyol panelinizdeki gerçek değerlerle doldurulmalıdır.",
   ];
   const productSyncReady =
     TRENDYOL_ENABLED &&
@@ -434,7 +534,7 @@ function buildAbsoluteStorefrontProductImage(rawValue) {
 }
 
 function buildTrendyolProductPayload(product) {
-  const attributes = parseTrendyolAttributes();
+  const attributes = buildTrendyolAttributes(product);
   if (attributes.length === 0) {
     throw new Error("TRENDYOL_DEFAULT_ATTRIBUTES_JSON zorunludur.");
   }
@@ -487,7 +587,7 @@ async function syncProductToTrendyol(productRow) {
   const product = mapProductRow(productRow);
   const payload = buildTrendyolProductPayload(product);
   const response = await trendyolRequest(
-    `/integration/product/sellers/${encodeURIComponent(TRENDYOL_SUPPLIER_ID)}/products`,
+    `/integration/product/sellers/${encodeURIComponent(TRENDYOL_SELLER_ID)}/products`,
     {
       method: "POST",
       body: payload,

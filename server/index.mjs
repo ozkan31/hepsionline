@@ -8532,7 +8532,7 @@ app.get("/api/products", async (req, res) => {
       }
     }
 
-    let orderBy = "id ASC";
+    let orderBy = "is_bestseller DESC, is_new DESC, created_at DESC, id DESC";
     if (sort === "price-low") orderBy = "price ASC";
     if (sort === "price-high") orderBy = "price DESC";
     if (sort === "newest") orderBy = "is_new DESC, id DESC";

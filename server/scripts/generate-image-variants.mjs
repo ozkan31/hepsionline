@@ -11,10 +11,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadsDir = path.resolve(__dirname, "../../uploads");
 const variantsDir = path.join(uploadsDir, "variants");
+const forceRegenerate = ["1", "true", "yes"].includes(String(process.env.FORCE_IMAGE_VARIANTS ?? "").trim().toLowerCase());
 const IMAGE_VARIANT_SPECS = {
   thumb: { width: 200, quality: 72 },
-  card: { width: 480, quality: 78 },
-  detail: { width: 960, quality: 84 },
+  card: { width: 960, quality: 86 },
+  detail: { width: 1280, quality: 88 },
 };
 
 function parseImagesJson(value) {
@@ -76,8 +77,16 @@ async function ensureVariant(rawValue, variantKey) {
   }
 
   const targetPath = path.join(variantsDir, relativeVariantPath);
+  const sourceStats = await fs.promises.stat(fileInfo.filePath);
   if (fs.existsSync(targetPath)) {
-    return false;
+    if (forceRegenerate) {
+      await fs.promises.rm(targetPath, { force: true });
+    } else {
+    const targetStats = await fs.promises.stat(targetPath);
+    if (targetStats.mtimeMs >= sourceStats.mtimeMs) {
+      return false;
+    }
+    }
   }
 
   await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });

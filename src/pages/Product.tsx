@@ -414,7 +414,7 @@ export function Product() {
           <div>
             <div
               ref={imageViewportRef}
-              className="relative aspect-[3/4] rounded-lg overflow-hidden bg-gray-100"
+              className="relative aspect-[3/2] rounded-lg overflow-hidden bg-white"
               onTouchStart={handleImageTouchStart}
               onTouchMove={handleImageTouchMove}
               onTouchEnd={handleImageTouchEnd}
@@ -427,7 +427,7 @@ export function Product() {
                   loading="eager"
                   decoding="async"
                   fetchPriority="high"
-                  className="absolute inset-0 w-full h-full object-cover"
+                  className="absolute inset-0 w-full h-full object-contain"
                   style={{
                     transform: `translateX(${dragOffsetX + (previewDirection === 1 ? viewportWidth : -viewportWidth)}px)`,
                     transition: imageTransition,
@@ -441,7 +441,7 @@ export function Product() {
                 loading="eager"
                 decoding="async"
                 fetchPriority="high"
-                className="absolute inset-0 w-full h-full object-cover"
+                className="absolute inset-0 w-full h-full object-contain"
                 style={{
                   transform: `translateX(${dragOffsetX}px)`,
                   transition: imageTransition,
@@ -673,13 +673,13 @@ export function Product() {
                   to={`/product/${related.id}`}
                   className="group"
                 >
-                  <div className="aspect-[3/4] overflow-hidden rounded-lg bg-gray-100 mb-3">
+                  <div className="aspect-[3/2] overflow-hidden rounded-lg bg-white mb-3">
                     <img 
                       src={related.image} 
                       alt={related.name}
                       loading="lazy"
                       decoding="async"
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-[1.02]"
                     />
                   </div>
                   <h3 className="text-sm font-medium text-gray-900 mb-1">{related.name}</h3>

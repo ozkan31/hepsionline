@@ -29,6 +29,7 @@ const distDir = path.resolve(__dirname, "../dist");
 const distIndexHtml = path.join(distDir, "index.html");
 const uploadsDir = path.resolve(__dirname, "../uploads");
 const uploadVariantsDir = path.join(uploadsDir, "variants");
+const trendyolProductImagesDir = path.join(uploadsDir, "trendyol-products");
 const responseCache = new Map();
 const securityCounterCache = new Map();
 const REDIS_CACHE_PREFIX = String(process.env.REDIS_CACHE_PREFIX || "stilbags-cache:");
@@ -126,6 +127,7 @@ const TRENDYOL_DEFAULT_LIST_PRICE_MULTIPLIER = Number(process.env.TRENDYOL_DEFAU
 const TRENDYOL_DEFAULT_IMAGE_TEMPLATE = String(process.env.TRENDYOL_DEFAULT_IMAGE_TEMPLATE || "").trim();
 const TRENDYOL_DEFAULT_ATTRIBUTES_JSON = String(process.env.TRENDYOL_DEFAULT_ATTRIBUTES_JSON || "[]").trim();
 const TRENDYOL_ORDER_STATUS = String(process.env.TRENDYOL_ORDER_STATUS || "Created").trim();
+const TRENDYOL_STOREFRONT_CODE = String(process.env.TRENDYOL_STOREFRONT_CODE || "TR").trim();
 const BLOCKED_PUBLIC_PATH_PATTERNS = [
   /(?:^|\/)\.(?:env|git|svn|hg)(?:$|[./~_-])/i,
   /(?:^|\/)\.ht(?:access|passwd)(?:$|[./~_-])/i,
@@ -139,6 +141,9 @@ if (!fs.existsSync(uploadsDir)) {
 }
 if (!fs.existsSync(uploadVariantsDir)) {
   fs.mkdirSync(uploadVariantsDir, { recursive: true });
+}
+if (!fs.existsSync(trendyolProductImagesDir)) {
+  fs.mkdirSync(trendyolProductImagesDir, { recursive: true });
 }
 
 function getRedisCacheKey(cacheKey) {
@@ -281,6 +286,21 @@ function getTrendyolApiBaseUrl() {
     : "https://apigw.trendyol.com";
 }
 
+function getConfiguredPublicBaseUrl() {
+  const rawBase = String(
+    process.env.PUBLIC_SITE_URL ??
+      process.env.SITE_URL ??
+      process.env.ORDER_EMAIL_BASE_URL ??
+      process.env.PASSWORD_RESET_BASE_URL ??
+      ""
+  ).trim();
+  if (rawBase) {
+    const hasScheme = /^https?:\/\//i.test(rawBase);
+    return (hasScheme ? rawBase : `https://${rawBase}`).replace(/\/+$/, "");
+  }
+  return "https://stilbagsfashion.com";
+}
+
 function getTrendyolUserAgent() {
   const sellerId = TRENDYOL_SELLER_ID || TRENDYOL_SUPPLIER_ID || "unknown";
   const suffix = TRENDYOL_USER_AGENT_SUFFIX || "SelfIntegration";
@@ -409,6 +429,7 @@ function getTrendyolStatusSnapshot() {
   const notes = [
     "Trendyol siparişleri resmi order endpoint üzerinden ayrı olarak admin panelde listelenir.",
     "Otomatik ürün senkronizasyonu create/update sırasında çalışır ve Trendyol zorunlu kategori/brand/attribute bilgilerine ihtiyaç duyar.",
+    "Trendyol senkronu öncesinde ürün görselleri otomatik olarak 1200x1800 JPEG formatında hazırlanır.",
     "Varsayılan kategori ve zorunlu attribute seti eklenebilir; ürün rengi varsa Trendyol renk alanına otomatik yansıtılır.",
     "Brand ve cargoCompanyId alanları Trendyol panelinizdeki gerçek değerlerle doldurulmalıdır.",
   ];
@@ -444,7 +465,7 @@ function getTrendyolAuthHeaders() {
   };
 }
 
-async function trendyolRequest(pathname, { method = "GET", searchParams, body } = {}) {
+async function trendyolRequest(pathname, { method = "GET", searchParams, body, headers: extraHeaders } = {}) {
   const status = getTrendyolStatusSnapshot();
   if (!status.orderFetchReady) {
     throw new Error("Trendyol ayarlari eksik. .env dosyasini doldurun.");
@@ -460,6 +481,7 @@ async function trendyolRequest(pathname, { method = "GET", searchParams, body } 
 
   const headers = {
     ...getTrendyolAuthHeaders(),
+    ...(extraHeaders && typeof extraHeaders === "object" ? extraHeaders : {}),
   };
   if (body != null) {
     headers["Content-Type"] = "application/json";
@@ -525,57 +547,239 @@ async function fetchTrendyolOrders() {
   return content.map(mapTrendyolOrder).filter((item) => item.id);
 }
 
-function buildAbsoluteStorefrontProductImage(rawValue) {
-  const normalized = normalizeMediaPath(rawValue);
-  if (!normalized) return "";
-  if (/^https?:\/\//i.test(normalized)) return normalized;
-  const baseUrl = getBaseUrl();
-  return `${baseUrl}${normalized}`;
+function getTrendyolProductImageBaseName(product) {
+  const rawValue = String(product?.barcode ?? product?.id ?? "product").trim();
+  const normalized = rawValue
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "product";
 }
 
-function buildTrendyolProductPayload(product) {
+function getTrendyolProductImageWebPath(product, index) {
+  return `/api/uploads/trendyol-products/${getTrendyolProductImageBaseName(product)}-${index + 1}.jpg`;
+}
+
+function getTrendyolProductImageTargetPath(product, index) {
+  return path.join(trendyolProductImagesDir, `${getTrendyolProductImageBaseName(product)}-${index + 1}.jpg`);
+}
+
+async function writeTrendyolProductImageAsset(input, targetPath) {
+  await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
+  await sharp(input, { animated: false })
+    .rotate()
+    .flatten({ background: "#ffffff" })
+    .resize({
+      width: 1200,
+      height: 1800,
+      fit: "contain",
+      background: "#ffffff",
+    })
+    .jpeg({ quality: 92, mozjpeg: true })
+    .toFile(targetPath);
+}
+
+async function fetchTrendyolRemoteImageBuffer(rawUrl) {
+  const response = await fetch(rawUrl, {
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) {
+    throw new Error(`Trendyol image fetch failed: ${response.status}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length === 0) {
+    throw new Error("Trendyol image fetch returned empty body.");
+  }
+  return buffer;
+}
+
+async function ensureTrendyolProductImageAsset(rawValue, product, index) {
+  const value = String(rawValue ?? "").trim();
+  if (!value) return "";
+
+  const targetPath = getTrendyolProductImageTargetPath(product, index);
+  const webPath = getTrendyolProductImageWebPath(product, index);
+  const normalized = normalizeMediaPath(value);
+
+  if (normalized) {
+    const localFile = resolveLocalUploadFileInfo(normalized);
+    if (localFile && fs.existsSync(localFile.filePath)) {
+      await writeTrendyolProductImageAsset(localFile.filePath, targetPath);
+      return webPath;
+    }
+
+    const absoluteUrl = /^https?:\/\//i.test(normalized)
+      ? normalized
+      : `${getConfiguredPublicBaseUrl()}${normalized}`;
+    const remoteBuffer = await fetchTrendyolRemoteImageBuffer(encodeURI(absoluteUrl));
+    await writeTrendyolProductImageAsset(remoteBuffer, targetPath);
+    return webPath;
+  }
+
+  if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(value)) {
+    const base64Payload = value.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/i, "");
+    const buffer = Buffer.from(base64Payload, "base64");
+    if (buffer.length === 0) return "";
+    await writeTrendyolProductImageAsset(buffer, targetPath);
+    return webPath;
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    if (!(await isSafeRemoteMediaUrl(value))) {
+      return "";
+    }
+    const remoteBuffer = await fetchTrendyolRemoteImageBuffer(value);
+    await writeTrendyolProductImageAsset(remoteBuffer, targetPath);
+    return webPath;
+  }
+
+  return "";
+}
+
+async function buildTrendyolProductImageUrls(product) {
+  const rawImages = Array.isArray(product?.images) ? product.images : [];
+  const candidates = Array.from(new Set([...rawImages, product?.image].map((item) => String(item ?? "").trim()).filter(Boolean))).slice(0, 8);
+  const preparedUrls = [];
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const webPath = await ensureTrendyolProductImageAsset(candidates[index], product, index);
+    if (!webPath) continue;
+    preparedUrls.push(encodeURI(`${getConfiguredPublicBaseUrl()}${webPath}`));
+  }
+
+  return preparedUrls;
+}
+
+async function buildTrendyolBaseProductItem(product) {
   const attributes = buildTrendyolAttributes(product);
   if (attributes.length === 0) {
     throw new Error("TRENDYOL_DEFAULT_ATTRIBUTES_JSON zorunludur.");
   }
 
-  const imageUrls = (Array.isArray(product?.images) ? product.images : [product?.image])
-    .map((item) => buildAbsoluteStorefrontProductImage(item))
-    .filter(Boolean);
+  const imageUrls = await buildTrendyolProductImageUrls(product);
   const firstImage = imageUrls[0] || (TRENDYOL_DEFAULT_IMAGE_TEMPLATE ? TRENDYOL_DEFAULT_IMAGE_TEMPLATE.replace(/\{productId\}/g, String(product?.id ?? "")) : "");
   const title = String(product?.name ?? "").trim();
   const description = String(product?.description ?? "").trim() || title;
-  const quantity = Math.max(0, Number(product?.stock ?? TRENDYOL_DEFAULT_QUANTITY ?? 0));
-  const salePrice = Number(product?.price ?? 0);
-  const listPrice = Number((salePrice * Math.max(1, TRENDYOL_DEFAULT_LIST_PRICE_MULTIPLIER)).toFixed(2));
 
   if (!title || !firstImage) {
     throw new Error("Trendyol ürün senkronu için ürün adı ve görsel zorunludur.");
   }
 
   return {
+    barcode: String(product?.barcode ?? product?.id ?? "").trim() || String(product?.id ?? "").trim(),
+    title,
+    productMainId: String(product?.id ?? "").trim(),
+    brandId: Number(TRENDYOL_DEFAULT_BRAND_ID),
+    categoryId: Number(TRENDYOL_DEFAULT_CATEGORY_ID),
+    stockCode: String(product?.id ?? "").trim(),
+    dimensionalWeight: Math.max(1, Number(TRENDYOL_DEFAULT_DESI || 1)),
+    description,
+    vatRate: Number.isFinite(TRENDYOL_DEFAULT_VAT_RATE) ? TRENDYOL_DEFAULT_VAT_RATE : 20,
+    images: imageUrls.length > 0 ? imageUrls.map((url) => ({ url })) : [{ url: firstImage }],
+    attributes,
+  };
+}
+
+async function buildTrendyolProductPayload(product) {
+  const baseItem = await buildTrendyolBaseProductItem(product);
+  const quantity = Math.max(0, Number(product?.stock ?? TRENDYOL_DEFAULT_QUANTITY ?? 0));
+  const salePrice = Number(product?.price ?? 0);
+  const listPrice = Number((salePrice * Math.max(1, TRENDYOL_DEFAULT_LIST_PRICE_MULTIPLIER)).toFixed(2));
+
+  return {
     items: [
       {
-        barcode: String(product?.barcode ?? product?.id ?? "").trim() || String(product?.id ?? "").trim(),
-        title,
-        productMainId: String(product?.id ?? "").trim(),
-        brandId: Number(TRENDYOL_DEFAULT_BRAND_ID),
-        categoryId: Number(TRENDYOL_DEFAULT_CATEGORY_ID),
+        ...baseItem,
         quantity,
-        stockCode: String(product?.id ?? "").trim(),
-        dimensionalWeight: Math.max(1, Number(TRENDYOL_DEFAULT_DESI || 1)),
-        description,
         currencyType: "TRY",
         listPrice,
         salePrice,
-        vatRate: Number.isFinite(TRENDYOL_DEFAULT_VAT_RATE) ? TRENDYOL_DEFAULT_VAT_RATE : 20,
         cargoCompanyId: Number(TRENDYOL_DEFAULT_CARGO_COMPANY_ID),
-        images: imageUrls.length > 0 ? imageUrls.map((url) => ({ url })) : [{ url: firstImage }],
-        attributes,
         deliveryDuration: Math.max(1, Number(TRENDYOL_DEFAULT_DELIVERY_DURATION || 3)),
       },
     ],
   };
+}
+
+async function buildTrendyolUnapprovedUpdatePayload(product) {
+  const baseItem = await buildTrendyolBaseProductItem(product);
+  return {
+    items: [baseItem],
+  };
+}
+
+function buildTrendyolInventoryPayload(product) {
+  const salePrice = Number(product?.price ?? 0);
+  const listPrice = Number((salePrice * Math.max(1, TRENDYOL_DEFAULT_LIST_PRICE_MULTIPLIER)).toFixed(2));
+  return {
+    items: [
+      {
+        barcode: String(product?.barcode ?? product?.id ?? "").trim() || String(product?.id ?? "").trim(),
+        quantity: Math.max(0, Number(product?.stock ?? TRENDYOL_DEFAULT_QUANTITY ?? 0)),
+        salePrice,
+        listPrice,
+      },
+    ],
+  };
+}
+
+async function findTrendyolProductByBarcode(barcode) {
+  const normalizedBarcode = String(barcode ?? "").trim();
+  if (!normalizedBarcode) return null;
+
+  try {
+    const payload = await trendyolRequest(
+      `/integration/product/sellers/${encodeURIComponent(TRENDYOL_SELLER_ID)}/products`,
+      {
+        searchParams: {
+          barcode: normalizedBarcode,
+          page: 0,
+          size: 10,
+        },
+        headers: {
+          storeFrontCode: TRENDYOL_STOREFRONT_CODE || "TR",
+        },
+      }
+    );
+    const content = Array.isArray(payload?.content) ? payload.content : [];
+    return content.find((item) => String(item?.barcode ?? "").trim() === normalizedBarcode) ?? null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("404")) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function syncTrendyolInventory(product) {
+  const payload = buildTrendyolInventoryPayload(product);
+  const response = await trendyolRequest(
+    `/integration/inventory/sellers/${encodeURIComponent(TRENDYOL_SELLER_ID)}/products/price-and-inventory`,
+    {
+      method: "POST",
+      headers: {
+        storeFrontCode: TRENDYOL_STOREFRONT_CODE || "TR",
+      },
+      body: payload,
+    }
+  );
+  return response;
+}
+
+async function syncTrendyolUnapprovedProduct(product) {
+  const payload = await buildTrendyolUnapprovedUpdatePayload(product);
+  const response = await trendyolRequest(
+    `/integration/product/sellers/${encodeURIComponent(TRENDYOL_SELLER_ID)}/products/unapproved-bulk-update`,
+    {
+      method: "POST",
+      headers: {
+        storeFrontCode: TRENDYOL_STOREFRONT_CODE || "TR",
+      },
+      body: payload,
+    }
+  );
+  return response;
 }
 
 async function syncProductToTrendyol(productRow) {
@@ -585,15 +789,29 @@ async function syncProductToTrendyol(productRow) {
   }
 
   const product = mapProductRow(productRow);
-  const payload = buildTrendyolProductPayload(product);
+  const existingProduct = await findTrendyolProductByBarcode(product?.barcode);
+
+  if (existingProduct?.barcode) {
+    if (existingProduct.approved === false && existingProduct.archived !== true) {
+      const response = await syncTrendyolUnapprovedProduct(product);
+      return { skipped: false, mode: "unapproved-update", response };
+    }
+    const response = await syncTrendyolInventory(product);
+    return { skipped: false, mode: "inventory", response };
+  }
+
+  const payload = await buildTrendyolProductPayload(product);
   const response = await trendyolRequest(
-    `/integration/product/sellers/${encodeURIComponent(TRENDYOL_SELLER_ID)}/products`,
+    `/integration/product/sellers/${encodeURIComponent(TRENDYOL_SELLER_ID)}/v2/products`,
     {
       method: "POST",
+      headers: {
+        storeFrontCode: TRENDYOL_STOREFRONT_CODE || "TR",
+      },
       body: payload,
     }
   );
-  return { skipped: false, response };
+  return { skipped: false, mode: "create", response };
 }
 
 function getSecurityRedisKey(counterKey) {

@@ -557,7 +557,7 @@ function getTrendyolProductImageBaseName(product) {
 }
 
 function getTrendyolProductImageWebPath(product, index) {
-  return `/api/uploads/trendyol-products/${getTrendyolProductImageBaseName(product)}-${index + 1}.jpg`;
+  return `/trendyol-products/${getTrendyolProductImageBaseName(product)}-${index + 1}.jpg`;
 }
 
 function getTrendyolProductImageTargetPath(product, index) {
@@ -575,6 +575,7 @@ async function writeTrendyolProductImageAsset(input, targetPath) {
       fit: "contain",
       background: "#ffffff",
     })
+    .withMetadata({ density: 96 })
     .jpeg({ quality: 92, mozjpeg: true })
     .toFile(targetPath);
 }
@@ -708,6 +709,37 @@ async function buildTrendyolUnapprovedUpdatePayload(product) {
   };
 }
 
+async function buildTrendyolApprovedContentUpdatePayload(existingProduct, product) {
+  const imageUrls = await buildTrendyolProductImageUrls(product);
+  const firstImage =
+    imageUrls[0] ||
+    (TRENDYOL_DEFAULT_IMAGE_TEMPLATE
+      ? TRENDYOL_DEFAULT_IMAGE_TEMPLATE.replace(/\{productId\}/g, String(product?.id ?? ""))
+      : "");
+  const title = String(product?.name ?? "").trim();
+  const description = String(product?.description ?? "").trim() || title;
+  const contentId = Number(existingProduct?.contentId ?? existingProduct?.productContentId ?? 0);
+
+  if (!contentId) {
+    throw new Error("Trendyol onayli urun contentId bulunamadi.");
+  }
+
+  if (!title || !firstImage) {
+    throw new Error("Trendyol onayli urun guncellemesi icin urun adi ve gorsel zorunludur.");
+  }
+
+  return {
+    items: [
+      {
+        contentId,
+        title,
+        description,
+        images: imageUrls.length > 0 ? imageUrls.map((url) => ({ url })) : [{ url: firstImage }],
+      },
+    ],
+  };
+}
+
 function buildTrendyolInventoryPayload(product) {
   const salePrice = Number(product?.price ?? 0);
   const listPrice = Number((salePrice * Math.max(1, TRENDYOL_DEFAULT_LIST_PRICE_MULTIPLIER)).toFixed(2));
@@ -782,6 +814,21 @@ async function syncTrendyolUnapprovedProduct(product) {
   return response;
 }
 
+async function syncTrendyolApprovedProduct(existingProduct, product) {
+  const payload = await buildTrendyolApprovedContentUpdatePayload(existingProduct, product);
+  const response = await trendyolRequest(
+    `/integration/product/sellers/${encodeURIComponent(TRENDYOL_SELLER_ID)}/products/content-bulk-update`,
+    {
+      method: "POST",
+      headers: {
+        storeFrontCode: TRENDYOL_STOREFRONT_CODE || "TR",
+      },
+      body: payload,
+    }
+  );
+  return response;
+}
+
 async function syncProductToTrendyol(productRow) {
   const status = getTrendyolStatusSnapshot();
   if (!status.productSyncReady) {
@@ -796,8 +843,9 @@ async function syncProductToTrendyol(productRow) {
       const response = await syncTrendyolUnapprovedProduct(product);
       return { skipped: false, mode: "unapproved-update", response };
     }
-    const response = await syncTrendyolInventory(product);
-    return { skipped: false, mode: "inventory", response };
+    const contentResponse = await syncTrendyolApprovedProduct(existingProduct, product);
+    const inventoryResponse = await syncTrendyolInventory(product);
+    return { skipped: false, mode: "approved-update", contentResponse, inventoryResponse };
   }
 
   const payload = await buildTrendyolProductPayload(product);
@@ -1077,6 +1125,7 @@ const staticUploadOptions = {
     }
   },
 };
+app.use("/trendyol-products", express.static(trendyolProductImagesDir, staticUploadOptions));
 app.use("/uploads", express.static(uploadsDir, staticUploadOptions));
 app.use("/api/uploads", express.static(uploadsDir, staticUploadOptions));
 

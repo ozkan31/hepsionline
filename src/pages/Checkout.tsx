@@ -2,7 +2,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Check, ChevronRight, Truck } from "lucide-react";
 import { useStore } from "@/store/StoreContext";
-import { applyCustomerCoupon, createOrder, createPaytrIframe, saveAddress } from "@/lib/api";
+import { applyCustomerCoupon, createIyzicoCheckoutSession, createOrder, saveAddress } from "@/lib/api";
 import { DistanceSalesContract } from "@/components/DistanceSalesContract";
 import {
   clearStoredAbandonedCartCoupon,
@@ -16,9 +16,7 @@ import { trackPurchase } from "@/lib/analytics";
 import type { AppliedAbandonedCartCoupon, Order } from "@/types";
 import checkoutIyzicoLogo from "../../checkout_iyzico_ile_ode/TR/Tr_Colored_Horizontal/iyzico_ile_ode_colored_horizontal.svg";
 
-const PAYTR_PREFETCH_MAX_AGE_MS = 90 * 1000;
-
-type PaytrPayload = {
+type IyzicoCheckoutPayload = {
   email: string;
   firstName: string;
   lastName: string;
@@ -32,14 +30,6 @@ type PaytrPayload = {
   items: Array<{ name: string; unitPrice: number; quantity: number }>;
   couponCode?: string | null;
 };
-
-type PaytrPreparedIframe = {
-  iframeUrl: string;
-  token: string;
-  merchantOid: string;
-};
-
-const SHOW_PAYTR_IFRAME_ON_CHECKOUT = false;
 
 export function Checkout() {
   const navigate = useNavigate();
@@ -57,15 +47,14 @@ export function Checkout() {
   const [isDistanceSaleModalOpen, setIsDistanceSaleModalOpen] = useState(false);
   const [newAddressDetail, setNewAddressDetail] = useState("");
   const [locationMap, setLocationMap] = useState<Record<string, Record<string, string[]>>>({});
-  const [paytrIframeUrl, setPaytrIframeUrl] = useState("");
-  const [isPaytrLoading, setIsPaytrLoading] = useState(false);
-  const [paytrError, setPaytrError] = useState("");
+  const [iyzicoRedirectUrl, setIyzicoRedirectUrl] = useState("");
+  const [isIyzicoLoading, setIsIyzicoLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedAbandonedCartCoupon | null>(null);
   const [couponMessage, setCouponMessage] = useState("");
   const processedPathRef = useRef<string>("");
-  const paytrCacheRef = useRef(new Map<string, { data: PaytrPreparedIframe; createdAt: number }>());
-  const paytrInFlightRef = useRef(new Map<string, Promise<PaytrPreparedIframe>>());
+  const iyzicoRedirectTimerRef = useRef<number | null>(null);
   const newAddressDistrictSelectRef = useRef<HTMLSelectElement | null>(null);
   const newAddressNeighborhoodSelectRef = useRef<HTMLSelectElement | null>(null);
 
@@ -162,7 +151,7 @@ export function Checkout() {
     };
   };
 
-  const buildPaytrPayload = (info: typeof shippingInfo): PaytrPayload | null => {
+  const buildIyzicoPayload = (info: typeof shippingInfo): IyzicoCheckoutPayload | null => {
     if (
       !info.email ||
       !info.phone ||
@@ -194,56 +183,6 @@ export function Checkout() {
         quantity: item.quantity,
       })),
     };
-  };
-
-  const getPaytrPayloadKey = (payload: PaytrPayload | null) => {
-    if (!payload) return "";
-    return JSON.stringify(payload);
-  };
-
-  const getCachedPreparedPaytrIframe = (payload: PaytrPayload | null) => {
-    const key = getPaytrPayloadKey(payload);
-    if (!key) return null;
-    const cached = paytrCacheRef.current.get(key);
-    if (!cached) return null;
-    if (Date.now() - cached.createdAt >= PAYTR_PREFETCH_MAX_AGE_MS) {
-      paytrCacheRef.current.delete(key);
-      return null;
-    }
-    return cached.data;
-  };
-
-  const invalidatePreparedPaytrIframe = (payload: PaytrPayload | null) => {
-    const key = getPaytrPayloadKey(payload);
-    if (!key) return;
-    paytrCacheRef.current.delete(key);
-    paytrInFlightRef.current.delete(key);
-  };
-
-  const resolvePreparedPaytrIframe = async (payload: PaytrPayload): Promise<PaytrPreparedIframe> => {
-    const key = getPaytrPayloadKey(payload);
-    const now = Date.now();
-    const cached = paytrCacheRef.current.get(key);
-    if (cached && now - cached.createdAt < PAYTR_PREFETCH_MAX_AGE_MS) {
-      return cached.data;
-    }
-
-    const inFlight = paytrInFlightRef.current.get(key);
-    if (inFlight) {
-      return inFlight;
-    }
-
-    const requestPromise = createPaytrIframe(payload)
-      .then((data) => {
-        paytrCacheRef.current.set(key, { data, createdAt: Date.now() });
-        return data;
-      })
-      .finally(() => {
-        paytrInFlightRef.current.delete(key);
-      });
-
-    paytrInFlightRef.current.set(key, requestPromise);
-    return requestPromise;
   };
 
   useEffect(() => {
@@ -290,12 +229,8 @@ export function Checkout() {
     [savedAddresses, selectedAddressId]
   );
   const selectedShippingInfo = useMemo(() => buildShippingInfoFromAddress(selectedAddress), [selectedAddress]);
-  const selectedPaytrPayload = useMemo(
-    () => (selectedShippingInfo ? buildPaytrPayload(selectedShippingInfo) : null),
-    [selectedShippingInfo, state.cart, total, appliedCoupon?.code]
-  );
-  const currentPaytrPayload = useMemo(
-    () => buildPaytrPayload(shippingInfo),
+  const currentIyzicoPayload = useMemo(
+    () => buildIyzicoPayload(shippingInfo),
     [shippingInfo, state.cart, total, appliedCoupon?.code]
   );
   const contractParty = useMemo(() => {
@@ -370,13 +305,13 @@ export function Checkout() {
 
   useEffect(() => {
     if (isPaymentSuccessPath) {
-      const successMerchantOid = new URLSearchParams(location.search).get("merchantOid") ?? "";
-      const successKey = `success:${location.pathname}:${successMerchantOid}`;
+      const successPaymentReference = new URLSearchParams(location.search).get("paymentReference") ?? "";
+      const successKey = `success:${location.pathname}:${successPaymentReference}`;
       if (processedPathRef.current === successKey) return;
       if (!state.user) return;
-      if (!successMerchantOid) {
+      if (!successPaymentReference) {
         setStep("payment");
-        setPaytrError("Ödeme doğrulama bilgisi eksik. Lütfen tekrar deneyin.");
+        setPaymentError("Ödeme doğrulama bilgisi eksik. Lütfen tekrar deneyin.");
         processedPathRef.current = successKey;
         return;
       }
@@ -384,7 +319,7 @@ export function Checkout() {
       const orderDraft = {
         id: generateOrderId(),
         date: new Date().toISOString().split("T")[0],
-        merchantOid: successMerchantOid,
+        paymentReference: successPaymentReference,
         items: [...state.cart],
         total,
         subtotal: cartTotal,
@@ -482,8 +417,8 @@ export function Checkout() {
             clearStoredAbandonedCartCoupon(couponOwner);
             setAppliedCoupon(null);
             setStep("confirmation");
-            setPaytrError("");
-            setPaytrIframeUrl("");
+            setPaymentError("");
+            setIyzicoRedirectUrl("");
             processedPathRef.current = successKey;
             return;
           } catch (error) {
@@ -496,7 +431,7 @@ export function Checkout() {
 
         if (cancelled) return;
         setStep("payment");
-        setPaytrError(lastErrorMessage);
+        setPaymentError(lastErrorMessage);
         processedPathRef.current = successKey;
       })();
 
@@ -507,8 +442,10 @@ export function Checkout() {
 
     if (isPaymentFailPath) {
       if (processedPathRef.current === `fail:${location.pathname}`) return;
+      const failedReason =
+        new URLSearchParams(location.search).get("reason") ?? "Ödeme başarısız veya iptal edildi. Lütfen tekrar deneyin.";
       setStep("payment");
-      setPaytrError("Ödeme başarısız veya iptal edildi. Lütfen tekrar deneyin.");
+      setPaymentError(failedReason);
       processedPathRef.current = `fail:${location.pathname}`;
       return;
     }
@@ -530,10 +467,13 @@ export function Checkout() {
   };
 
   const handleBackToShipping = () => {
-    invalidatePreparedPaytrIframe(currentPaytrPayload);
-    setPaytrIframeUrl("");
-    setPaytrError("");
-    setIsPaytrLoading(false);
+    if (iyzicoRedirectTimerRef.current != null) {
+      window.clearTimeout(iyzicoRedirectTimerRef.current);
+      iyzicoRedirectTimerRef.current = null;
+    }
+    setIyzicoRedirectUrl("");
+    setPaymentError("");
+    setIsIyzicoLoading(false);
     setStep("shipping");
   };
 
@@ -576,54 +516,48 @@ export function Checkout() {
   };
 
   useEffect(() => {
-    if (!selectedPaytrPayload || isPaymentSuccessPath || isPaymentFailPath) return;
-    resolvePreparedPaytrIframe(selectedPaytrPayload).catch(() => {
-      // Payment step will show the real error if prefetch is not ready in time.
-    });
-  }, [isPaymentFailPath, isPaymentSuccessPath, selectedPaytrPayload]);
-
-  useEffect(() => {
     if (step !== "payment" || isPaymentSuccessPath || isPaymentFailPath) return;
-    if (!currentPaytrPayload) {
-      setPaytrError("Teslimat bilgileri eksik.");
-      setPaytrIframeUrl("");
+    if (!currentIyzicoPayload) {
+      setPaymentError("Teslimat bilgileri eksik.");
+      setIyzicoRedirectUrl("");
       return;
     }
 
-    let isMounted = true;
-    const cachedIframe = getCachedPreparedPaytrIframe(currentPaytrPayload);
-    if (cachedIframe) {
-      invalidatePreparedPaytrIframe(currentPaytrPayload);
-      setPaytrError("");
-      setPaytrIframeUrl(cachedIframe.iframeUrl);
-      setIsPaytrLoading(false);
-      return () => {
-        isMounted = false;
-      };
+    if (iyzicoRedirectTimerRef.current != null) {
+      window.clearTimeout(iyzicoRedirectTimerRef.current);
+      iyzicoRedirectTimerRef.current = null;
     }
 
-    setIsPaytrLoading(true);
-    setPaytrError("");
-    setPaytrIframeUrl("");
+    let isMounted = true;
+    setIsIyzicoLoading(true);
+    setPaymentError("");
+    setIyzicoRedirectUrl("");
 
-    resolvePreparedPaytrIframe(currentPaytrPayload)
+    createIyzicoCheckoutSession(currentIyzicoPayload)
       .then((data) => {
         if (!isMounted) return;
-        invalidatePreparedPaytrIframe(currentPaytrPayload);
-        setPaytrIframeUrl(data.iframeUrl);
+        setIyzicoRedirectUrl(data.paymentPageUrl);
+        iyzicoRedirectTimerRef.current = window.setTimeout(() => {
+          if (!isMounted) return;
+          window.location.assign(data.paymentPageUrl);
+        }, 200);
       })
       .catch((error) => {
         if (!isMounted) return;
-        setPaytrError(error instanceof Error ? error.message : "Ödeme başlatılamadı.");
+        setPaymentError(error instanceof Error ? error.message : "Ödeme başlatılamadı.");
       })
       .finally(() => {
-        if (isMounted) setIsPaytrLoading(false);
+        if (isMounted) setIsIyzicoLoading(false);
       });
 
     return () => {
       isMounted = false;
+      if (iyzicoRedirectTimerRef.current != null) {
+        window.clearTimeout(iyzicoRedirectTimerRef.current);
+        iyzicoRedirectTimerRef.current = null;
+      }
     };
-  }, [currentPaytrPayload, isPaymentFailPath, isPaymentSuccessPath, step]);
+  }, [currentIyzicoPayload, isPaymentFailPath, isPaymentSuccessPath, step]);
 
   const confirmationEmail = shippingInfo.email || state.user?.email || "";
 
@@ -976,26 +910,31 @@ export function Checkout() {
                     </div>
                   </div>
 
-                  {isPaytrLoading && (
+                  {isIyzicoLoading && (
                     <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-600">
-                      {"Ödeme ekranı hazırlanıyor..."}
+                      {"iyzico güvenli ödeme sayfasına yönlendiriliyorsunuz..."}
                     </div>
                   )}
 
-                  {paytrError && (
+                  {paymentError && (
                     <div className="bg-red-50 text-red-600 border border-red-200 rounded-lg p-4 text-sm">
-                      {paytrError}
+                      {paymentError}
                     </div>
                   )}
 
-                  {SHOW_PAYTR_IFRAME_ON_CHECKOUT && paytrIframeUrl && (
-                    <div className="bg-white border border-gray-200 rounded-lg p-3">
-                      <iframe
-                        title="Ödeme Ekranı"
-                        src={paytrIframeUrl}
-                        className="w-full max-w-[420px] h-[520px] mx-auto rounded-md"
-                        frameBorder={0}
-                      />
+                  {iyzicoRedirectUrl && !isIyzicoLoading && (
+                    <div className="bg-white border border-gray-200 rounded-lg p-5 text-sm text-gray-700 space-y-4">
+                      <p>
+                        Güvenli ödeme işlemini tamamlamak için iyzico ödeme sayfasına yönlendirileceksiniz.
+                        Yönlendirme başlamadıysa aşağıdaki butonu kullanın.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => window.location.assign(iyzicoRedirectUrl)}
+                        className="w-full bg-black text-white py-4 rounded-full font-medium text-sm hover:bg-gray-800"
+                      >
+                        iyzico ile devam et
+                      </button>
                     </div>
                   )}
 

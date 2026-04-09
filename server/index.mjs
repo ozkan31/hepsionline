@@ -135,6 +135,21 @@ const IYZICO_API_KEY = String(process.env.IYZICO_API_KEY || "").trim();
 const IYZICO_SECRET_KEY = String(process.env.IYZICO_SECRET_KEY || "").trim();
 const IYZICO_CALLBACK_URL = String(process.env.IYZICO_CALLBACK_URL || "").trim();
 const IYZICO_LOCALE = String(process.env.IYZICO_LOCALE || "tr").trim() || "tr";
+const IYZICO_CURRENCY = String(process.env.IYZICO_CURRENCY || "TRY").trim().toUpperCase() || "TRY";
+const IYZICO_PAYMENT_GROUP = String(process.env.IYZICO_PAYMENT_GROUP || "PRODUCT").trim().toUpperCase() || "PRODUCT";
+const IYZICO_ENABLED_INSTALLMENTS = String(process.env.IYZICO_ENABLED_INSTALLMENTS || "")
+  .split(",")
+  .map((value) => Number.parseInt(String(value ?? "").trim(), 10))
+  .filter((value) => Number.isInteger(value) && value > 0);
+const IYZICO_FORCE_3DS = ["1", "true", "yes"].includes(
+  String(process.env.IYZICO_FORCE_3DS ?? "").trim().toLowerCase()
+);
+const IYZICO_DEFAULT_IDENTITY_NUMBER =
+  String(process.env.IYZICO_DEFAULT_IDENTITY_NUMBER || "11111111111").trim() || "11111111111";
+const IYZICO_DEFAULT_ZIP_CODE =
+  String(process.env.IYZICO_DEFAULT_ZIP_CODE || "34000").trim() || "34000";
+const IYZICO_DEFAULT_COUNTRY =
+  String(process.env.IYZICO_DEFAULT_COUNTRY || "Turkey").trim() || "Turkey";
 const BLOCKED_PUBLIC_PATH_PATTERNS = [
   /(?:^|\/)\.(?:env|git|svn|hg)(?:$|[./~_-])/i,
   /(?:^|\/)\.ht(?:access|passwd)(?:$|[./~_-])/i,
@@ -1192,6 +1207,7 @@ const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const REMEMBER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MINUTES = 30;
 const PAYTR_PAYMENT_INTENT_TTL_MINUTES = 60;
+const IYZICO_PAYMENT_INTENT_TTL_MINUTES = 60;
 const GOOGLE_CLIENT_IDS = Array.from(
   new Set(
     [process.env.GOOGLE_CLIENT_ID, process.env.VITE_GOOGLE_CLIENT_ID]
@@ -4668,6 +4684,176 @@ async function markPaytrPaymentIntentChecked(merchantOid, updates = {}) {
   );
 }
 
+async function ensureIyzicoPaymentIntentsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS iyzico_payment_intents (
+      payment_reference VARCHAR(120) PRIMARY KEY,
+      user_id VARCHAR(64) NOT NULL,
+      cart_signature CHAR(64) NOT NULL,
+      shipping_signature CHAR(64) NOT NULL,
+      coupon_code VARCHAR(64) NULL,
+      amount INT NOT NULL,
+      currency VARCHAR(8) NOT NULL DEFAULT 'TRY',
+      token VARCHAR(255) NOT NULL,
+      basket_id VARCHAR(120) NOT NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'pending',
+      payment_status VARCHAR(32) NULL,
+      payment_id VARCHAR(64) NULL,
+      fraud_status INT NULL,
+      callback_status VARCHAR(32) NULL,
+      raw_result_text LONGTEXT NULL,
+      order_id VARCHAR(64) NULL,
+      consumed_at DATETIME NULL,
+      expires_at DATETIME NOT NULL,
+      last_checked_at DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_iyzico_payment_intents_token (token),
+      KEY idx_iyzico_payment_intents_user_id (user_id),
+      KEY idx_iyzico_payment_intents_status (status),
+      KEY idx_iyzico_payment_intents_expires_at (expires_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+}
+
+async function upsertIyzicoPaymentIntent(input) {
+  await ensureIyzicoPaymentIntentsTable();
+  await pool.query(
+    `
+    INSERT INTO iyzico_payment_intents (
+      payment_reference, user_id, cart_signature, shipping_signature, coupon_code, amount, currency, token, basket_id, status, expires_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', DATE_ADD(NOW(), INTERVAL ? MINUTE))
+    ON DUPLICATE KEY UPDATE
+      user_id = VALUES(user_id),
+      cart_signature = VALUES(cart_signature),
+      shipping_signature = VALUES(shipping_signature),
+      coupon_code = VALUES(coupon_code),
+      amount = VALUES(amount),
+      currency = VALUES(currency),
+      token = VALUES(token),
+      basket_id = VALUES(basket_id),
+      status = 'pending',
+      payment_status = NULL,
+      payment_id = NULL,
+      fraud_status = NULL,
+      callback_status = NULL,
+      raw_result_text = NULL,
+      order_id = NULL,
+      consumed_at = NULL,
+      expires_at = DATE_ADD(NOW(), INTERVAL ? MINUTE)
+    `,
+    [
+      input.paymentReference,
+      input.userId,
+      input.cartSignature,
+      input.shippingSignature,
+      input.couponCode || null,
+      input.amount,
+      input.currency || IYZICO_CURRENCY,
+      input.token,
+      input.basketId || input.paymentReference,
+      IYZICO_PAYMENT_INTENT_TTL_MINUTES,
+      IYZICO_PAYMENT_INTENT_TTL_MINUTES,
+    ]
+  );
+}
+
+async function getIyzicoPaymentIntent(paymentReference, userId) {
+  await ensureIyzicoPaymentIntentsTable();
+  const [rows] = await pool.query(
+    `
+    SELECT
+      payment_reference,
+      user_id,
+      cart_signature,
+      shipping_signature,
+      coupon_code,
+      amount,
+      currency,
+      token,
+      basket_id,
+      status,
+      payment_status,
+      payment_id,
+      fraud_status,
+      callback_status,
+      raw_result_text,
+      order_id,
+      expires_at,
+      consumed_at
+    FROM iyzico_payment_intents
+    WHERE payment_reference = ? AND user_id = ? AND expires_at > NOW()
+    LIMIT 1
+    `,
+    [paymentReference, userId]
+  );
+  return rows[0] ?? null;
+}
+
+async function getIyzicoPaymentIntentByToken(token) {
+  await ensureIyzicoPaymentIntentsTable();
+  const [rows] = await pool.query(
+    `
+    SELECT
+      payment_reference,
+      user_id,
+      cart_signature,
+      shipping_signature,
+      coupon_code,
+      amount,
+      currency,
+      token,
+      basket_id,
+      status,
+      payment_status,
+      payment_id,
+      fraud_status,
+      callback_status,
+      raw_result_text,
+      order_id,
+      expires_at,
+      consumed_at
+    FROM iyzico_payment_intents
+    WHERE token = ?
+    LIMIT 1
+    `,
+    [token]
+  );
+  return rows[0] ?? null;
+}
+
+async function markIyzicoPaymentIntent(paymentReference, updates = {}) {
+  await ensureIyzicoPaymentIntentsTable();
+  await pool.query(
+    `
+    UPDATE iyzico_payment_intents
+    SET
+      status = COALESCE(?, status),
+      payment_status = COALESCE(?, payment_status),
+      payment_id = COALESCE(?, payment_id),
+      fraud_status = COALESCE(?, fraud_status),
+      callback_status = COALESCE(?, callback_status),
+      raw_result_text = COALESCE(?, raw_result_text),
+      order_id = COALESCE(?, order_id),
+      consumed_at = CASE WHEN ? IS NULL THEN consumed_at ELSE NOW() END,
+      last_checked_at = NOW()
+    WHERE payment_reference = ?
+    `,
+    [
+      updates.status ?? null,
+      updates.paymentStatus ?? null,
+      updates.paymentId ?? null,
+      updates.fraudStatus ?? null,
+      updates.callbackStatus ?? null,
+      updates.rawResultText ?? null,
+      updates.orderId ?? null,
+      updates.consume ? 1 : null,
+      paymentReference,
+    ]
+  );
+}
+
 async function queryPaytrPaymentStatus(merchantOid) {
   const merchantId = String(process.env.PAYTR_MERCHANT_ID ?? "").trim();
   const merchantKey = String(process.env.PAYTR_MERCHANT_KEY ?? "").trim();
@@ -4728,6 +4914,64 @@ function isIyzicoConfigured() {
   return Boolean(IYZICO_ENABLED && IYZICO_API_KEY && IYZICO_SECRET_KEY);
 }
 
+function formatIyzicoPrice(value) {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+}
+
+function normalizeIyzicoPhone(phone) {
+  const digits = String(phone ?? "").replace(/\D/g, "");
+  if (!digits) return "+905000000000";
+  if (digits.startsWith("90") && digits.length === 12) return `+${digits}`;
+  if (digits.startsWith("0") && digits.length === 11) return `+9${digits}`;
+  if (digits.length === 10) return `+90${digits}`;
+  return phone?.startsWith("+") ? String(phone).trim() : `+${digits}`;
+}
+
+function normalizeIyzicoIdentityNumber(value) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits.length === 11 ? digits : IYZICO_DEFAULT_IDENTITY_NUMBER;
+}
+
+function normalizeIyzicoZipCode(value) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits || IYZICO_DEFAULT_ZIP_CODE;
+}
+
+function buildIyzicoAddressText(input = {}) {
+  return [
+    String(input.addressName ?? "").trim(),
+    String(input.street ?? "").trim(),
+    String(input.neighborhood ?? "").trim(),
+    String(input.district ?? "").trim(),
+    String(input.province ?? "").trim(),
+  ]
+    .filter(Boolean)
+    .join(", ")
+    .slice(0, 400);
+}
+
+function buildIyzicoSignatureHash(values) {
+  return crypto
+    .createHmac("sha256", IYZICO_SECRET_KEY)
+    .update(values.map((value) => String(value ?? "")).join(":"))
+    .digest("hex");
+}
+
+function verifyIyzicoResponseSignature(response, fields) {
+  const expected = buildIyzicoSignatureHash(fields.map((field) => response?.[field] ?? ""));
+  const actual = String(response?.signature ?? "").trim().toLowerCase();
+  return Boolean(actual) && expected === actual;
+}
+
+function assertIyzicoResponseSignature(response, fields, label) {
+  const signature = String(response?.signature ?? "").trim();
+  if (!signature) return;
+  if (!verifyIyzicoResponseSignature(response, fields)) {
+    throw new Error(`${label}_SIGNATURE_INVALID`);
+  }
+}
+
 function buildIyzicoAuthorization(uriPath, bodyJson) {
   const randomKey = `${Date.now()}${Math.floor(Math.random() * 1000000)}`;
   const signature = crypto
@@ -4775,17 +5019,108 @@ async function iyzicoRequest(uriPath, body = {}) {
   return payload;
 }
 
+function buildIyzicoCheckoutReturnUrl(baseUrl, paymentReference, resultPath) {
+  const nextUrl = new URL(resultPath, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+  if (paymentReference) {
+    nextUrl.searchParams.set("paymentReference", paymentReference);
+  }
+  return nextUrl.toString();
+}
+
+function buildIyzicoBasketItems(orderItems) {
+  const basketItems = [];
+  for (const item of orderItems) {
+    const quantity = Math.max(1, Number(item?.quantity ?? 1) || 1);
+    const product = item?.product ?? {};
+    const category = String(product?.category ?? "").trim() || "canta";
+    const color = String(item?.color ?? product?.colors?.[0] ?? "").trim();
+    for (let index = 0; index < quantity; index += 1) {
+      basketItems.push({
+        id: `${String(product?.id ?? "product").trim() || "product"}-${index + 1}`,
+        name: String(product?.name ?? "Ürün").trim().slice(0, 100),
+        category1: category.slice(0, 50),
+        category2: (color || category).slice(0, 50),
+        itemType: "PHYSICAL",
+        price: formatIyzicoPrice(product?.price),
+      });
+    }
+  }
+  return basketItems;
+}
+
+function buildIyzicoBuyer({ req, user, shippingInfo = {} }) {
+  const firstName = String(shippingInfo.firstName ?? user?.firstName ?? "").trim();
+  const lastName = String(shippingInfo.lastName ?? user?.lastName ?? "").trim();
+  const email = String(shippingInfo.email ?? user?.email ?? "").trim();
+  const addressText = buildIyzicoAddressText(shippingInfo);
+  const city = String(shippingInfo.province ?? "").trim();
+  return {
+    id: String(user?.id ?? "").trim() || crypto.randomUUID(),
+    name: firstName || "Müşteri",
+    surname: lastName || "Kullanıcı",
+    gsmNumber: normalizeIyzicoPhone(shippingInfo.phone ?? user?.phone ?? ""),
+    email,
+    identityNumber: normalizeIyzicoIdentityNumber(IYZICO_DEFAULT_IDENTITY_NUMBER),
+    lastLoginDate: new Date().toISOString().replace("T", " ").slice(0, 19),
+    registrationDate: new Date().toISOString().replace("T", " ").slice(0, 19),
+    registrationAddress: addressText || "Türkiye",
+    ip: getClientIp(req),
+    city: city || "Istanbul",
+    country: IYZICO_DEFAULT_COUNTRY,
+    zipCode: normalizeIyzicoZipCode(IYZICO_DEFAULT_ZIP_CODE),
+  };
+}
+
+function buildIyzicoAddress(contactName, shippingInfo = {}) {
+  return {
+    contactName: String(contactName ?? "").trim() || "Müşteri",
+    city: String(shippingInfo.province ?? "").trim() || "Istanbul",
+    country: IYZICO_DEFAULT_COUNTRY,
+    address: buildIyzicoAddressText(shippingInfo) || "Türkiye",
+    zipCode: normalizeIyzicoZipCode(IYZICO_DEFAULT_ZIP_CODE),
+  };
+}
+
+async function initializeIyzicoCheckoutForm(input) {
+  const payload = {
+    locale: IYZICO_LOCALE,
+    conversationId: input.paymentReference,
+    price: formatIyzicoPrice(input.price),
+    paidPrice: formatIyzicoPrice(input.paidPrice),
+    currency: input.currency || IYZICO_CURRENCY,
+    basketId: input.paymentReference,
+    paymentGroup: IYZICO_PAYMENT_GROUP,
+    callbackUrl: input.callbackUrl,
+    enabledInstallments: IYZICO_ENABLED_INSTALLMENTS.length > 0 ? IYZICO_ENABLED_INSTALLMENTS : undefined,
+    forceThreeDS: IYZICO_FORCE_3DS ? 1 : undefined,
+    buyer: buildIyzicoBuyer(input),
+    shippingAddress: buildIyzicoAddress(input.contactName, input.shippingInfo),
+    billingAddress: buildIyzicoAddress(input.contactName, input.shippingInfo),
+    basketItems: buildIyzicoBasketItems(input.orderItems),
+  };
+
+  const result = await iyzicoRequest("/payment/iyzipos/checkoutform/initialize/auth/ecom", payload);
+  assertIyzicoResponseSignature(result, ["conversationId", "token"], "IYZICO_INITIALIZE");
+  return result;
+}
+
 async function retrieveIyzicoCheckoutForm({ token, conversationId }) {
   const normalizedToken = String(token ?? "").trim();
   if (!normalizedToken) {
     throw new Error("IYZICO_TOKEN_MISSING");
   }
 
-  return iyzicoRequest("/payment/iyzipos/checkoutform/auth/ecom/detail", {
+  const result = await iyzicoRequest("/payment/iyzipos/checkoutform/auth/ecom/detail", {
     locale: IYZICO_LOCALE,
     conversationId: String(conversationId ?? "").trim() || undefined,
     token: normalizedToken,
   });
+  assertIyzicoResponseSignature(
+    result,
+    ["paymentStatus", "paymentId", "currency", "basketId", "conversationId", "paidPrice", "price", "token"],
+    "IYZICO_RETRIEVE"
+  );
+  return result;
 }
 
 function normalizeIyzicoFraudStatus(value) {
@@ -4798,6 +5133,24 @@ function isIyzicoPaymentSuccessful(result) {
     String(result?.status ?? "").trim().toLowerCase() === "success" &&
     String(result?.paymentStatus ?? "").trim().toUpperCase() === "SUCCESS"
   );
+}
+
+function interpretIyzicoPaymentResult(result) {
+  const fraudStatus = normalizeIyzicoFraudStatus(result?.fraudStatus);
+  const paymentSuccessful = isIyzicoPaymentSuccessful(result);
+  const inReview = paymentSuccessful && fraudStatus === 0;
+  const rejected = fraudStatus === -1;
+  const approved = paymentSuccessful && fraudStatus === 1;
+  const ok = paymentSuccessful && !rejected;
+  return {
+    ok,
+    approved,
+    inReview,
+    rejected,
+    fraudStatus,
+    paymentStatus: String(result?.paymentStatus ?? result?.status ?? "").trim(),
+    paymentId: String(result?.paymentId ?? "").trim(),
+  };
 }
 
 function renderIyzicoCallbackPage({ title, message, result, isSuccess, callbackUrl }) {
@@ -7469,8 +7822,9 @@ app.get("/api/orders", requireAuth, async (req, res) => {
 });
 
 app.post("/api/orders", requireAuth, async (req, res) => {
-  const { merchantOid, shippingAddress, couponCode } = req.body ?? {};
-  const normalizedMerchantOid = String(merchantOid ?? "").trim();
+  const { paymentReference, paymentToken, merchantOid, shippingAddress, couponCode } = req.body ?? {};
+  let normalizedPaymentReference = String(paymentReference ?? merchantOid ?? "").trim();
+  const normalizedPaymentToken = String(paymentToken ?? "").trim();
   const shipping = shippingAddress && typeof shippingAddress === "object" ? shippingAddress : {};
   const shippingAddressName = String(shipping.addressName ?? "").trim();
   const shippingFirstName = String(shipping.firstName ?? "").trim();
@@ -7483,11 +7837,20 @@ app.post("/api/orders", requireAuth, async (req, res) => {
   const orderStatus = "processing";
   const orderDate = new Date().toISOString();
 
-  if (!normalizedMerchantOid) {
+  if (!normalizedPaymentReference && !normalizedPaymentToken) {
     return res.status(400).json({ message: "Ödeme doğrulama bilgisi eksik." });
   }
 
-  const paymentIntent = await getPaytrPaymentIntent(normalizedMerchantOid, req.authUser.id);
+  let paymentIntent = normalizedPaymentReference
+    ? await getIyzicoPaymentIntent(normalizedPaymentReference, req.authUser.id)
+    : null;
+  if (!paymentIntent && normalizedPaymentToken) {
+    const tokenIntent = await getIyzicoPaymentIntentByToken(normalizedPaymentToken);
+    if (tokenIntent && String(tokenIntent.user_id ?? "") === String(req.authUser.id ?? "")) {
+      paymentIntent = tokenIntent;
+      normalizedPaymentReference = String(tokenIntent.payment_reference ?? "").trim();
+    }
+  }
   if (!paymentIntent) {
     return res.status(404).json({ message: "Ödeme oturumu bulunamadı." });
   }
@@ -7549,38 +7912,70 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     });
   }
 
-  let paytrStatusResult;
+  let iyzicoResult;
   try {
-    paytrStatusResult = await queryPaytrPaymentStatus(normalizedMerchantOid);
+    iyzicoResult = await retrieveIyzicoCheckoutForm({
+      token: paymentIntent.token,
+      conversationId: paymentIntent.payment_reference,
+    });
   } catch (error) {
-    await markPaytrPaymentIntentChecked(normalizedMerchantOid, {
+    await markIyzicoPaymentIntent(normalizedPaymentReference, {
       status: "pending",
-      paytrStatus: "check_failed",
+      callbackStatus: "retrieve_failed",
     });
     return res.status(409).json({
       message: "Ödeme henüz doğrulanamadı. Lütfen birkaç saniye sonra tekrar deneyin.",
     });
   }
 
-  if (String(paytrStatusResult.paytrStatus ?? "") !== "success") {
-    await markPaytrPaymentIntentChecked(normalizedMerchantOid, {
-      status: "pending",
-      paytrStatus: paytrStatusResult.paytrStatus || "pending",
-      paymentType: paytrStatusResult.paymentType || null,
-    });
+  const iyzicoPayment = interpretIyzicoPaymentResult(iyzicoResult);
+  await markIyzicoPaymentIntent(normalizedPaymentReference, {
+    status: iyzicoPayment.ok ? "authorized" : "failed",
+    paymentStatus: iyzicoPayment.paymentStatus || null,
+    paymentId: iyzicoPayment.paymentId || null,
+    fraudStatus: iyzicoPayment.fraudStatus,
+    callbackStatus: iyzicoPayment.ok ? "verified" : "failed",
+    rawResultText: JSON.stringify(iyzicoResult),
+  });
+
+  if (!iyzicoPayment.ok) {
     return res.status(409).json({
-      message: "Ödeme henüz onaylanmadı. Sipariş oluşturulmadı.",
+      message: String(iyzicoResult?.errorMessage ?? "").trim() || "Ödeme henüz onaylanmadı. Sipariş oluşturulmadı.",
     });
   }
 
-  if (Number(paytrStatusResult.paymentAmount ?? 0) !== expectedPaymentAmount) {
-    await markPaytrPaymentIntentChecked(normalizedMerchantOid, {
+  const paidPrice = Math.round(
+    (Number.parseFloat(String(iyzicoResult?.paidPrice ?? "0").replace(",", ".")) || 0) * 100
+  );
+  if (paidPrice !== expectedPaymentAmount) {
+    await markIyzicoPaymentIntent(normalizedPaymentReference, {
       status: "failed",
-      paytrStatus: "amount_mismatch",
-      paymentType: paytrStatusResult.paymentType || null,
+      paymentStatus: iyzicoPayment.paymentStatus || null,
+      paymentId: iyzicoPayment.paymentId || null,
+      fraudStatus: iyzicoPayment.fraudStatus,
+      callbackStatus: "amount_mismatch",
+      rawResultText: JSON.stringify(iyzicoResult),
     });
     return res.status(409).json({
       message: "Ödeme tutarı doğrulanamadı. Sipariş oluşturulmadı.",
+    });
+  }
+
+  if (
+    String(iyzicoResult?.conversationId ?? "").trim() &&
+    String(iyzicoResult.conversationId).trim() !== normalizedPaymentReference
+  ) {
+    return res.status(409).json({
+      message: "Ödeme referansı doğrulanamadı. Lütfen ödemeyi yeniden başlatın.",
+    });
+  }
+
+  if (
+    String(iyzicoResult?.basketId ?? "").trim() &&
+    String(iyzicoResult.basketId).trim() !== String(paymentIntent.basket_id ?? "").trim()
+  ) {
+    return res.status(409).json({
+      message: "Ödeme sepeti doğrulanamadı. Lütfen ödemeyi yeniden başlatın.",
     });
   }
 
@@ -7657,6 +8052,14 @@ app.post("/api/orders", requireAuth, async (req, res) => {
       note: "Sipariş müşteriden alındı.",
     });
 
+    await insertOrderStatusTimelineEvent(connection, {
+      orderId,
+      type: "processing",
+      note: iyzicoPayment.inReview
+        ? "Ödeme iyzico tarafından alındı ve fraud incelemesinde bekliyor."
+        : "Ödeme iyzico tarafından doğrulandı.",
+    });
+
     const valuesSql = normalizedItems.map(() => "(?, ?, ?, ?, ?)").join(", ");
     const params = normalizedItems.flatMap((item) => [
       crypto.randomUUID(),
@@ -7686,21 +8089,26 @@ app.post("/api/orders", requireAuth, async (req, res) => {
 
     await connection.query(
       `
-      UPDATE paytr_payment_intents
+      UPDATE iyzico_payment_intents
       SET
         status = 'consumed',
-        paytr_status = ?,
-        paytr_payment_type = ?,
+        payment_status = ?,
+        payment_id = ?,
+        fraud_status = ?,
+        callback_status = 'consumed',
+        raw_result_text = ?,
         order_id = ?,
         consumed_at = NOW(),
         last_checked_at = NOW()
-      WHERE merchant_oid = ? AND user_id = ?
+      WHERE payment_reference = ? AND user_id = ?
       `,
       [
-        paytrStatusResult.paytrStatus || "success",
-        paytrStatusResult.paymentType || null,
+        iyzicoPayment.paymentStatus || "SUCCESS",
+        iyzicoPayment.paymentId || null,
+        iyzicoPayment.fraudStatus,
+        JSON.stringify(iyzicoResult),
         orderId,
-        normalizedMerchantOid,
+        normalizedPaymentReference,
         req.authUser.id,
       ]
     );
@@ -7755,7 +8163,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
       });
     }
 
-    if (deliveryAddress) {
+    if (deliveryAddress && !iyzicoPayment.inReview) {
       createNavlungoShipmentForOrder({
         order: createdOrder,
         user: req.authUser,
@@ -7780,20 +8188,14 @@ app.post("/api/orders", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/paytr/token", requireAuth, async (req, res) => {
+app.post("/api/iyzico/checkout/init", requireAuth, async (req, res) => {
   try {
-    const merchantId = process.env.PAYTR_MERCHANT_ID;
-    const merchantKey = process.env.PAYTR_MERCHANT_KEY;
-    const merchantSalt = process.env.PAYTR_MERCHANT_SALT;
-    const baseMerchantOkUrl = normalizePaytrReturnUrl(process.env.PAYTR_OK_URL, "/odeme/basarili");
-    const baseMerchantFailUrl = normalizePaytrReturnUrl(process.env.PAYTR_FAIL_URL, "/odeme/basarisiz");
-    const testMode = String(process.env.PAYTR_TEST_MODE ?? "1");
-
-    if (!merchantId || !merchantKey || !merchantSalt || !baseMerchantOkUrl || !baseMerchantFailUrl) {
-      return res.status(500).json({ message: "PAYTR env settings are missing." });
+    if (!isIyzicoConfigured()) {
+      return res.status(500).json({ message: "iyzico env ayarlari eksik." });
     }
 
-    const { email, firstName, lastName, phone, street, province, district, neighborhood, addressName, couponCode } = req.body ?? {};
+    const { email, firstName, lastName, phone, street, province, district, neighborhood, addressName, couponCode } =
+      req.body ?? {};
     const normalizedEmail = String(email ?? "").trim();
     const normalizedFirstName = String(firstName ?? "").trim();
     const normalizedLastName = String(lastName ?? "").trim();
@@ -7812,9 +8214,9 @@ app.post("/api/paytr/token", requireAuth, async (req, res) => {
     if (coupon && !coupon.valid) {
       return res.status(400).json({ message: coupon.reason || "Kupon geçersiz." });
     }
-    const discountAmount = coupon?.valid ? coupon.discountAmount : 0;
-    const amount = subtotal + shippingAmount - discountAmount;
 
+    const discountAmount = coupon?.valid ? coupon.discountAmount : 0;
+    const amount = Math.max(0, subtotal + shippingAmount - discountAmount);
     if (
       !normalizedEmail ||
       !normalizedFirstName ||
@@ -7827,75 +8229,46 @@ app.post("/api/paytr/token", requireAuth, async (req, res) => {
       amount <= 0 ||
       orderItems.length === 0
     ) {
-      return res.status(400).json({ message: "Invalid payment request payload." });
+      return res.status(400).json({ message: "Geçersiz ödeme isteği." });
     }
 
-    const paymentAmount = Math.round(amount * 100);
-    const userBasketRaw = orderItems.map((item) => [
-      String(item?.product?.name ?? "").slice(0, 120),
-      Number(item?.product?.price ?? 0).toFixed(2),
-      Math.max(1, Number(item?.quantity ?? 1) || 1),
-    ]);
-    const userBasket = Buffer.from(JSON.stringify(userBasketRaw), "utf8").toString("base64");
-
-    const userIp = getClientIp(req);
-    const merchantOid = `OID${Date.now()}${Math.floor(Math.random() * 1000000)}`;
-    const merchantOkUrl = appendQueryParamToUrl(baseMerchantOkUrl, "merchantOid", merchantOid);
-    const merchantFailUrl = appendQueryParamToUrl(baseMerchantFailUrl, "merchantOid", merchantOid);
-    const noInstallment = "0";
-    const maxInstallment = "0";
-    const currency = "TL";
-    const non3dTestFailed = "0";
-    const debugOn = "1";
-    const userName = `${normalizedFirstName} ${normalizedLastName}`.trim();
-    const userAddress = `${normalizedStreet}, ${normalizedDistrict}/${normalizedProvince}`;
-
-    const hashStr = `${merchantId}${userIp}${merchantOid}${normalizedEmail}${paymentAmount}${userBasket}${noInstallment}${maxInstallment}${currency}${testMode}`;
-    const paytrToken = crypto
-      .createHmac("sha256", merchantKey)
-      .update(hashStr + merchantSalt)
-      .digest("base64");
-
-    const formData = new URLSearchParams({
-      merchant_id: merchantId,
-      user_ip: userIp,
-      merchant_oid: merchantOid,
-      email: normalizedEmail,
-      payment_amount: String(paymentAmount),
-      paytr_token: paytrToken,
-      user_basket: userBasket,
-      debug_on: debugOn,
-      no_installment: noInstallment,
-      max_installment: maxInstallment,
-      user_name: userName,
-      user_address: userAddress,
-      user_phone: normalizedPhone,
-      merchant_ok_url: merchantOkUrl,
-      merchant_fail_url: merchantFailUrl,
-      timeout_limit: "30",
-      currency,
-      test_mode: testMode,
-      lang: "tr",
-      non_3d: "0",
-      non3d_test_failed: non3dTestFailed,
+    const paymentReference = `IYZ${Date.now()}${Math.floor(Math.random() * 1000000)}`;
+    const callbackUrl = IYZICO_CALLBACK_URL || `${buildPublicBaseUrl(req)}/api/iyzico/callback`;
+    const initResult = await initializeIyzicoCheckoutForm({
+      req,
+      user: req.authUser,
+      paymentReference,
+      price: subtotal,
+      paidPrice: amount,
+      currency: IYZICO_CURRENCY,
+      callbackUrl,
+      contactName: `${normalizedFirstName} ${normalizedLastName}`.trim(),
+      shippingInfo: {
+        addressName: normalizedAddressName,
+        firstName: normalizedFirstName,
+        lastName: normalizedLastName,
+        email: normalizedEmail,
+        phone: normalizedPhone,
+        street: normalizedStreet,
+        province: normalizedProvince,
+        district: normalizedDistrict,
+        neighborhood: normalizedNeighborhood,
+      },
+      orderItems,
     });
 
-    const paytrResponse = await fetch("https://www.paytr.com/odeme/api/get-token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: formData,
-    });
-
-    const paytrJson = await paytrResponse.json().catch(() => null);
-    if (!paytrResponse.ok || !paytrJson || paytrJson.status !== "success" || !paytrJson.token) {
-      return res.status(400).json({
-        message: "PAYTR token alınamadı.",
-        reason: paytrJson?.reason || `HTTP ${paytrResponse.status}`,
+    if (
+      String(initResult?.status ?? "").trim().toLowerCase() !== "success" ||
+      !String(initResult?.token ?? "").trim() ||
+      !String(initResult?.paymentPageUrl ?? "").trim()
+    ) {
+      return res.status(409).json({
+        message: String(initResult?.errorMessage ?? "").trim() || "iyzico ödeme oturumu başlatılamadı.",
       });
     }
 
-    await upsertPaytrPaymentIntent({
-      merchantOid,
+    await upsertIyzicoPaymentIntent({
+      paymentReference,
       userId: req.authUser.id,
       cartSignature: buildCartIntegritySignature(orderItems),
       shippingSignature: buildShippingIntegritySignature({
@@ -7909,17 +8282,22 @@ app.post("/api/paytr/token", requireAuth, async (req, res) => {
         neighborhood: normalizedNeighborhood,
       }),
       couponCode: coupon?.valid ? coupon.code : "",
-      amount: paymentAmount,
-      currency,
+      amount: Math.round(amount * 100),
+      currency: IYZICO_CURRENCY,
+      token: String(initResult.token).trim(),
+      basketId: paymentReference,
     });
 
     return res.json({
-      iframeUrl: `https://www.paytr.com/odeme/guvenli/${paytrJson.token}`,
-      token: paytrJson.token,
-      merchantOid,
+      paymentPageUrl: String(initResult.paymentPageUrl).trim(),
+      token: String(initResult.token).trim(),
+      paymentReference,
+      conversationId: String(initResult?.conversationId ?? paymentReference).trim() || paymentReference,
     });
   } catch (error) {
-    return res.status(500).json({ message: "PAYTR token request failed." });
+    return res.status(500).json({
+      message: error instanceof Error ? error.message || "iyzico ödeme başlatılamadı." : "iyzico ödeme başlatılamadı.",
+    });
   }
 });
 
@@ -7933,7 +8311,8 @@ app.all("/api/iyzico/callback", async (req, res) => {
     String(req.body?.token ?? req.query?.token ?? "").trim() ||
     String(req.body?.checkoutFormToken ?? req.query?.checkoutFormToken ?? "").trim();
   const conversationId = String(req.body?.conversationId ?? req.query?.conversationId ?? "").trim();
-  const storefrontCheckoutUrl = `${buildPublicBaseUrl(req)}/odeme`;
+  const storefrontBaseUrl = buildPublicBaseUrl(req);
+  const storefrontCheckoutUrl = `${storefrontBaseUrl}/odeme`;
 
   if (!isIyzicoConfigured()) {
     const payload = {
@@ -7981,38 +8360,50 @@ app.all("/api/iyzico/callback", async (req, res) => {
 
   try {
     const result = await retrieveIyzicoCheckoutForm({ token, conversationId });
-    const fraudStatus = normalizeIyzicoFraudStatus(result?.fraudStatus);
-    const paymentSuccessful = isIyzicoPaymentSuccessful(result);
-    const inReview = paymentSuccessful && fraudStatus === 0;
-    const rejected = fraudStatus === -1;
-    const ok = paymentSuccessful && !rejected;
+    const payment = interpretIyzicoPaymentResult(result);
+    const intent = await getIyzicoPaymentIntentByToken(token);
+    const paymentReference =
+      String(result?.conversationId ?? "").trim() || String(intent?.payment_reference ?? "").trim();
 
-    const message = ok
-      ? inReview
+    if (paymentReference) {
+      await markIyzicoPaymentIntent(paymentReference, {
+        status: payment.ok ? "authorized" : "failed",
+        paymentStatus: payment.paymentStatus || null,
+        paymentId: payment.paymentId || null,
+        fraudStatus: payment.fraudStatus,
+        callbackStatus: payment.ok ? "callback_ok" : "callback_failed",
+        rawResultText: JSON.stringify(result),
+      });
+    }
+
+    const message = payment.ok
+      ? payment.inReview
         ? "Ödeme iyzico tarafından alındı. Sonuç inceleme sürecinde görünüyor."
         : "Ödeme iyzico tarafından başarıyla doğrulandı."
       : String(result?.errorMessage ?? "").trim() || "Ödeme sonucu başarısız görünüyor.";
 
     const payload = {
-      ok,
-      inReview,
+      ok: payment.ok,
+      inReview: payment.inReview,
       callbackUrl: IYZICO_CALLBACK_URL,
       result,
     };
 
     if (wantsJson) {
-      return res.status(ok ? 200 : 409).json(payload);
+      return res.status(payment.ok ? 200 : 409).json(payload);
     }
 
-    return res.status(ok ? 200 : 409).type("html").send(
-      renderIyzicoCallbackPage({
-        title: ok ? "iyzico ödeme sonucu alındı" : "iyzico ödeme sonucu başarısız",
-        message,
-        result,
-        isSuccess: ok,
-        callbackUrl: storefrontCheckoutUrl,
-      })
-    );
+    const redirectUrl = payment.ok
+      ? buildIyzicoCheckoutReturnUrl(storefrontBaseUrl, paymentReference, "/odeme/basarili")
+      : buildIyzicoCheckoutReturnUrl(storefrontBaseUrl, paymentReference, "/odeme/basarisiz");
+
+    if (!payment.ok) {
+      const failedUrl = new URL(redirectUrl);
+      failedUrl.searchParams.set("reason", message);
+      return res.redirect(303, failedUrl.toString());
+    }
+
+    return res.redirect(303, redirectUrl);
   } catch (error) {
     const message = error instanceof Error ? error.message : "IYZICO callback islemi basarisiz.";
     const payload = {
@@ -8023,15 +8414,9 @@ app.all("/api/iyzico/callback", async (req, res) => {
     if (wantsJson) {
       return res.status(502).json(payload);
     }
-    return res.status(502).type("html").send(
-      renderIyzicoCallbackPage({
-        title: "iyzico callback sorgusu başarısız",
-        message,
-        result: {},
-        isSuccess: false,
-        callbackUrl: storefrontCheckoutUrl,
-      })
-    );
+    const failedUrl = new URL(buildIyzicoCheckoutReturnUrl(storefrontBaseUrl, "", "/odeme/basarisiz"));
+    failedUrl.searchParams.set("reason", message);
+    return res.redirect(303, failedUrl.toString());
   }
 });
 

@@ -409,7 +409,7 @@ export async function saveWishlist(items: Product[]): Promise<Product[]> {
   return data.items;
 }
 
-export async function createPaytrIframe(input: {
+export async function createIyzicoCheckoutSession(input: {
   email: string;
   firstName: string;
   lastName: string;
@@ -422,12 +422,14 @@ export async function createPaytrIframe(input: {
   total: number;
   items: Array<{ name: string; unitPrice: number; quantity: number }>;
   couponCode?: string | null;
-}): Promise<{ iframeUrl: string; token: string; merchantOid: string }> {
-  const response = await authFetch("/api/paytr/token", {
+}): Promise<{ paymentPageUrl: string; token: string; paymentReference: string; conversationId: string }> {
+  const response = await authFetch("/api/iyzico/checkout/init", {
     method: "POST",
     body: JSON.stringify(input),
   });
-  return parseResponse<{ iframeUrl: string; token: string; merchantOid: string }>(response);
+  return parseResponse<{ paymentPageUrl: string; token: string; paymentReference: string; conversationId: string }>(
+    response
+  );
 }
 
 export async function applyAbandonedCartCoupon(code: string): Promise<AppliedAbandonedCartCoupon> {

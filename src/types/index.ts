@@ -48,6 +48,9 @@ export interface Order {
   id: string;
   date: string;
   merchantOid?: string;
+  paymentReference?: string;
+  paymentToken?: string;
+  conversationId?: string;
   items: CartItem[];
   total: number;
   subtotal?: number;

@@ -9547,7 +9547,6 @@ app.get("/sitemap.xml", async (req, res) => {
       { loc: "/gizlilik", changefreq: "yearly", priority: "0.4" },
       { loc: "/kullanim-kosullari", changefreq: "yearly", priority: "0.4" },
       { loc: "/surdurulebilirlik", changefreq: "monthly", priority: "0.5" },
-      { loc: "/kariyer", changefreq: "monthly", priority: "0.4" },
     ];
 
     const [productRows] = await pool.query(`SELECT id FROM products ORDER BY id ASC`);

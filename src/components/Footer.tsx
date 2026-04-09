@@ -70,11 +70,6 @@ export function Footer() {
                     Sürdürülebilirlik
                   </Link>
                 </li>
-                <li>
-                  <Link to="/kariyer" className="text-sm text-white/80 hover:text-white transition-colors">
-                    Kariyer
-                  </Link>
-                </li>
               </ul>
             </div>
 

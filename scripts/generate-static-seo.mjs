@@ -342,13 +342,6 @@ function buildStaticPageConfigs() {
       type: "website",
     },
     {
-      route: "kariyer",
-      title: `Kariyer | ${BRAND}`,
-      description: "StilBags&Fashion kariyer fırsatları ve başvuru süreçleri hakkında bilgi alın.",
-      image: "/banner3.jpg",
-      type: "website",
-    },
-    {
       route: "yardim-merkezi",
       title: `Yardım Merkezi | ${BRAND}`,
       description: "Sipariş, kargo, iade ve hesap işlemleri için ihtiyaç duyduğunuz tüm yardım bağlantılarına tek yerden ulaşın.",

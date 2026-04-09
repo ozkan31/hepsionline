@@ -181,21 +181,3 @@ export function SustainabilityPage() {
     </InfoLayout>
   );
 }
-
-export function CareerPage() {
-  return (
-    <InfoLayout title="Kariyer">
-      <p>
-        {BRAND} ekibinde yer almak isterseniz özgeçmişinizi {EMAIL} adresine iletebilirsiniz.
-      </p>
-      <p>
-        Başvurunuzda iletişim bilgilerinizi, ilgi duyduğunuz pozisyonu ve varsa ilgili deneyimlerinizi belirtmeniz,
-        değerlendirme sürecinin daha hızlı ve sağlıklı ilerlemesini sağlar.
-      </p>
-      <p>
-        Uygun görülen başvurular için tarafınıza geri dönüş sağlanır. Başvuru süreçlerinde paylaşılan kişisel veriler,
-        yalnızca işe alım değerlendirmesi amacıyla işlenir.
-      </p>
-    </InfoLayout>
-  );
-}

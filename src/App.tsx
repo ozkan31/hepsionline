@@ -18,7 +18,6 @@ const Admin = lazy(() => import('@/pages/Admin').then((module) => ({ default: mo
 const About = lazy(() => import('@/pages/About').then((module) => ({ default: module.About })));
 const Contact = lazy(() => import('@/pages/Contact').then((module) => ({ default: module.Contact })));
 const CargoInfoPage = lazy(() => import('@/pages/InfoPages').then((module) => ({ default: module.CargoInfoPage })));
-const CareerPage = lazy(() => import('@/pages/InfoPages').then((module) => ({ default: module.CareerPage })));
 const FaqPage = lazy(() => import('@/pages/InfoPages').then((module) => ({ default: module.FaqPage })));
 const DistanceSalesContractPage = lazy(() =>
   import('@/pages/InfoPages').then((module) => ({ default: module.DistanceSalesContractPage }))
@@ -123,7 +122,6 @@ function AppLayout() {
               <Route path="/mesafeli-satis-sozlesmesi" element={<DistanceSalesContractPage />} />
               <Route path="/sss" element={<FaqPage />} />
               <Route path="/surdurulebilirlik" element={<SustainabilityPage />} />
-              <Route path="/kariyer" element={<CareerPage />} />
               <Route path="/gizlilik" element={<PrivacyPolicyPage />} />
               <Route path="/kullanim-kosullari" element={<TermsPage />} />
               <Route path="/yardim-merkezi" element={<HelpCenterPage />} />

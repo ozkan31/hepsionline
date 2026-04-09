@@ -200,11 +200,6 @@ export function RouteSeo() {
         description: 'StilBags&Fashion sürdürülebilirlik yaklaşımı ve sorumlu üretim anlayışını inceleyin.',
         canonical: '/surdurulebilirlik/',
       },
-      '/kariyer': {
-        title: `Kariyer | ${SEO_BRAND_NAME}`,
-        description: 'StilBags&Fashion kariyer fırsatları ve başvuru süreçleri hakkında bilgi alın.',
-        canonical: '/kariyer/',
-      },
       '/yardim-merkezi': {
         title: `Yardım Merkezi | ${SEO_BRAND_NAME}`,
         description: 'Sipariş, kargo, iade ve hesap işlemleri için ihtiyaç duyduğunuz tüm yardım bağlantılarına tek yerden ulaşın.',

@@ -128,6 +128,13 @@ const TRENDYOL_DEFAULT_IMAGE_TEMPLATE = String(process.env.TRENDYOL_DEFAULT_IMAG
 const TRENDYOL_DEFAULT_ATTRIBUTES_JSON = String(process.env.TRENDYOL_DEFAULT_ATTRIBUTES_JSON || "[]").trim();
 const TRENDYOL_ORDER_STATUS = String(process.env.TRENDYOL_ORDER_STATUS || "Created").trim();
 const TRENDYOL_STOREFRONT_CODE = String(process.env.TRENDYOL_STOREFRONT_CODE || "TR").trim();
+const IYZICO_ENABLED = ["1", "true", "yes"].includes(String(process.env.IYZICO_ENABLED ?? "").trim().toLowerCase());
+const IYZICO_ENVIRONMENT = String(process.env.IYZICO_ENVIRONMENT || "production").trim().toLowerCase();
+const IYZICO_API_BASE_URL = String(process.env.IYZICO_API_BASE_URL || "").trim();
+const IYZICO_API_KEY = String(process.env.IYZICO_API_KEY || "").trim();
+const IYZICO_SECRET_KEY = String(process.env.IYZICO_SECRET_KEY || "").trim();
+const IYZICO_CALLBACK_URL = String(process.env.IYZICO_CALLBACK_URL || "").trim();
+const IYZICO_LOCALE = String(process.env.IYZICO_LOCALE || "tr").trim() || "tr";
 const BLOCKED_PUBLIC_PATH_PATTERNS = [
   /(?:^|\/)\.(?:env|git|svn|hg)(?:$|[./~_-])/i,
   /(?:^|\/)\.ht(?:access|passwd)(?:$|[./~_-])/i,
@@ -1113,6 +1120,7 @@ app.use(
   })
 );
 app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: false }));
 const staticUploadOptions = {
   maxAge: "365d",
   immutable: true,
@@ -4709,6 +4717,135 @@ async function queryPaytrPaymentStatus(merchantOid) {
   };
 }
 
+function getIyzicoApiBaseUrl() {
+  if (IYZICO_API_BASE_URL) {
+    return IYZICO_API_BASE_URL.replace(/\/+$/, "");
+  }
+  return IYZICO_ENVIRONMENT === "sandbox" ? "https://sandbox-api.iyzipay.com" : "https://api.iyzipay.com";
+}
+
+function isIyzicoConfigured() {
+  return Boolean(IYZICO_ENABLED && IYZICO_API_KEY && IYZICO_SECRET_KEY);
+}
+
+function buildIyzicoAuthorization(uriPath, bodyJson) {
+  const randomKey = `${Date.now()}${Math.floor(Math.random() * 1000000)}`;
+  const signature = crypto
+    .createHmac("sha256", IYZICO_SECRET_KEY)
+    .update(`${randomKey}${uriPath}${bodyJson}`)
+    .digest("hex");
+  const authorizationPlain = `apiKey:${IYZICO_API_KEY}&randomKey:${randomKey}&signature:${signature}`;
+  const authorization = `IYZWSv2 ${Buffer.from(authorizationPlain, "utf8").toString("base64")}`;
+  return { authorization, randomKey };
+}
+
+async function iyzicoRequest(uriPath, body = {}) {
+  if (!isIyzicoConfigured()) {
+    throw new Error("IYZICO_CONFIG_MISSING");
+  }
+
+  const bodyJson = JSON.stringify(body);
+  const { authorization, randomKey } = buildIyzicoAuthorization(uriPath, bodyJson);
+  const response = await fetch(`${getIyzicoApiBaseUrl()}${uriPath}`, {
+    method: "POST",
+    headers: {
+      Authorization: authorization,
+      "x-iyzi-rnd": randomKey,
+      "Content-Type": "application/json",
+    },
+    body: bodyJson,
+  });
+
+  const rawText = await response.text();
+  let payload = null;
+  try {
+    payload = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    payload = rawText;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `IYZICO_REQUEST_FAILED ${response.status} ${
+        typeof payload === "string" ? payload.slice(0, 300) : JSON.stringify(payload).slice(0, 300)
+      }`
+    );
+  }
+
+  return payload;
+}
+
+async function retrieveIyzicoCheckoutForm({ token, conversationId }) {
+  const normalizedToken = String(token ?? "").trim();
+  if (!normalizedToken) {
+    throw new Error("IYZICO_TOKEN_MISSING");
+  }
+
+  return iyzicoRequest("/payment/iyzipos/checkoutform/auth/ecom/detail", {
+    locale: IYZICO_LOCALE,
+    conversationId: String(conversationId ?? "").trim() || undefined,
+    token: normalizedToken,
+  });
+}
+
+function normalizeIyzicoFraudStatus(value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isIyzicoPaymentSuccessful(result) {
+  return (
+    String(result?.status ?? "").trim().toLowerCase() === "success" &&
+    String(result?.paymentStatus ?? "").trim().toUpperCase() === "SUCCESS"
+  );
+}
+
+function renderIyzicoCallbackPage({ title, message, result, isSuccess, callbackUrl }) {
+  const detailRows = [
+    ["Durum", String(result?.paymentStatus ?? result?.status ?? "-").trim() || "-"],
+    ["Konuşma ID", String(result?.conversationId ?? "-").trim() || "-"],
+    ["Ödeme ID", String(result?.paymentId ?? "-").trim() || "-"],
+    ["Fraud Durumu", String(result?.fraudStatus ?? "-").trim() || "-"],
+    ["Tutar", String(result?.paidPrice ?? result?.price ?? "-").trim() || "-"],
+    ["Token", String(result?.token ?? "-").trim() || "-"],
+  ]
+    .map(
+      ([label, value]) =>
+        `<tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600;">${escapeHtml(label)}</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(value)}</td></tr>`
+    )
+    .join("");
+
+  return `<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title)}</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <style>
+      body { font-family: Arial, sans-serif; background:#f8f7f4; color:#111; margin:0; padding:32px 16px; }
+      .card { max-width:720px; margin:0 auto; background:#fff; border:1px solid #e5e5e5; border-radius:20px; padding:28px; }
+      .badge { display:inline-block; padding:6px 12px; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:0.04em; background:${isSuccess ? "#e8f7ed" : "#fff2f2"}; color:${isSuccess ? "#166534" : "#991b1b"}; }
+      h1 { margin:16px 0 10px; font-size:28px; }
+      p { line-height:1.7; color:#444; }
+      table { width:100%; border-collapse:collapse; margin-top:18px; }
+      a.button { display:inline-block; margin-top:18px; padding:12px 18px; border-radius:999px; background:#111; color:#fff; text-decoration:none; }
+      .sub { margin-top:16px; font-size:13px; color:#666; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <span class="badge">${isSuccess ? "IYZICO CALLBACK OK" : "IYZICO CALLBACK"}</span>
+      <h1>${escapeHtml(title)}</h1>
+      <p>${escapeHtml(message)}</p>
+      <table>${detailRows}</table>
+      <a class="button" href="${escapeHtml(callbackUrl)}">Siteye Dön</a>
+      <p class="sub">Bu sayfa iyzico callback adresinin çalıştığını doğrulamak için hazırlanmıştır.</p>
+    </div>
+  </body>
+</html>`;
+}
+
 async function requireAuth(req, res, next) {
   const token = extractBearerToken(req);
   if (!token) {
@@ -7783,6 +7920,118 @@ app.post("/api/paytr/token", requireAuth, async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ message: "PAYTR token request failed." });
+  }
+});
+
+app.all("/api/iyzico/callback", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+
+  const wantsJson =
+    String(req.query?.format ?? "").trim().toLowerCase() === "json" ||
+    String(req.get("accept") ?? "").toLowerCase().includes("application/json");
+  const token =
+    String(req.body?.token ?? req.query?.token ?? "").trim() ||
+    String(req.body?.checkoutFormToken ?? req.query?.checkoutFormToken ?? "").trim();
+  const conversationId = String(req.body?.conversationId ?? req.query?.conversationId ?? "").trim();
+  const storefrontCheckoutUrl = `${buildPublicBaseUrl(req)}/odeme`;
+
+  if (!isIyzicoConfigured()) {
+    const payload = {
+      ok: false,
+      ready: false,
+      message: "IYZICO env ayarlari eksik.",
+    };
+    if (wantsJson) {
+      return res.status(503).json(payload);
+    }
+    return res.status(503).type("html").send(
+      renderIyzicoCallbackPage({
+        title: "iyzico callback hazır değil",
+        message: payload.message,
+        result: {},
+        isSuccess: false,
+        callbackUrl: storefrontCheckoutUrl,
+      })
+    );
+  }
+
+  if (!token) {
+    const payload = {
+      ok: true,
+      ready: true,
+      callbackUrl: IYZICO_CALLBACK_URL,
+      message: "IYZICO callback endpoint hazir.",
+    };
+    if (wantsJson) {
+      return res.json(payload);
+    }
+    return res.status(200).type("html").send(
+      renderIyzicoCallbackPage({
+        title: "iyzico callback hazır",
+        message: payload.message,
+        result: {
+          status: "ready",
+          callbackUrl: IYZICO_CALLBACK_URL,
+        },
+        isSuccess: true,
+        callbackUrl: storefrontCheckoutUrl,
+      })
+    );
+  }
+
+  try {
+    const result = await retrieveIyzicoCheckoutForm({ token, conversationId });
+    const fraudStatus = normalizeIyzicoFraudStatus(result?.fraudStatus);
+    const paymentSuccessful = isIyzicoPaymentSuccessful(result);
+    const inReview = paymentSuccessful && fraudStatus === 0;
+    const rejected = fraudStatus === -1;
+    const ok = paymentSuccessful && !rejected;
+
+    const message = ok
+      ? inReview
+        ? "Ödeme iyzico tarafından alındı. Sonuç inceleme sürecinde görünüyor."
+        : "Ödeme iyzico tarafından başarıyla doğrulandı."
+      : String(result?.errorMessage ?? "").trim() || "Ödeme sonucu başarısız görünüyor.";
+
+    const payload = {
+      ok,
+      inReview,
+      callbackUrl: IYZICO_CALLBACK_URL,
+      result,
+    };
+
+    if (wantsJson) {
+      return res.status(ok ? 200 : 409).json(payload);
+    }
+
+    return res.status(ok ? 200 : 409).type("html").send(
+      renderIyzicoCallbackPage({
+        title: ok ? "iyzico ödeme sonucu alındı" : "iyzico ödeme sonucu başarısız",
+        message,
+        result,
+        isSuccess: ok,
+        callbackUrl: storefrontCheckoutUrl,
+      })
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "IYZICO callback islemi basarisiz.";
+    const payload = {
+      ok: false,
+      ready: true,
+      message,
+    };
+    if (wantsJson) {
+      return res.status(502).json(payload);
+    }
+    return res.status(502).type("html").send(
+      renderIyzicoCallbackPage({
+        title: "iyzico callback sorgusu başarısız",
+        message,
+        result: {},
+        isSuccess: false,
+        callbackUrl: storefrontCheckoutUrl,
+      })
+    );
   }
 });
 

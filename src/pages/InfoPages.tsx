@@ -1,7 +1,5 @@
-const BRAND = "StilBags&Fashion";
-const PHONE = "0536 953 68 86";
-const EMAIL = "destek@stilbagsfashion.com";
-const ADDRESS = "Kuletepe Mahallesi 4858. Sokak No: 8 Hatay/Reyhanlı";
+import { DistanceSalesContract } from "@/components/DistanceSalesContract";
+import { LEGAL_ADDRESS as ADDRESS, LEGAL_BRAND as BRAND, LEGAL_EMAIL as EMAIL, LEGAL_PHONE as PHONE } from "@/lib/legalInfo";
 
 function InfoLayout({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -143,6 +141,14 @@ export function TermsPage() {
       <p>
         Koşullar hakkında soru ve talepler için: {EMAIL} / {PHONE}
       </p>
+    </InfoLayout>
+  );
+}
+
+export function DistanceSalesContractPage() {
+  return (
+    <InfoLayout title="Mesafeli Satış Sözleşmesi">
+      <DistanceSalesContract />
     </InfoLayout>
   );
 }

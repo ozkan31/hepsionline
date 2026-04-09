@@ -114,6 +114,9 @@ export function Footer() {
 
           <div className="flex flex-col md:flex-row justify-between items-center gap-4 pt-8 border-t border-white/10">
             <div className="flex gap-6">
+              <Link to="/mesafeli-satis-sozlesmesi" className="text-xs text-white/50 hover:text-white transition-colors">
+                Mesafeli Satış Sözleşmesi
+              </Link>
               <Link to="/gizlilik" className="text-xs text-white/50 hover:text-white transition-colors">
                 Gizlilik Politikası
               </Link>

@@ -1,14 +1,16 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Check, ChevronRight, Truck } from "lucide-react";
 import { useStore } from "@/store/StoreContext";
 import { applyCustomerCoupon, createOrder, createPaytrIframe, saveAddress } from "@/lib/api";
+import { DistanceSalesContract } from "@/components/DistanceSalesContract";
 import {
   clearStoredAbandonedCartCoupon,
   getCouponDiscountAmount,
   getStoredAbandonedCartCouponCode,
   storeAbandonedCartCoupon,
 } from "@/lib/abandonedCartCoupon";
+import { DISTANCE_SALES_CONTRACT_PATH } from "@/lib/legalInfo";
 import { loadTurkeyLocations } from "@/lib/turkiye";
 import { trackPurchase } from "@/lib/analytics";
 import type { AppliedAbandonedCartCoupon, Order } from "@/types";
@@ -295,6 +297,38 @@ export function Checkout() {
   const currentPaytrPayload = useMemo(
     () => buildPaytrPayload(shippingInfo),
     [shippingInfo, state.cart, total, appliedCoupon?.code]
+  );
+  const contractParty = useMemo(() => {
+    const source = selectedShippingInfo ?? shippingInfo;
+    const fullName = [
+      String(source?.firstName ?? state.user?.firstName ?? "").trim(),
+      String(source?.lastName ?? state.user?.lastName ?? "").trim(),
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const addressParts = [
+      String(source?.addressName ?? "").trim(),
+      String(source?.street ?? "").trim(),
+      String(source?.neighborhood ?? "").trim(),
+      String(source?.district ?? "").trim(),
+      String(source?.province ?? "").trim(),
+    ].filter(Boolean);
+
+    return {
+      fullName,
+      address: addressParts.join(", "),
+      phone: String(source?.phone ?? state.user?.phone ?? "").trim(),
+      email: String(source?.email ?? state.user?.email ?? "").trim(),
+    };
+  }, [selectedShippingInfo, shippingInfo, state.user?.email, state.user?.firstName, state.user?.lastName, state.user?.phone]);
+  const contractItems = useMemo(
+    () =>
+      state.cart.map((item) => ({
+        name: item.product.name,
+        quantity: item.quantity,
+        unitPrice: Number(item.product.price ?? 0),
+      })),
+    [state.cart]
   );
 
   const isPaymentSuccessPath = location.pathname === "/odeme/basarili";
@@ -876,7 +910,10 @@ export function Checkout() {
                         >
                           Mesafeli Satış Sözleşmesi
                         </button>{" "}
-                        metnini okudum, onaylıyorum.
+                        metnini okudum, onaylıyorum.{" "}
+                        <Link to={DISTANCE_SALES_CONTRACT_PATH} className="underline hover:text-black" target="_blank" rel="noreferrer">
+                          Ayrı sayfada aç
+                        </Link>
                       </span>
                     </label>
                   </div>
@@ -911,64 +948,14 @@ export function Checkout() {
                       Kapat
                     </button>
                   </div>
-                  <div className="space-y-4 text-sm text-gray-700 leading-6">
-                    <p><strong>MESAFELİ SATIŞ SÖZLEŞMESİ</strong></p>
-                    <p>
-                      <strong>1. Taraflar</strong><br />
-                      İşbu Mesafeli Satış Sözleşmesi (“Sözleşme”), www.stilbagsfashion.com internet sitesi üzerinden satış yapan
-                      StilBags&amp;fashion ile site üzerinden ürün satın alan ALICI arasında elektronik ortamda kurulmuştur.
-                      ALICI, sipariş oluşturduğu anda işbu sözleşmenin tüm şartlarını okuduğunu, anladığını ve kabul ettiğini beyan eder.
-                    </p>
-                    <p>
-                      <strong>2. Konu</strong><br />
-                      Bu sözleşmenin konusu, ALICI’nın SATICI’ya ait www.stilbagsfashion.com internet sitesi üzerinden elektronik ortamda
-                      sipariş verdiği ürünlerin satışı ve teslimine ilişkin tarafların hak ve yükümlülüklerinin belirlenmesidir.
-                    </p>
-                    <p>
-                      <strong>3. Ürün Bilgileri</strong><br />
-                      Satışı yapılan ürünler başlıca aşağıdaki kategorilerden oluşmaktadır: Kadın çantaları, cüzdanlar, moda aksesuarları,
-                      çanta ve aksesuar kategorisine ait diğer ürünler. Ürünlerin temel özellikleri, satış fiyatı ve kampanyalar ürün
-                      sayfasında belirtildiği şekilde geçerlidir. Tüm fiyatlara KDV dahildir.
-                    </p>
-                    <p>
-                      <strong>4. Ödeme Yöntemi</strong><br />
-                      Ödemeler güvenli ödeme altyapısı aracılığıyla kredi kartı ve banka kartı ile yapılmaktadır.
-                      ALICI, ödeme işlemini tamamladığında sipariş kesinleşmiş sayılır.
-                    </p>
-                    <p>
-                      <strong>5. Teslimat ve Kargo</strong><br />
-                      Sipariş edilen ürünler Türkiye genelinde gönderilmektedir. Siparişler 1-3 iş günü içinde kargoya verilir.
-                      Teslimatlar anlaşmalı kargo firmaları aracılığıyla yapılmaktadır. Kargo süresi teslimat adresine bağlı olarak
-                      değişiklik gösterebilir. SATICI, mücbir sebepler veya lojistik gecikmelerden kaynaklı teslimat süresi değişikliklerinde
-                      sorumlu tutulamaz.
-                    </p>
-                    <p>
-                      <strong>6. Fatura</strong><br />
-                      Satın alınan ürünler için e-Arşiv fatura düzenlenir. Fatura, sipariş sırasında belirtilen e-posta adresine dijital
-                      olarak gönderilir.
-                    </p>
-                    <p>
-                      <strong>7. Cayma Hakkı</strong><br />
-                      ALICI, satın aldığı ürünü teslim aldığı tarihten itibaren 14 gün içinde cayma hakkını kullanabilir. Cayma hakkının
-                      kullanılabilmesi için ürünün kullanılmamış olması, tekrar satılabilir durumda olması ve orijinal ambalajının zarar
-                      görmemiş olması gerekmektedir.
-                    </p>
-                    <p>
-                      <strong>8. İade ve Değişim</strong><br />
-                      ALICI, cayma hakkını kullandığında ürün iadesi gerçekleştirebilir. İade kargo ücreti ALICI tarafından karşılanır.
-                      İade edilen ürünler kontrol edildikten sonra ücret iadesi yapılır. Ürünlerde değişim işlemi yapılabilmektedir.
-                    </p>
-                    <p>
-                      <strong>9. Genel Hükümler</strong><br />
-                      ALICI, www.stilbagsfashion.com internet sitesinde sözleşme konusu ürünün temel nitelikleri, satış fiyatı, ödeme ve
-                      teslimat bilgileri hakkında bilgi sahibi olduğunu ve elektronik ortamda gerekli onayı verdiğini kabul eder. Taraflar,
-                      işbu sözleşmeden doğabilecek uyuşmazlıklarda Türkiye Cumhuriyeti yasalarının geçerli olduğunu kabul eder.
-                    </p>
-                    <p>
-                      <strong>10. Yürürlük</strong><br />
-                      ALICI, www.stilbagsfashion.com üzerinden sipariş verdiğinde işbu sözleşmenin tüm şartlarını kabul etmiş sayılır.
-                    </p>
-                  </div>
+                  <DistanceSalesContract
+                    buyer={contractParty}
+                    orderer={contractParty}
+                    invoice={contractParty}
+                    items={contractItems}
+                    shippingCost={shippingCost}
+                    total={total}
+                  />
                 </div>
               </div>
             )}

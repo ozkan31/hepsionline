@@ -307,6 +307,13 @@ function buildStaticPageConfigs() {
       type: "website",
     },
     {
+      route: "mesafeli-satis-sozlesmesi",
+      title: `Mesafeli Satış Sözleşmesi | ${BRAND}`,
+      description: "Mesafeli satış sözleşmesi, taraf bilgileri, sipariş hükümleri ve cayma hakkı detaylarını inceleyin.",
+      image: "/banner3.jpg",
+      type: "website",
+    },
+    {
       route: "sss",
       title: `Sık Sorulan Sorular | ${BRAND}`,
       description: "Sipariş, ödeme, teslimat ve iade süreçlerine dair en çok sorulan soruların yanıtları.",

@@ -20,6 +20,9 @@ const Contact = lazy(() => import('@/pages/Contact').then((module) => ({ default
 const CargoInfoPage = lazy(() => import('@/pages/InfoPages').then((module) => ({ default: module.CargoInfoPage })));
 const CareerPage = lazy(() => import('@/pages/InfoPages').then((module) => ({ default: module.CareerPage })));
 const FaqPage = lazy(() => import('@/pages/InfoPages').then((module) => ({ default: module.FaqPage })));
+const DistanceSalesContractPage = lazy(() =>
+  import('@/pages/InfoPages').then((module) => ({ default: module.DistanceSalesContractPage }))
+);
 const PrivacyPolicyPage = lazy(() => import('@/pages/InfoPages').then((module) => ({ default: module.PrivacyPolicyPage })));
 const ReturnPolicyPage = lazy(() => import('@/pages/InfoPages').then((module) => ({ default: module.ReturnPolicyPage })));
 const SustainabilityPage = lazy(() => import('@/pages/InfoPages').then((module) => ({ default: module.SustainabilityPage })));
@@ -117,6 +120,7 @@ function AppLayout() {
               <Route path="/urunler" element={<Shop />} />
               <Route path="/kargo" element={<CargoInfoPage />} />
               <Route path="/iade" element={<ReturnPolicyPage />} />
+              <Route path="/mesafeli-satis-sozlesmesi" element={<DistanceSalesContractPage />} />
               <Route path="/sss" element={<FaqPage />} />
               <Route path="/surdurulebilirlik" element={<SustainabilityPage />} />
               <Route path="/kariyer" element={<CareerPage />} />

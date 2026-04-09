@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ArrowLeft, HelpCircle, Home, LifeBuoy, PackageSearch, RotateCcw, Search, Truck } from 'lucide-react';
+import { ArrowLeft, FileText, HelpCircle, Home, LifeBuoy, PackageSearch, RotateCcw, Search, Truck } from 'lucide-react';
 
 const HELP_EMAIL = 'destek@stilbagsfashion.com';
 const HELP_PHONE = '0536 953 68 86';
@@ -86,6 +86,12 @@ export function HelpCenterPage() {
           icon={<RotateCcw className="h-5 w-5" />}
           title="İade ve Değişim"
           description="İade koşulları, süreler ve destek süreci hakkında net bilgi alın."
+        />
+        <QuickLinkCard
+          to="/mesafeli-satis-sozlesmesi"
+          icon={<FileText className="h-5 w-5" />}
+          title="Mesafeli Satış Sözleşmesi"
+          description="Sipariş öncesi sözleşme metnini, taraf bilgilerini ve cayma koşullarını inceleyin."
         />
         <QuickLinkCard
           to="/hesabim"

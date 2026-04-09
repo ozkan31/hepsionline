@@ -175,6 +175,11 @@ export function RouteSeo() {
         description: 'İade koşulları, iade süresi ve iade işlemleri hakkında bilmeniz gereken tüm detaylar.',
         canonical: '/iade/',
       },
+      '/mesafeli-satis-sozlesmesi': {
+        title: `Mesafeli Satış Sözleşmesi | ${SEO_BRAND_NAME}`,
+        description: 'Mesafeli satış sözleşmesi, taraf bilgileri, sipariş hükümleri ve cayma hakkı detaylarını inceleyin.',
+        canonical: '/mesafeli-satis-sozlesmesi/',
+      },
       '/sss': {
         title: `Sık Sorulan Sorular | ${SEO_BRAND_NAME}`,
         description: 'Sipariş, ödeme, teslimat ve iade süreçlerine dair en çok sorulan soruların yanıtları.',

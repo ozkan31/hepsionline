@@ -84,8 +84,8 @@ export function HelpCenterPage() {
         <QuickLinkCard
           to="/iade"
           icon={<RotateCcw className="h-5 w-5" />}
-          title="İade ve Değişim"
-          description="İade koşulları, süreler ve destek süreci hakkında net bilgi alın."
+          title="Teslimat ve İade"
+          description="Teslimat akışı, cayma hakkı, iade koşulları ve destek süreci hakkında bilgi alın."
         />
         <QuickLinkCard
           to="/mesafeli-satis-sozlesmesi"

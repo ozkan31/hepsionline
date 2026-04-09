@@ -301,8 +301,8 @@ function buildStaticPageConfigs() {
     },
     {
       route: "iade",
-      title: `İade Politikası | ${BRAND}`,
-      description: "İade koşulları, iade süresi ve iade işlemleri hakkında bilmeniz gereken tüm detaylar.",
+      title: `Teslimat ve İade | ${BRAND}`,
+      description: "Teslimat süreci, cayma hakkı, iade koşulları ve ücret iadesi adımları hakkında detaylı bilgi alın.",
       image: "/banner3.jpg",
       type: "website",
     },

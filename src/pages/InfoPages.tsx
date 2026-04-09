@@ -39,24 +39,34 @@ export function CargoInfoPage() {
 
 export function ReturnPolicyPage() {
   return (
-    <InfoLayout title="İade Politikası">
+    <InfoLayout title="Teslimat ve İade">
       <p>
-        {BRAND} üzerinden oluşturduğunuz siparişlerde, ürünün tarafınıza teslim edilmesinden itibaren <strong>14 gün</strong>{" "}
-        içinde iade talebi oluşturabilirsiniz.
+        {BRAND} üzerinden verilen siparişler, ödeme onayı sonrasında hazırlık sürecine alınır ve ürünler kural olarak
+        <strong> 1-3 iş günü</strong> içinde kargoya teslim edilir. Kampanya dönemleri, resmi tatiller, hava koşulları ve
+        lojistik yoğunluk gibi durumlarda teslimat süresi değişebilir; ancak yasal azami teslim süresi esas alınır.
       </p>
       <p>
-        İade edilecek ürünlerin kullanılmamış, yeniden satılabilir durumda, hasarsız ve eksiksiz olması gerekir.
-        Ürünün varsa orijinal kutusu, ambalajı, etiketleri ve birlikte gönderilen tüm aksesuarları ile birlikte
-        gönderilmesi beklenir.
+        Teslimat sırasında pakette ezilme, yırtılma, açılma veya ürün kaynaklı bir sorun fark edilmesi halinde, teslimat
+        görevlisi yanında tutanak tutulması ve en kısa sürede bizimle iletişime geçilmesi önerilir. Bu bildirimler çözüm
+        sürecinin daha hızlı ilerlemesini sağlar.
       </p>
       <p>
-        Kullanım izi bulunan, hijyen açısından uygun olmayan, kişiye özel hazırlanan veya tekrar satışı mümkün olmayan
-        ürünlerde iade kabul edilmeyebilir. İade sürecinde nihai değerlendirme, ürünün depomuza ulaşmasının ardından
-        yapılır.
+        ALICI, teslim aldığı ürünü <strong>14 gün</strong> içinde cayma hakkı kapsamında iade etme hakkına sahiptir. İade
+        talebinin destek kanallarımız üzerinden veya yazılı olarak bize iletilmesi gerekir.
       </p>
       <p>
-        İade talebiniz onaylandıktan sonra ücret iadesi, ödeme yöntemine bağlı olarak bankanızın süreçlerine göre
-        belirli bir süre içinde hesabınıza yansıtılır. İade süreci hakkında destek almak için: {EMAIL} / {PHONE}
+        İade edilecek ürünlerin kullanılmamış, tekrar satılabilir durumda, hasarsız ve eksiksiz olması; varsa orijinal
+        kutu, ambalaj, etiket ve birlikte gönderilen aksesuarlarla birlikte gönderilmesi beklenir. Kişiye özel hazırlanan,
+        hijyen açısından iadesi uygun olmayan veya tekrar satışı mümkün olmayan ürünlerde iade kabul edilmeyebilir.
+      </p>
+      <p>
+        İade kargo süreci, sipariş ön bilgilendirmesi ve yürürlükteki tüketici mevzuatı doğrultusunda yürütülür. İade
+        gönderimi için izlenecek adımlar tarafınıza destek ekibimiz tarafından paylaşılır.
+      </p>
+      <p>
+        İade talebi onaylandıktan ve ürün tarafımızca kontrol edildikten sonra ücret iadesi, ödeme aracına bağlı banka
+        süreçlerine göre yasal süreler içinde aynı ödeme yöntemine yapılır. Teslimat ve iade süreci hakkında destek almak
+        için bize {EMAIL} adresinden veya {PHONE} numarasından ulaşabilirsiniz.
       </p>
     </InfoLayout>
   );

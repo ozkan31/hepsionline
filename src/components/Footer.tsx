@@ -46,7 +46,7 @@ export function Footer() {
                 </li>
                 <li>
                   <Link to="/iade" className="text-sm text-white/80 hover:text-white transition-colors">
-                    İade Politikası
+                    Teslimat ve İade
                   </Link>
                 </li>
                 <li>

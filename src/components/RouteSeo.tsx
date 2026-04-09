@@ -171,8 +171,8 @@ export function RouteSeo() {
         canonical: '/kargo/',
       },
       '/iade': {
-        title: `İade Politikası | ${SEO_BRAND_NAME}`,
-        description: 'İade koşulları, iade süresi ve iade işlemleri hakkında bilmeniz gereken tüm detaylar.',
+        title: `Teslimat ve İade | ${SEO_BRAND_NAME}`,
+        description: 'Teslimat süreci, cayma hakkı, iade koşulları ve ücret iadesi adımları hakkında detaylı bilgi alın.',
         canonical: '/iade/',
       },
       '/mesafeli-satis-sozlesmesi': {

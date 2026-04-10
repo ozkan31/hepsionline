@@ -127,9 +127,9 @@ export function Checkout() {
       if (!href) return;
       const normalizedPath = pathname.replace(/\/+$/, "");
 
-      if (normalizedPath === "/odeme/basarili" || normalizedPath === "/odeme/basarisiz") {
+      if (normalizedPath === "/odeme/basarili") {
         const params = new URLSearchParams(search);
-        params.set("paymentResult", normalizedPath === "/odeme/basarili" ? "success" : "failed");
+        params.set("paymentResult", "success");
         navigate(`/odeme?${params.toString()}${hash}`, { replace: true });
       }
     } catch {
@@ -605,12 +605,6 @@ export function Checkout() {
           return;
         }
 
-        if (status.status === "failed") {
-          setStep("payment");
-          setPaymentError(status.reason || "Ödeme başarısız veya iptal edildi. Lütfen tekrar deneyin.");
-          setIyzicoIframeUrl("");
-          setIyzicoPaymentReference("");
-        }
       } catch {
         // Ignore transient polling errors while iyzico is still finishing.
       } finally {

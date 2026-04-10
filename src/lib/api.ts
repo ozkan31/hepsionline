@@ -432,6 +432,29 @@ export async function createIyzicoCheckoutSession(input: {
   );
 }
 
+export async function fetchIyzicoCheckoutStatus(paymentReference: string): Promise<{
+  paymentReference: string;
+  status: string;
+  paymentStatus: string;
+  callbackStatus: string;
+  fraudStatus: number | null;
+  orderId: string;
+  reason: string;
+  complete: boolean;
+}> {
+  const response = await authFetch(`/api/iyzico/checkout/status?paymentReference=${encodeURIComponent(paymentReference)}`);
+  return parseResponse<{
+    paymentReference: string;
+    status: string;
+    paymentStatus: string;
+    callbackStatus: string;
+    fraudStatus: number | null;
+    orderId: string;
+    reason: string;
+    complete: boolean;
+  }>(response);
+}
+
 export async function applyAbandonedCartCoupon(code: string): Promise<AppliedAbandonedCartCoupon> {
   const response = await authFetch("/api/marketing/abandoned-cart/coupon/apply", {
     method: "POST",

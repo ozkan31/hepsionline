@@ -5206,60 +5206,6 @@ function renderIyzicoCallbackPage({ title, message, result, isSuccess, callbackU
 </html>`;
 }
 
-function renderIyzicoIframeBridgePage({ status, paymentReference, reason, redirectUrl }) {
-  const normalizedStatus = String(status ?? "").trim().toLowerCase() === "success" ? "success" : "failed";
-  const payload = {
-    type: "iyzico-payment-result",
-    status: normalizedStatus,
-    paymentReference: String(paymentReference ?? "").trim(),
-    reason: String(reason ?? "").trim(),
-    redirectUrl: String(redirectUrl ?? "").trim(),
-  };
-
-  return `<!doctype html>
-<html lang="tr">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Ödeme Sonucu İşleniyor</title>
-    <meta name="robots" content="noindex,nofollow" />
-    <style>
-      body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:#f8f7f4; color:#111; font-family:Arial,sans-serif; }
-      .card { width:min(100%, 420px); box-sizing:border-box; margin:24px; background:#fff; border:1px solid #e5e5e5; border-radius:20px; padding:28px; text-align:center; }
-      .spinner { width:40px; height:40px; border-radius:999px; border:4px solid #e5e7eb; border-top-color:#111; margin:0 auto 18px; animation:spin 1s linear infinite; }
-      h1 { margin:0 0 10px; font-size:24px; }
-      p { margin:0; color:#555; line-height:1.7; }
-      a { display:inline-block; margin-top:18px; color:#111; font-weight:600; }
-      @keyframes spin { to { transform: rotate(360deg); } }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <div class="spinner"></div>
-      <h1>Ödeme sonucu işleniyor</h1>
-      <p>Lütfen bekleyin. Ödeme sonucu mağaza sayfasına aktarılıyor.</p>
-      <a href="${escapeHtml(String(redirectUrl ?? "").trim() || "/odeme")}">Sorun olursa devam etmek için tıklayın</a>
-    </div>
-    <script>
-      (function () {
-        var payload = ${JSON.stringify(payload)};
-        try {
-          if (window.parent && window.parent !== window) {
-            window.parent.postMessage(payload, window.location.origin);
-          } else if (payload.redirectUrl) {
-            window.location.replace(payload.redirectUrl);
-          }
-        } catch (_error) {
-          if (payload.redirectUrl) {
-            window.location.replace(payload.redirectUrl);
-          }
-        }
-      })();
-    </script>
-  </body>
-</html>`;
-}
-
 async function requireAuth(req, res, next) {
   const token = extractBearerToken(req);
   if (!token) {
@@ -8363,6 +8309,70 @@ app.post("/api/iyzico/checkout/init", requireAuth, async (req, res) => {
   }
 });
 
+app.get("/api/iyzico/checkout/status", requireAuth, async (req, res) => {
+  try {
+    const paymentReference = String(req.query?.paymentReference ?? "").trim();
+    if (!paymentReference) {
+      return res.status(400).json({ message: "paymentReference gerekli." });
+    }
+
+    let intent = await getIyzicoPaymentIntent(paymentReference, req.authUser.id);
+    if (!intent) {
+      return res.status(404).json({ message: "Ödeme oturumu bulunamadı." });
+    }
+
+    const normalizedStatus = String(intent.status ?? "").trim().toLowerCase();
+    const shouldRefresh = normalizedStatus === "pending" && String(intent.token ?? "").trim();
+
+    if (shouldRefresh) {
+      try {
+        const result = await retrieveIyzicoCheckoutForm({
+          token: String(intent.token ?? "").trim(),
+          conversationId: paymentReference,
+        });
+        const payment = interpretIyzicoPaymentResult(result);
+
+        if (payment.ok) {
+          await markIyzicoPaymentIntent(paymentReference, {
+            status: "authorized",
+            paymentStatus: payment.paymentStatus || null,
+            paymentId: payment.paymentId || null,
+            fraudStatus: payment.fraudStatus,
+            callbackStatus: payment.inReview ? "polled_in_review" : "polled_ok",
+            rawResultText: JSON.stringify(result),
+          });
+          intent = (await getIyzicoPaymentIntent(paymentReference, req.authUser.id)) ?? intent;
+        }
+      } catch {
+        // Keep pending while the hosted iyzico flow is still finishing.
+      }
+    }
+
+    let reason = "";
+    try {
+      const rawResult = intent.raw_result_text ? JSON.parse(String(intent.raw_result_text)) : null;
+      reason = String(rawResult?.errorMessage ?? rawResult?.errorCode ?? "").trim();
+    } catch {
+      reason = "";
+    }
+
+    return res.json({
+      paymentReference,
+      status: String(intent.status ?? "").trim().toLowerCase() || "pending",
+      paymentStatus: String(intent.payment_status ?? "").trim(),
+      callbackStatus: String(intent.callback_status ?? "").trim(),
+      fraudStatus: intent.fraud_status == null ? null : Number(intent.fraud_status),
+      orderId: String(intent.order_id ?? "").trim(),
+      reason,
+      complete: ["authorized", "failed"].includes(String(intent.status ?? "").trim().toLowerCase()),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error instanceof Error ? error.message || "iyzico ödeme durumu alınamadı." : "iyzico ödeme durumu alınamadı.",
+    });
+  }
+});
+
 app.all("/api/iyzico/callback", async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
 
@@ -8463,21 +8473,7 @@ app.all("/api/iyzico/callback", async (req, res) => {
       : buildIyzicoCheckoutReturnUrl(storefrontBaseUrl, paymentReference, "/odeme/basarisiz");
 
     if (iframeMode) {
-      const iframeRedirectUrl = payment.ok
-        ? buildIyzicoCheckoutReturnUrl(storefrontBaseUrl, paymentReference, "/odeme/basarili")
-        : (() => {
-            const failedUrl = new URL(buildIyzicoCheckoutReturnUrl(storefrontBaseUrl, paymentReference, "/odeme/basarisiz"));
-            failedUrl.searchParams.set("reason", message);
-            return failedUrl.toString();
-          })();
-      return res.status(payment.ok ? 200 : 409).type("html").send(
-        renderIyzicoIframeBridgePage({
-          status: payment.ok ? "success" : "failed",
-          paymentReference,
-          reason: payment.ok ? "" : message,
-          redirectUrl: iframeRedirectUrl,
-        })
-      );
+      return res.status(204).end();
     }
 
     if (!payment.ok) {
@@ -8500,14 +8496,7 @@ app.all("/api/iyzico/callback", async (req, res) => {
     const failedUrl = new URL(buildIyzicoCheckoutReturnUrl(storefrontBaseUrl, "", "/odeme/basarisiz"));
     failedUrl.searchParams.set("reason", message);
     if (iframeMode) {
-      return res.status(502).type("html").send(
-        renderIyzicoIframeBridgePage({
-          status: "failed",
-          paymentReference: "",
-          reason: message,
-          redirectUrl: failedUrl.toString(),
-        })
-      );
+      return res.status(204).end();
     }
     return res.redirect(303, failedUrl.toString());
   }

@@ -125,8 +125,21 @@ export function Checkout() {
       const { href, pathname, search, hash } = frame.contentWindow.location;
       if (!href) return;
       const normalizedPath = pathname.replace(/\/+$/, "");
+      const params = new URLSearchParams(search);
+      const iframePaymentResult = String(params.get("paymentResult") ?? "")
+        .trim()
+        .toLowerCase();
+
+      if (normalizedPath === "/odeme" && (iframePaymentResult === "success" || iframePaymentResult === "failed")) {
+        setIyzicoIframeUrl("");
+        navigate(`${pathname}${search}${hash}`, { replace: true });
+        return;
+      }
+
       if (normalizedPath === "/odeme/basarili" || normalizedPath === "/odeme/basarisiz") {
-        window.location.assign(`${pathname}${search}${hash}`);
+        params.set("paymentResult", normalizedPath === "/odeme/basarili" ? "success" : "failed");
+        setIyzicoIframeUrl("");
+        navigate(`/odeme?${params.toString()}${hash}`, { replace: true });
       }
     } catch {
       // Cross-origin iyzico pages are expected until callback lands back on our domain.
@@ -294,8 +307,11 @@ export function Checkout() {
     [state.cart]
   );
 
-  const isPaymentSuccessPath = location.pathname === "/odeme/basarili";
-  const isPaymentFailPath = location.pathname === "/odeme/basarisiz";
+  const paymentResult = String(new URLSearchParams(location.search).get("paymentResult") ?? "")
+    .trim()
+    .toLowerCase();
+  const isPaymentSuccessPath = location.pathname === "/odeme/basarili" || (location.pathname === "/odeme" && paymentResult === "success");
+  const isPaymentFailPath = location.pathname === "/odeme/basarisiz" || (location.pathname === "/odeme" && paymentResult === "failed");
 
   useEffect(() => {
     if (!state.isAuthenticated || state.cart.length === 0) {

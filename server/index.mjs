@@ -5021,7 +5021,13 @@ async function iyzicoRequest(uriPath, body = {}) {
 }
 
 function buildIyzicoCheckoutReturnUrl(baseUrl, paymentReference, resultPath) {
-  const nextUrl = new URL(resultPath, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+  const nextUrl = new URL("/odeme", baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+  const normalizedResultPath = String(resultPath ?? "").trim().replace(/\/+$/, "");
+  if (normalizedResultPath === "/odeme/basarili") {
+    nextUrl.searchParams.set("paymentResult", "success");
+  } else if (normalizedResultPath === "/odeme/basarisiz") {
+    nextUrl.searchParams.set("paymentResult", "failed");
+  }
   if (paymentReference) {
     nextUrl.searchParams.set("paymentReference", paymentReference);
   }

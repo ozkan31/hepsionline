@@ -422,12 +422,12 @@ export async function createIyzicoCheckoutSession(input: {
   total: number;
   items: Array<{ name: string; unitPrice: number; quantity: number }>;
   couponCode?: string | null;
-}): Promise<{ paymentPageUrl: string; token: string; paymentReference: string; conversationId: string }> {
+}): Promise<{ paymentPageUrl: string; checkoutFormContent: string; token: string; paymentReference: string; conversationId: string }> {
   const response = await authFetch("/api/iyzico/checkout/init", {
     method: "POST",
     body: JSON.stringify(input),
   });
-  return parseResponse<{ paymentPageUrl: string; token: string; paymentReference: string; conversationId: string }>(
+  return parseResponse<{ paymentPageUrl: string; checkoutFormContent: string; token: string; paymentReference: string; conversationId: string }>(
     response
   );
 }

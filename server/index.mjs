@@ -8298,6 +8298,7 @@ app.post("/api/iyzico/checkout/init", requireAuth, async (req, res) => {
 
     return res.json({
       paymentPageUrl: String(initResult.paymentPageUrl).trim(),
+      checkoutFormContent: String(initResult.checkoutFormContent ?? "").trim(),
       token: String(initResult.token).trim(),
       paymentReference,
       conversationId: String(initResult?.conversationId ?? paymentReference).trim() || paymentReference,

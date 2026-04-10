@@ -48,6 +48,7 @@ export function Checkout() {
   const [newAddressDetail, setNewAddressDetail] = useState("");
   const [locationMap, setLocationMap] = useState<Record<string, Record<string, string[]>>>({});
   const [iyzicoIframeUrl, setIyzicoIframeUrl] = useState("");
+  const [iyzicoCheckoutFormContent, setIyzicoCheckoutFormContent] = useState("");
   const [iyzicoPaymentReference, setIyzicoPaymentReference] = useState("");
   const [isIyzicoLoading, setIsIyzicoLoading] = useState(false);
   const [paymentError, setPaymentError] = useState("");
@@ -56,6 +57,7 @@ export function Checkout() {
   const [couponMessage, setCouponMessage] = useState("");
   const processedPathRef = useRef<string>("");
   const iyzicoIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const iyzicoEmbedContainerRef = useRef<HTMLDivElement | null>(null);
   const newAddressDistrictSelectRef = useRef<HTMLSelectElement | null>(null);
   const newAddressNeighborhoodSelectRef = useRef<HTMLSelectElement | null>(null);
 
@@ -135,6 +137,31 @@ export function Checkout() {
     } catch {
       // Cross-origin iyzico pages are expected until callback lands back on our domain.
     }
+  };
+  const mountIyzicoCheckoutContent = (html: string) => {
+    const container = iyzicoEmbedContainerRef.current;
+    if (!container) return;
+
+    container.innerHTML = "";
+    if (!html) return;
+
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const fragment = template.content.cloneNode(true) as DocumentFragment;
+    const scripts = Array.from(fragment.querySelectorAll("script"));
+    scripts.forEach((script) => script.remove());
+    container.appendChild(fragment);
+
+    scripts.forEach((script) => {
+      const nextScript = document.createElement("script");
+      Array.from(script.attributes).forEach((attribute) => {
+        nextScript.setAttribute(attribute.name, attribute.value);
+      });
+      if (script.textContent) {
+        nextScript.textContent = script.textContent;
+      }
+      container.appendChild(nextScript);
+    });
   };
 
   const shippingCost = cartTotal >= 1500 ? 0 : 79;
@@ -447,6 +474,7 @@ export function Checkout() {
         setStep("confirmation");
         setPaymentError("");
         setIyzicoIframeUrl("");
+        setIyzicoCheckoutFormContent("");
         setIyzicoPaymentReference("");
         return;
       } catch (error) {
@@ -476,6 +504,7 @@ export function Checkout() {
       setStep("payment");
       setPaymentError(failedReason);
       setIyzicoIframeUrl("");
+      setIyzicoCheckoutFormContent("");
       setIyzicoPaymentReference("");
       processedPathRef.current = `fail:${location.pathname}`;
       return;
@@ -499,6 +528,7 @@ export function Checkout() {
 
   const handleBackToShipping = () => {
     setIyzicoIframeUrl("");
+    setIyzicoCheckoutFormContent("");
     setIyzicoPaymentReference("");
     setPaymentError("");
     setIsIyzicoLoading(false);
@@ -548,6 +578,7 @@ export function Checkout() {
     if (!currentIyzicoPayload) {
       setPaymentError("Teslimat bilgileri eksik.");
       setIyzicoIframeUrl("");
+      setIyzicoCheckoutFormContent("");
       return;
     }
 
@@ -555,12 +586,17 @@ export function Checkout() {
     setIsIyzicoLoading(true);
     setPaymentError("");
     setIyzicoIframeUrl("");
+    setIyzicoCheckoutFormContent("");
     setIyzicoPaymentReference("");
 
     createIyzicoCheckoutSession(currentIyzicoPayload)
       .then((data) => {
         if (!isMounted) return;
-        setIyzicoIframeUrl(buildIyzicoIframeSrc(data.paymentPageUrl));
+        const checkoutContent = String(data.checkoutFormContent ?? "").trim();
+        setIyzicoCheckoutFormContent(checkoutContent);
+        if (!checkoutContent) {
+          setIyzicoIframeUrl(buildIyzicoIframeSrc(data.paymentPageUrl));
+        }
         setIyzicoPaymentReference(data.paymentReference);
       })
       .catch((error) => {
@@ -577,9 +613,19 @@ export function Checkout() {
   }, [currentIyzicoPayload, isPaymentFailPath, isPaymentSuccessPath, step]);
 
   useEffect(() => {
+    mountIyzicoCheckoutContent(iyzicoCheckoutFormContent);
+    return () => {
+      const container = iyzicoEmbedContainerRef.current;
+      if (container) {
+        container.innerHTML = "";
+      }
+    };
+  }, [iyzicoCheckoutFormContent]);
+
+  useEffect(() => {
     if (
       step !== "payment" ||
-      !iyzicoIframeUrl ||
+      (!iyzicoIframeUrl && !iyzicoCheckoutFormContent) ||
       !iyzicoPaymentReference ||
       isPaymentSuccessPath ||
       isPaymentFailPath
@@ -622,7 +668,7 @@ export function Checkout() {
       isMounted = false;
       window.clearInterval(timer);
     };
-  }, [finalizeSuccessfulPayment, isPaymentFailPath, isPaymentSuccessPath, iyzicoIframeUrl, iyzicoPaymentReference, step]);
+  }, [finalizeSuccessfulPayment, isPaymentFailPath, isPaymentSuccessPath, iyzicoCheckoutFormContent, iyzicoIframeUrl, iyzicoPaymentReference, step]);
 
   const confirmationEmail = shippingInfo.email || state.user?.email || "";
 
@@ -987,7 +1033,16 @@ export function Checkout() {
                     </div>
                   )}
 
-                  {iyzicoIframeUrl && !isIyzicoLoading && (
+                  {iyzicoCheckoutFormContent && !isIyzicoLoading && (
+                    <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4">
+                      <div
+                        ref={iyzicoEmbedContainerRef}
+                        className="rounded-xl overflow-hidden border border-gray-200 bg-white min-h-[640px] md:min-h-[720px]"
+                      />
+                    </div>
+                  )}
+
+                  {!iyzicoCheckoutFormContent && iyzicoIframeUrl && !isIyzicoLoading && (
                     <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4">
                       <div className="rounded-xl overflow-hidden border border-gray-200 bg-[#F8F7F4]">
                         <iframe

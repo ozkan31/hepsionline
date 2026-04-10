@@ -48,7 +48,6 @@ export function Checkout() {
   const [newAddressDetail, setNewAddressDetail] = useState("");
   const [locationMap, setLocationMap] = useState<Record<string, Record<string, string[]>>>({});
   const [iyzicoIframeUrl, setIyzicoIframeUrl] = useState("");
-  const [iyzicoHostedUrl, setIyzicoHostedUrl] = useState("");
   const [isIyzicoLoading, setIsIyzicoLoading] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
@@ -448,7 +447,6 @@ export function Checkout() {
             setStep("confirmation");
             setPaymentError("");
             setIyzicoIframeUrl("");
-            setIyzicoHostedUrl("");
             processedPathRef.current = successKey;
             return;
           } catch (error) {
@@ -498,7 +496,6 @@ export function Checkout() {
 
   const handleBackToShipping = () => {
     setIyzicoIframeUrl("");
-    setIyzicoHostedUrl("");
     setPaymentError("");
     setIsIyzicoLoading(false);
     setStep("shipping");
@@ -547,7 +544,6 @@ export function Checkout() {
     if (!currentIyzicoPayload) {
       setPaymentError("Teslimat bilgileri eksik.");
       setIyzicoIframeUrl("");
-      setIyzicoHostedUrl("");
       return;
     }
 
@@ -555,12 +551,10 @@ export function Checkout() {
     setIsIyzicoLoading(true);
     setPaymentError("");
     setIyzicoIframeUrl("");
-    setIyzicoHostedUrl("");
 
     createIyzicoCheckoutSession(currentIyzicoPayload)
       .then((data) => {
         if (!isMounted) return;
-        setIyzicoHostedUrl(data.paymentPageUrl);
         setIyzicoIframeUrl(buildIyzicoIframeSrc(data.paymentPageUrl));
       })
       .catch((error) => {
@@ -940,7 +934,7 @@ export function Checkout() {
                   )}
 
                   {iyzicoIframeUrl && !isIyzicoLoading && (
-                    <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4 space-y-4">
+                    <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4">
                       <div className="rounded-xl overflow-hidden border border-gray-200 bg-[#F8F7F4]">
                         <iframe
                           ref={iyzicoIframeRef}
@@ -951,16 +945,6 @@ export function Checkout() {
                           allow="payment *"
                         />
                       </div>
-                      <p className="text-sm text-gray-600">
-                        Ödeme formu yukarıda iframe içinde açıldı. Tarayıcı veya ağ ayarları nedeniyle yüklenmezse aşağıdaki yedek bağlantıyı kullanabilirsiniz.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => window.open(iyzicoHostedUrl || iyzicoIframeUrl, "_blank", "noopener,noreferrer")}
-                        className="w-full border border-gray-300 text-black py-4 rounded-full font-medium text-sm hover:border-black transition-colors"
-                      >
-                        iyzico sayfasını yeni sekmede aç
-                      </button>
                     </div>
                   )}
 

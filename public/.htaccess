@@ -44,15 +44,10 @@ ErrorDocument 404 /error404.html
   RewriteCond %{QUERY_STRING} (^|&)category=new(&|$) [NC]
   RewriteRule ^ https://stilbagsfashion.com/kategori/yeni-gelenler/? [R=301,L]
 
-  RewriteCond %{REQUEST_URI} ^/product/[^/]+/?$ [NC]
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule ^ - [G,L]
-
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteCond %{REQUEST_URI} !^/api/
-  RewriteRule ^ - [R=404,L]
+  RewriteRule ^ /index.html [L]
 </IfModule>
 
 DirectoryIndex index.html

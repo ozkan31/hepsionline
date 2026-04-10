@@ -1124,11 +1124,12 @@ app.use((req, res, next) => {
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || CORS_ALLOWED_ORIGINS.has(origin)) {
+      if (!origin) {
         callback(null, true);
         return;
       }
-      callback(new Error("Not allowed by CORS"));
+
+      callback(null, CORS_ALLOWED_ORIGINS.has(origin));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],

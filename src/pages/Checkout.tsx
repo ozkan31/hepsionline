@@ -49,6 +49,7 @@ export function Checkout() {
   const [locationMap, setLocationMap] = useState<Record<string, Record<string, string[]>>>({});
   const [iyzicoIframeUrl, setIyzicoIframeUrl] = useState("");
   const [isIyzicoLoading, setIsIyzicoLoading] = useState(false);
+  const [isIyzicoFinalizing, setIsIyzicoFinalizing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedAbandonedCartCoupon | null>(null);
@@ -131,14 +132,14 @@ export function Checkout() {
         .toLowerCase();
 
       if (normalizedPath === "/odeme" && (iframePaymentResult === "success" || iframePaymentResult === "failed")) {
-        setIyzicoIframeUrl("");
+        setIsIyzicoFinalizing(true);
         navigate(`${pathname}${search}${hash}`, { replace: true });
         return;
       }
 
       if (normalizedPath === "/odeme/basarili" || normalizedPath === "/odeme/basarisiz") {
         params.set("paymentResult", normalizedPath === "/odeme/basarili" ? "success" : "failed");
-        setIyzicoIframeUrl("");
+        setIsIyzicoFinalizing(true);
         navigate(`/odeme?${params.toString()}${hash}`, { replace: true });
       }
     } catch {
@@ -314,6 +315,39 @@ export function Checkout() {
   const isPaymentFailPath = location.pathname === "/odeme/basarisiz" || (location.pathname === "/odeme" && paymentResult === "failed");
 
   useEffect(() => {
+    const handleIyzicoResultMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data as
+        | {
+            type?: string;
+            status?: string;
+            paymentReference?: string;
+            reason?: string;
+            redirectUrl?: string;
+          }
+        | null;
+      if (!data || data.type !== "iyzico-payment-result") return;
+
+      setIsIyzicoFinalizing(true);
+
+      const nextUrl = String(data.redirectUrl ?? "").trim();
+      if (!nextUrl) return;
+
+      try {
+        const parsed = new URL(nextUrl, window.location.origin);
+        navigate(`${parsed.pathname}${parsed.search}${parsed.hash}`, { replace: true });
+      } catch {
+        navigate(nextUrl, { replace: true });
+      }
+    };
+
+    window.addEventListener("message", handleIyzicoResultMessage);
+    return () => {
+      window.removeEventListener("message", handleIyzicoResultMessage);
+    };
+  }, [navigate]);
+
+  useEffect(() => {
     if (!state.isAuthenticated || state.cart.length === 0) {
       setAppliedCoupon(null);
       setCouponMessage("");
@@ -349,6 +383,7 @@ export function Checkout() {
 
   useEffect(() => {
     if (isPaymentSuccessPath) {
+      setIsIyzicoFinalizing(true);
       const successPaymentReference = new URLSearchParams(location.search).get("paymentReference") ?? "";
       const successKey = `success:${location.pathname}:${successPaymentReference}`;
       if (processedPathRef.current === successKey) return;
@@ -463,6 +498,7 @@ export function Checkout() {
             setStep("confirmation");
             setPaymentError("");
             setIyzicoIframeUrl("");
+            setIsIyzicoFinalizing(false);
             processedPathRef.current = successKey;
             return;
           } catch (error) {
@@ -476,6 +512,7 @@ export function Checkout() {
         if (cancelled) return;
         setStep("payment");
         setPaymentError(lastErrorMessage);
+        setIsIyzicoFinalizing(false);
         processedPathRef.current = successKey;
       })();
 
@@ -490,10 +527,13 @@ export function Checkout() {
         new URLSearchParams(location.search).get("reason") ?? "Ödeme başarısız veya iptal edildi. Lütfen tekrar deneyin.";
       setStep("payment");
       setPaymentError(failedReason);
+      setIyzicoIframeUrl("");
+      setIsIyzicoFinalizing(false);
       processedPathRef.current = `fail:${location.pathname}`;
       return;
     }
 
+    setIsIyzicoFinalizing(false);
     processedPathRef.current = "";
   }, [appliedCoupon?.code, cartTotal, couponOwner, discountAmount, dispatch, isPaymentFailPath, isPaymentSuccessPath, location.pathname, location.search, savedAddresses, selectedAddress, shippingCost, shippingInfo, state.cart, state.orders, state.user, total]);
 
@@ -514,6 +554,7 @@ export function Checkout() {
     setIyzicoIframeUrl("");
     setPaymentError("");
     setIsIyzicoLoading(false);
+    setIsIyzicoFinalizing(false);
     setStep("shipping");
   };
 
@@ -565,6 +606,7 @@ export function Checkout() {
 
     let isMounted = true;
     setIsIyzicoLoading(true);
+    setIsIyzicoFinalizing(false);
     setPaymentError("");
     setIyzicoIframeUrl("");
 
@@ -964,10 +1006,21 @@ export function Checkout() {
                     </div>
                   )}
 
+                  {isIyzicoFinalizing && (
+                    <div className="bg-white border border-gray-200 rounded-lg p-6 text-center">
+                      <div className="w-10 h-10 mx-auto rounded-full border-4 border-gray-200 border-t-black animate-spin" />
+                      <p className="mt-4 text-sm font-medium text-black">3D doğrulama tamamlandı.</p>
+                      <p className="mt-2 text-sm text-gray-500">
+                        Ödeme sonucu kontrol ediliyor. Lütfen bu sayfadan ayrılmayın.
+                      </p>
+                    </div>
+                  )}
+
                   <button
                     type="button"
                     onClick={handleBackToShipping}
-                    className="w-full border border-gray-300 text-black py-4 rounded-full font-medium text-sm hover:border-black transition-colors"
+                    disabled={isIyzicoFinalizing}
+                    className="w-full border border-gray-300 text-black py-4 rounded-full font-medium text-sm hover:border-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Geri
                   </button>

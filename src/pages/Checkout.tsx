@@ -47,14 +47,15 @@ export function Checkout() {
   const [isDistanceSaleModalOpen, setIsDistanceSaleModalOpen] = useState(false);
   const [newAddressDetail, setNewAddressDetail] = useState("");
   const [locationMap, setLocationMap] = useState<Record<string, Record<string, string[]>>>({});
-  const [iyzicoRedirectUrl, setIyzicoRedirectUrl] = useState("");
+  const [iyzicoIframeUrl, setIyzicoIframeUrl] = useState("");
+  const [iyzicoHostedUrl, setIyzicoHostedUrl] = useState("");
   const [isIyzicoLoading, setIsIyzicoLoading] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedAbandonedCartCoupon | null>(null);
   const [couponMessage, setCouponMessage] = useState("");
   const processedPathRef = useRef<string>("");
-  const iyzicoRedirectTimerRef = useRef<number | null>(null);
+  const iyzicoIframeRef = useRef<HTMLIFrameElement | null>(null);
   const newAddressDistrictSelectRef = useRef<HTMLSelectElement | null>(null);
   const newAddressNeighborhoodSelectRef = useRef<HTMLSelectElement | null>(null);
 
@@ -103,6 +104,34 @@ export function Checkout() {
       }
     }
     element.click();
+  };
+  const buildIyzicoIframeSrc = (rawUrl: string) => {
+    const input = String(rawUrl ?? "").trim();
+    if (!input) return "";
+    try {
+      const parsed = new URL(input);
+      parsed.searchParams.set("iframe", "true");
+      return parsed.toString();
+    } catch {
+      const hasQuery = input.includes("?");
+      const hasIframe = /([?&])iframe=true(?:&|$)/i.test(input);
+      if (hasIframe) return input;
+      return `${input}${hasQuery ? "&" : "?"}iframe=true`;
+    }
+  };
+  const handleIyzicoIframeLoad = () => {
+    const frame = iyzicoIframeRef.current;
+    if (!frame?.contentWindow) return;
+    try {
+      const { href, pathname, search, hash } = frame.contentWindow.location;
+      if (!href) return;
+      const normalizedPath = pathname.replace(/\/+$/, "");
+      if (normalizedPath === "/odeme/basarili" || normalizedPath === "/odeme/basarisiz") {
+        window.location.assign(`${pathname}${search}${hash}`);
+      }
+    } catch {
+      // Cross-origin iyzico pages are expected until callback lands back on our domain.
+    }
   };
 
   const shippingCost = cartTotal >= 1500 ? 0 : 79;
@@ -418,7 +447,8 @@ export function Checkout() {
             setAppliedCoupon(null);
             setStep("confirmation");
             setPaymentError("");
-            setIyzicoRedirectUrl("");
+            setIyzicoIframeUrl("");
+            setIyzicoHostedUrl("");
             processedPathRef.current = successKey;
             return;
           } catch (error) {
@@ -467,11 +497,8 @@ export function Checkout() {
   };
 
   const handleBackToShipping = () => {
-    if (iyzicoRedirectTimerRef.current != null) {
-      window.clearTimeout(iyzicoRedirectTimerRef.current);
-      iyzicoRedirectTimerRef.current = null;
-    }
-    setIyzicoRedirectUrl("");
+    setIyzicoIframeUrl("");
+    setIyzicoHostedUrl("");
     setPaymentError("");
     setIsIyzicoLoading(false);
     setStep("shipping");
@@ -519,28 +546,22 @@ export function Checkout() {
     if (step !== "payment" || isPaymentSuccessPath || isPaymentFailPath) return;
     if (!currentIyzicoPayload) {
       setPaymentError("Teslimat bilgileri eksik.");
-      setIyzicoRedirectUrl("");
+      setIyzicoIframeUrl("");
+      setIyzicoHostedUrl("");
       return;
-    }
-
-    if (iyzicoRedirectTimerRef.current != null) {
-      window.clearTimeout(iyzicoRedirectTimerRef.current);
-      iyzicoRedirectTimerRef.current = null;
     }
 
     let isMounted = true;
     setIsIyzicoLoading(true);
     setPaymentError("");
-    setIyzicoRedirectUrl("");
+    setIyzicoIframeUrl("");
+    setIyzicoHostedUrl("");
 
     createIyzicoCheckoutSession(currentIyzicoPayload)
       .then((data) => {
         if (!isMounted) return;
-        setIyzicoRedirectUrl(data.paymentPageUrl);
-        iyzicoRedirectTimerRef.current = window.setTimeout(() => {
-          if (!isMounted) return;
-          window.location.assign(data.paymentPageUrl);
-        }, 200);
+        setIyzicoHostedUrl(data.paymentPageUrl);
+        setIyzicoIframeUrl(buildIyzicoIframeSrc(data.paymentPageUrl));
       })
       .catch((error) => {
         if (!isMounted) return;
@@ -552,10 +573,6 @@ export function Checkout() {
 
     return () => {
       isMounted = false;
-      if (iyzicoRedirectTimerRef.current != null) {
-        window.clearTimeout(iyzicoRedirectTimerRef.current);
-        iyzicoRedirectTimerRef.current = null;
-      }
     };
   }, [currentIyzicoPayload, isPaymentFailPath, isPaymentSuccessPath, step]);
 
@@ -912,7 +929,7 @@ export function Checkout() {
 
                   {isIyzicoLoading && (
                     <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-600">
-                      {"iyzico güvenli ödeme sayfasına yönlendiriliyorsunuz..."}
+                      {"iyzico güvenli ödeme alanı hazırlanıyor..."}
                     </div>
                   )}
 
@@ -922,18 +939,27 @@ export function Checkout() {
                     </div>
                   )}
 
-                  {iyzicoRedirectUrl && !isIyzicoLoading && (
-                    <div className="bg-white border border-gray-200 rounded-lg p-5 text-sm text-gray-700 space-y-4">
-                      <p>
-                        Güvenli ödeme işlemini tamamlamak için iyzico ödeme sayfasına yönlendirileceksiniz.
-                        Yönlendirme başlamadıysa aşağıdaki butonu kullanın.
+                  {iyzicoIframeUrl && !isIyzicoLoading && (
+                    <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4 space-y-4">
+                      <div className="rounded-xl overflow-hidden border border-gray-200 bg-[#F8F7F4]">
+                        <iframe
+                          ref={iyzicoIframeRef}
+                          title="iyzico Güvenli Ödeme"
+                          src={iyzicoIframeUrl}
+                          onLoad={handleIyzicoIframeLoad}
+                          className="w-full h-[640px] md:h-[720px] bg-white"
+                          allow="payment *"
+                        />
+                      </div>
+                      <p className="text-sm text-gray-600">
+                        Ödeme formu yukarıda iframe içinde açıldı. Tarayıcı veya ağ ayarları nedeniyle yüklenmezse aşağıdaki yedek bağlantıyı kullanabilirsiniz.
                       </p>
                       <button
                         type="button"
-                        onClick={() => window.location.assign(iyzicoRedirectUrl)}
-                        className="w-full bg-black text-white py-4 rounded-full font-medium text-sm hover:bg-gray-800"
+                        onClick={() => window.open(iyzicoHostedUrl || iyzicoIframeUrl, "_blank", "noopener,noreferrer")}
+                        className="w-full border border-gray-300 text-black py-4 rounded-full font-medium text-sm hover:border-black transition-colors"
                       >
-                        iyzico ile devam et
+                        iyzico sayfasını yeni sekmede aç
                       </button>
                     </div>
                   )}

@@ -5189,7 +5189,13 @@ function getIyzicoFailureReason(result) {
     "10006": "Kart doğrulaması başarısız oldu. Lütfen kart bilgilerini kontrol edin.",
     "10012": "3D Secure doğrulaması tamamlanamadı. Lütfen tekrar deneyin.",
     "10051": "Kart limiti yetersiz veya kart bakiyesi yetersiz.",
-    "10054": "Kart işlemi onaylamadı. Lütfen bankanızla görüşün.",
+    "10054": "Kartın son kullanma tarihi geçmiş veya hatalı görünüyor.",
+    "10057": "Kartınız bu işlem için kısıtlı. Lütfen bankanızla görüşün.",
+    "10084": "Kart güvenlik kodu hatalı. CVV bilgisini kontrol edip tekrar deneyin.",
+    "10093": "Kartınız internet alışverişine kapalı. Bankanızdan online alışverişe açmanız gerekiyor.",
+    "10207": "Banka bu işlemi onaylamadı. Lütfen bankanızla görüşün.",
+    "10209": "Kartınız bloke görünüyor. Lütfen bankanızla görüşün.",
+    "10201": "Kart bu işleme izin vermedi. Lütfen bankanızla görüşün.",
   };
 
   if (errorCode && mappedReasonByCode[errorCode]) {

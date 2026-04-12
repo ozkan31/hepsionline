@@ -57,6 +57,7 @@ export function Checkout() {
   const [iyzicoPaymentReference, setIyzicoPaymentReference] = useState("");
   const [isIyzicoLoading, setIsIyzicoLoading] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [paymentFailureReason, setPaymentFailureReason] = useState("");
   const [preparedIyzicoSession, setPreparedIyzicoSession] = useState<PreparedIyzicoSession | null>(null);
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedAbandonedCartCoupon | null>(null);
@@ -488,6 +489,7 @@ export function Checkout() {
         setAppliedCoupon(null);
         setStep("confirmation");
         setPaymentError("");
+        setPaymentFailureReason("");
         setIyzicoIframeUrl("");
         setIyzicoPaymentReference("");
         setPreparedIyzicoSession(null);
@@ -516,14 +518,17 @@ export function Checkout() {
       if (processedPathRef.current === `fail:${location.pathname}`) return;
       const failedReason =
         new URLSearchParams(location.search).get("reason") ?? "Ödeme başarısız veya iptal edildi. Lütfen tekrar deneyin.";
-      setStep("payment");
-      setPaymentError(failedReason);
+      setStep("confirmation");
+      setPaymentFailureReason(failedReason);
+      setPaymentError("");
       setIyzicoIframeUrl("");
       setIyzicoPaymentReference("");
+      setPreparedIyzicoSession(null);
       processedPathRef.current = `fail:${location.pathname}`;
       return;
     }
 
+    setPaymentFailureReason("");
     processedPathRef.current = "";
   }, [isPaymentFailPath, isPaymentSuccessPath, location.pathname, location.search]);
 
@@ -546,7 +551,20 @@ export function Checkout() {
 
   const handleBackToShipping = () => {
     setPaymentError("");
+    setPaymentFailureReason("");
     setStep("shipping");
+  };
+
+  const handleRetryPayment = () => {
+    setPaymentFailureReason("");
+    setPaymentError("");
+    setIyzicoIframeUrl("");
+    setIyzicoPaymentReference("");
+    setPreparedIyzicoSession(null);
+    processedPathRef.current = "";
+    navigate("/odeme", { replace: true });
+    setStep("payment");
+    window.scrollTo(0, 0);
   };
 
   const handleAddAddress = async (e: React.FormEvent) => {
@@ -1130,40 +1148,74 @@ export function Checkout() {
 
             {step === "confirmation" && (
               <div className="max-w-2xl mx-auto text-center py-12">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Check className="w-10 h-10 text-green-600" />
-                </div>
-                <h2 className="text-2xl font-light mb-4">{"Siparişiniz oluşturuldu."}</h2>
-                <p className="text-gray-600 mb-8">
-                  {"Sipari\u015finiz i\u00e7in te\u015fekk\u00fcr ederiz. "}
-                  {confirmationEmail}
-                  {" adresine sipari\u015f bilgilerini g\u00f6nderdik."}
-                </p>
-                {completedOrder && (
-                  <div className="text-left bg-white rounded-lg border border-gray-200 p-4 mb-8">
-                    <p className="text-sm text-gray-500 mb-3">{"Sipariş No: "}{completedOrder.id}</p>
-                    <div className="space-y-2">
-                      {completedOrder.items.map((item) => (
-                        <div key={`${item.product.id}-${item.color ?? ""}`} className="flex items-center justify-between gap-3 text-sm">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <img
-                              src={item.product.image}
-                              alt={item.product.name}
-                              className="w-10 h-10 rounded object-cover"
-                            />
-                            <span className="truncate">
-                              {item.product.name} x {item.quantity}
-                            </span>
-                          </div>
-                          <span className="shrink-0">{(item.product.price * item.quantity).toLocaleString("tr-TR")} TL</span>
-                        </div>
-                      ))}
+                {paymentFailureReason ? (
+                  <>
+                    <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <span className="text-3xl text-red-600 font-light">!</span>
                     </div>
-                  </div>
+                    <h2 className="text-2xl font-light mb-4">Ödeme başarısız</h2>
+                    <p className="text-gray-600 mb-3">
+                      Sipariş oluşturulmadı. Ödeme sonucu iyzico tarafından başarısız döndü.
+                    </p>
+                    <div className="text-left bg-white rounded-lg border border-red-200 p-4 mb-8">
+                      <p className="text-sm text-gray-500 mb-2">Başarısızlık Nedeni</p>
+                      <p className="text-sm text-red-600">{paymentFailureReason}</p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                      <button
+                        type="button"
+                        onClick={handleRetryPayment}
+                        className="bg-black text-white px-8 py-3 rounded-full"
+                      >
+                        Tekrar Dene
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleBackToShipping}
+                        className="border border-gray-300 text-black px-8 py-3 rounded-full hover:border-black transition-colors"
+                      >
+                        Adres Bilgilerine Dön
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <Check className="w-10 h-10 text-green-600" />
+                    </div>
+                    <h2 className="text-2xl font-light mb-4">{"Siparişiniz oluşturuldu."}</h2>
+                    <p className="text-gray-600 mb-8">
+                      {"Sipari\u015finiz i\u00e7in te\u015fekk\u00fcr ederiz. "}
+                      {confirmationEmail}
+                      {" adresine sipari\u015f bilgilerini g\u00f6nderdik."}
+                    </p>
+                    {completedOrder && (
+                      <div className="text-left bg-white rounded-lg border border-gray-200 p-4 mb-8">
+                        <p className="text-sm text-gray-500 mb-3">{"Sipariş No: "}{completedOrder.id}</p>
+                        <div className="space-y-2">
+                          {completedOrder.items.map((item) => (
+                            <div key={`${item.product.id}-${item.color ?? ""}`} className="flex items-center justify-between gap-3 text-sm">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <img
+                                  src={item.product.image}
+                                  alt={item.product.name}
+                                  className="w-10 h-10 rounded object-cover"
+                                />
+                                <span className="truncate">
+                                  {item.product.name} x {item.quantity}
+                                </span>
+                              </div>
+                              <span className="shrink-0">{(item.product.price * item.quantity).toLocaleString("tr-TR")} TL</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <button onClick={() => navigate("/hesabim")} className="bg-black text-white px-8 py-3 rounded-full">
+                      {"Siparişlerime Git"}
+                    </button>
+                  </>
                 )}
-                <button onClick={() => navigate("/hesabim")} className="bg-black text-white px-8 py-3 rounded-full">
-                  {"Siparişlerime Git"}
-                </button>
               </div>
             )}
           </div>

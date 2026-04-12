@@ -5160,6 +5160,49 @@ function interpretIyzicoPaymentResult(result) {
   };
 }
 
+function getIyzicoFailureReason(result) {
+  const errorCode = String(result?.errorCode ?? "").trim();
+  const directMessageCandidates = [
+    result?.errorMessage,
+    result?.paymentErrorMessage,
+    result?.failureReason,
+    result?.bankErrorMessage,
+    result?.bankReason,
+    result?.errorGroup,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+
+  const firstDirectMessage = directMessageCandidates.find(
+    (value) =>
+      value &&
+      value.toLocaleLowerCase("tr-TR") !== "failure" &&
+      value.toLocaleLowerCase("tr-TR") !== "failed"
+  );
+
+  if (firstDirectMessage) {
+    return firstDirectMessage;
+  }
+
+  const mappedReasonByCode = {
+    "10005": "Kart ile ödeme alınamadı. Kart bilgilerini kontrol edip tekrar deneyin.",
+    "10006": "Kart doğrulaması başarısız oldu. Lütfen kart bilgilerini kontrol edin.",
+    "10012": "3D Secure doğrulaması tamamlanamadı. Lütfen tekrar deneyin.",
+    "10051": "Kart limiti yetersiz veya kart bakiyesi yetersiz.",
+    "10054": "Kart işlemi onaylamadı. Lütfen bankanızla görüşün.",
+  };
+
+  if (errorCode && mappedReasonByCode[errorCode]) {
+    return mappedReasonByCode[errorCode];
+  }
+
+  if (errorCode) {
+    return `Ödeme başarısız. Hata kodu: ${errorCode}`;
+  }
+
+  return "Ödeme başarısız veya iptal edildi. Lütfen tekrar deneyin.";
+}
+
 function renderIyzicoCallbackPage({ title, message, result, isSuccess, callbackUrl }) {
   const detailRows = [
     ["Durum", String(result?.paymentStatus ?? result?.status ?? "-").trim() || "-"],
@@ -7996,7 +8039,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
 
   if (!iyzicoPayment.ok) {
     return res.status(409).json({
-      message: String(iyzicoResult?.errorMessage ?? "").trim() || "Ödeme henüz onaylanmadı. Sipariş oluşturulmadı.",
+      message: getIyzicoFailureReason(iyzicoResult),
     });
   }
 
@@ -8401,7 +8444,7 @@ app.get("/api/iyzico/checkout/status", requireAuth, async (req, res) => {
     let reason = "";
     try {
       const rawResult = intent.raw_result_text ? JSON.parse(String(intent.raw_result_text)) : null;
-      reason = String(rawResult?.errorMessage ?? rawResult?.errorCode ?? "").trim();
+      reason = getIyzicoFailureReason(rawResult);
     } catch {
       reason = "";
     }
@@ -8505,7 +8548,7 @@ app.all("/api/iyzico/callback", async (req, res) => {
       ? payment.inReview
         ? "Ödeme iyzico tarafından alındı. Sonuç inceleme sürecinde görünüyor."
         : "Ödeme iyzico tarafından başarıyla doğrulandı."
-      : String(result?.errorMessage ?? "").trim() || "Ödeme sonucu başarısız görünüyor.";
+      : getIyzicoFailureReason(result);
 
     const payload = {
       ok: payment.ok,

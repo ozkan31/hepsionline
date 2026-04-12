@@ -137,6 +137,35 @@ export function Checkout() {
     }
   };
 
+  useEffect(() => {
+    const handleIyzicoCheckoutResult = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data as
+        | {
+            type?: string;
+            redirectUrl?: string;
+          }
+        | null;
+
+      if (!data || data.type !== "iyzico-checkout-result") return;
+
+      const redirectUrl = String(data.redirectUrl ?? "").trim();
+      if (!redirectUrl) return;
+
+      try {
+        const parsed = new URL(redirectUrl, window.location.origin);
+        navigate(`${parsed.pathname}${parsed.search}${parsed.hash}`, { replace: true });
+      } catch {
+        navigate(redirectUrl, { replace: true });
+      }
+    };
+
+    window.addEventListener("message", handleIyzicoCheckoutResult);
+    return () => {
+      window.removeEventListener("message", handleIyzicoCheckoutResult);
+    };
+  }, [navigate]);
+
   const shippingCost = cartTotal >= 1500 ? 0 : 79;
   const discountAmount = getCouponDiscountAmount(cartTotal, appliedCoupon);
   const total = Math.max(0, cartTotal + shippingCost - discountAmount);

@@ -5206,6 +5206,55 @@ function renderIyzicoCallbackPage({ title, message, result, isSuccess, callbackU
 </html>`;
 }
 
+function renderIyzicoIframeBridgePage({ redirectUrl, status, reason, paymentReference }) {
+  const payload = {
+    type: "iyzico-checkout-result",
+    redirectUrl: String(redirectUrl ?? "").trim(),
+    status: String(status ?? "").trim().toLowerCase(),
+    reason: String(reason ?? "").trim(),
+    paymentReference: String(paymentReference ?? "").trim(),
+  };
+
+  return `<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Ödeme Sonucu</title>
+    <style>
+      html, body { margin: 0; padding: 0; background: transparent; }
+      body { font-family: Arial, sans-serif; }
+      .fallback { display:none; padding:16px; font-size:14px; color:#111; }
+    </style>
+  </head>
+  <body>
+    <div class="fallback">
+      Ödeme sonucu hazırlanıyor.
+      <a href="${escapeHtml(String(redirectUrl ?? "").trim() || "/odeme")}">Devam et</a>
+    </div>
+    <script>
+      (function () {
+        var payload = ${JSON.stringify(payload)};
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage(payload, window.location.origin);
+            return;
+          }
+        } catch (_error) {}
+
+        if (payload.redirectUrl) {
+          window.location.replace(payload.redirectUrl);
+          return;
+        }
+
+        document.querySelector('.fallback').style.display = 'block';
+      })();
+    </script>
+  </body>
+</html>`;
+}
+
 async function requireAuth(req, res, next) {
   const token = extractBearerToken(req);
   if (!token) {
@@ -8474,7 +8523,18 @@ app.all("/api/iyzico/callback", async (req, res) => {
       : buildIyzicoCheckoutReturnUrl(storefrontBaseUrl, paymentReference, "/odeme/basarisiz");
 
     if (iframeMode) {
-      return res.status(204).end();
+      const iframeRedirectUrl = new URL(redirectUrl);
+      if (!payment.ok && message) {
+        iframeRedirectUrl.searchParams.set("reason", message);
+      }
+      return res.status(payment.ok ? 200 : 409).type("html").send(
+        renderIyzicoIframeBridgePage({
+          redirectUrl: iframeRedirectUrl.toString(),
+          status: payment.ok ? "success" : "failed",
+          reason: payment.ok ? "" : message,
+          paymentReference,
+        })
+      );
     }
 
     if (!payment.ok) {
@@ -8497,7 +8557,14 @@ app.all("/api/iyzico/callback", async (req, res) => {
     const failedUrl = new URL(buildIyzicoCheckoutReturnUrl(storefrontBaseUrl, "", "/odeme/basarisiz"));
     failedUrl.searchParams.set("reason", message);
     if (iframeMode) {
-      return res.status(204).end();
+      return res.status(502).type("html").send(
+        renderIyzicoIframeBridgePage({
+          redirectUrl: failedUrl.toString(),
+          status: "failed",
+          reason: message,
+          paymentReference: "",
+        })
+      );
     }
     return res.redirect(303, failedUrl.toString());
   }

@@ -31,6 +31,12 @@ type IyzicoCheckoutPayload = {
   couponCode?: string | null;
 };
 
+type PreparedIyzicoSession = {
+  payloadKey: string;
+  iframeUrl: string;
+  paymentReference: string;
+};
+
 export function Checkout() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -51,6 +57,7 @@ export function Checkout() {
   const [iyzicoPaymentReference, setIyzicoPaymentReference] = useState("");
   const [isIyzicoLoading, setIsIyzicoLoading] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [preparedIyzicoSession, setPreparedIyzicoSession] = useState<PreparedIyzicoSession | null>(null);
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedAbandonedCartCoupon | null>(null);
   const [couponMessage, setCouponMessage] = useState("");
@@ -58,6 +65,8 @@ export function Checkout() {
   const iyzicoIframeRef = useRef<HTMLIFrameElement | null>(null);
   const newAddressDistrictSelectRef = useRef<HTMLSelectElement | null>(null);
   const newAddressNeighborhoodSelectRef = useRef<HTMLSelectElement | null>(null);
+  const iyzicoSessionPromiseRef = useRef<Promise<PreparedIyzicoSession> | null>(null);
+  const iyzicoSessionKeyRef = useRef("");
 
   const generateOrderId = () =>
     String(Math.floor(1000000000 + Math.random() * 9000000000));
@@ -294,6 +303,10 @@ export function Checkout() {
     () => buildIyzicoPayload(shippingInfo),
     [shippingInfo, state.cart, total, appliedCoupon?.code]
   );
+  const currentIyzicoPayloadKey = useMemo(
+    () => (currentIyzicoPayload ? JSON.stringify(currentIyzicoPayload) : ""),
+    [currentIyzicoPayload]
+  );
   const contractParty = useMemo(() => {
     const source = selectedShippingInfo ?? shippingInfo;
     const fullName = [
@@ -477,6 +490,7 @@ export function Checkout() {
         setPaymentError("");
         setIyzicoIframeUrl("");
         setIyzicoPaymentReference("");
+        setPreparedIyzicoSession(null);
         return;
       } catch (error) {
         lastErrorMessage = error instanceof Error ? error.message : lastErrorMessage;
@@ -521,16 +535,17 @@ export function Checkout() {
     }
     const nextShippingInfo = buildShippingInfoFromAddress(selectedAddress);
     if (!nextShippingInfo) return;
+    const nextPayload = buildIyzicoPayload(nextShippingInfo);
+    if (nextPayload) {
+      void prepareIyzicoSession(nextPayload, { showLoader: false });
+    }
     setShippingInfo(nextShippingInfo);
     setStep("payment");
     window.scrollTo(0, 0);
   };
 
   const handleBackToShipping = () => {
-    setIyzicoIframeUrl("");
-    setIyzicoPaymentReference("");
     setPaymentError("");
-    setIsIyzicoLoading(false);
     setStep("shipping");
   };
 
@@ -572,6 +587,62 @@ export function Checkout() {
     }
   };
 
+  const prepareIyzicoSession = async (
+    payload: IyzicoCheckoutPayload,
+    options?: { showLoader?: boolean }
+  ): Promise<PreparedIyzicoSession> => {
+    const payloadKey = JSON.stringify(payload);
+    if (preparedIyzicoSession?.payloadKey === payloadKey) {
+      return preparedIyzicoSession;
+    }
+    if (iyzicoSessionPromiseRef.current && iyzicoSessionKeyRef.current === payloadKey) {
+      return iyzicoSessionPromiseRef.current;
+    }
+
+    if (options?.showLoader !== false) {
+      setIsIyzicoLoading(true);
+    }
+
+    const request = createIyzicoCheckoutSession(payload)
+      .then((data) => {
+        const session = {
+          payloadKey,
+          iframeUrl: buildIyzicoIframeSrc(data.paymentPageUrl),
+          paymentReference: data.paymentReference,
+        };
+        setPreparedIyzicoSession(session);
+        return session;
+      })
+      .finally(() => {
+        if (iyzicoSessionPromiseRef.current === request) {
+          iyzicoSessionPromiseRef.current = null;
+          iyzicoSessionKeyRef.current = "";
+        }
+        if (options?.showLoader !== false) {
+          setIsIyzicoLoading(false);
+        }
+      });
+
+    iyzicoSessionPromiseRef.current = request;
+    iyzicoSessionKeyRef.current = payloadKey;
+    return request;
+  };
+
+  useEffect(() => {
+    if (!currentIyzicoPayloadKey) {
+      setPreparedIyzicoSession(null);
+      setIyzicoIframeUrl("");
+      setIyzicoPaymentReference("");
+      return;
+    }
+    if (preparedIyzicoSession?.payloadKey === currentIyzicoPayloadKey) {
+      return;
+    }
+    setPreparedIyzicoSession(null);
+    setIyzicoIframeUrl("");
+    setIyzicoPaymentReference("");
+  }, [currentIyzicoPayloadKey, preparedIyzicoSession?.payloadKey]);
+
   useEffect(() => {
     if (step !== "payment" || isPaymentSuccessPath || isPaymentFailPath) return;
     if (!currentIyzicoPayload) {
@@ -581,16 +652,24 @@ export function Checkout() {
     }
 
     let isMounted = true;
-    setIsIyzicoLoading(true);
     setPaymentError("");
+
+    if (preparedIyzicoSession?.payloadKey === currentIyzicoPayloadKey) {
+      setIyzicoIframeUrl(preparedIyzicoSession.iframeUrl);
+      setIyzicoPaymentReference(preparedIyzicoSession.paymentReference);
+      setIsIyzicoLoading(false);
+      return;
+    }
+
     setIyzicoIframeUrl("");
     setIyzicoPaymentReference("");
+    setIsIyzicoLoading(true);
 
-    createIyzicoCheckoutSession(currentIyzicoPayload)
-      .then((data) => {
+    prepareIyzicoSession(currentIyzicoPayload)
+      .then((session) => {
         if (!isMounted) return;
-        setIyzicoIframeUrl(buildIyzicoIframeSrc(data.paymentPageUrl));
-        setIyzicoPaymentReference(data.paymentReference);
+        setIyzicoIframeUrl(session.iframeUrl);
+        setIyzicoPaymentReference(session.paymentReference);
       })
       .catch((error) => {
         if (!isMounted) return;
@@ -603,7 +682,14 @@ export function Checkout() {
     return () => {
       isMounted = false;
     };
-  }, [currentIyzicoPayload, isPaymentFailPath, isPaymentSuccessPath, step]);
+  }, [
+    currentIyzicoPayload,
+    currentIyzicoPayloadKey,
+    isPaymentFailPath,
+    isPaymentSuccessPath,
+    preparedIyzicoSession,
+    step,
+  ]);
 
   useEffect(() => {
     if (
